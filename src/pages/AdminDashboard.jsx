@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Layout from '../components/Layout';
 import { db } from '../lib/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
@@ -12,7 +12,7 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [seeding, setSeeding] = useState(false);
 
-  async function fetchData() {
+  const fetchData = useCallback(async () => {
       // Fetch Projects
       const projectsSnap = await getDocs(collection(db, "projects"));
       const projectsData = projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -24,11 +24,11 @@ export default function AdminDashboard() {
       setPendingCount(pendingSnap.size);
 
       setLoading(false);
-  }
+  }, []);
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [fetchData]);
 
   const handleSeed = async () => {
       if (!confirm("Esto borrará/sobrescribirá datos. ¿Estás seguro?")) return;
