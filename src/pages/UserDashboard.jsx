@@ -1,20 +1,54 @@
+import { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/useAuth';
-import { mockProjects, formatCurrency } from '../lib/mockData';
+import { db } from '../lib/firebase';
+import { doc, getDoc, collection, getDocs, query, where } from 'firebase/firestore';
+import { formatCurrency } from '../lib/mockData';
 import { PlusCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 export default function UserDashboard() {
   const { currentUser } = useAuth();
-  // In real app, fetch user balance from context/firestore
-  const userBalance = 350000; 
+  const [balance, setBalance] = useState(0);
+  const [projects, setProjects] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchData() {
+        if (!currentUser) return;
+        
+        try {
+            // 1. Get Live Balance
+            const userRef = doc(db, "users", currentUser.uid);
+            const userSnap = await getDoc(userRef);
+            if (userSnap.exists()) {
+                setBalance(userSnap.data().balance || 0);
+            }
+
+            // 2. Get Active Projects
+            const q = query(collection(db, "projects"), where("status", "==", "active"));
+            const pSnap = await getDocs(q);
+            const pData = pSnap.docs.map(d => ({id: d.id, ...d.data()}));
+            setProjects(pData);
+        } catch (e) {
+            console.error("Error fetching dashboard:", e);
+        } finally {
+            setLoading(false);
+        }
+    }
+    fetchData();
+  }, [currentUser]);
+
+  if (loading) return <Layout title="Dashboard">Cargando...</Layout>;
 
   return (
     <Layout title={`Hola, ${currentUser?.displayName?.split(' ')[0] || 'Usuario'}`}>
          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
                 <h3 className="text-gray-500 text-sm font-medium">Mi Cuenta Corriente (Viáticos)</h3>
-                <p className="text-4xl font-bold text-blue-600">{formatCurrency(userBalance)}</p>
+                <p className={`text-4xl font-bold ${balance < 0 ? 'text-red-500' : 'text-blue-600'}`}>
+                    {formatCurrency(balance)}
+                </p>
                 <p className="text-gray-400 text-sm mt-2">Saldo disponible para gastos.</p>
             </div>
             
@@ -27,18 +61,22 @@ export default function UserDashboard() {
         </div>
 
         <div className="mt-8 bg-white p-6 rounded-lg shadow-sm border border-gray-100">
-            <h2 className="text-xl font-semibold mb-4">Mis Proyectos Asignados</h2>
-            <div className="space-y-4">
-                {mockProjects.slice(0, 2).map(p => (
-                     <div key={p.id} className="border-b last:border-0 pb-4 last:pb-0 flex justify-between items-center">
-                        <div>
-                            <p className="font-semibold text-gray-800">{p.name}</p>
-                            <p className="text-sm text-gray-600">{p.client}</p>
+            <h2 className="text-xl font-semibold mb-4">Proyectos Disponibles</h2>
+            {projects.length === 0 ? (
+                <p className="text-gray-500">No hay proyectos activos.</p>
+            ) : (
+                <div className="space-y-4">
+                    {projects.map(p => (
+                         <div key={p.id} className="border-b last:border-0 pb-4 last:pb-0 flex justify-between items-center">
+                            <div>
+                                <p className="font-semibold text-gray-800">{p.name}</p>
+                                <p className="text-sm text-gray-600">{p.client}</p>
+                            </div>
+                            <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">Activo</span>
                         </div>
-                        <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">Activo</span>
-                    </div>
-                ))}
-            </div>
+                    ))}
+                </div>
+            )}
         </div>
     </Layout>
   );
