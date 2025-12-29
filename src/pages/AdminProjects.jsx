@@ -15,66 +15,43 @@ export default function AdminProjects() {
   const [newProject, setNewProject] = useState({ name: '', client: '', budget: '' });
   
   const [viaticoUser, setViaticoUser] = useState('');
+  const [viaticoProject, setViaticoProject] = useState('');
   const [viaticoAmount, setViaticoAmount] = useState('');
 
-  const fetchData = async () => {
-    try {
-        setLoading(true);
-        // data fetching logic
-        const pSnap = await getDocs(collection(db, "projects"));
-        const pData = pSnap.docs.map(d => ({id: d.id, ...d.data()}));
-        setProjects(pData);
+  // ... (fetchData stays same)
 
-        const uQuery = query(collection(db, "users"), where("role", "==", "professional"));
-        const uSnap = await getDocs(uQuery);
-        const uData = uSnap.docs.map(d => ({id: d.id, ...d.data()}));
-        setUsers(uData);
-    } catch (e) {
-        console.error("Error fetching admin data:", e);
-    } finally {
-        setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  const handleCreateProject = async (e) => {
-    e.preventDefault();
-    if (!newProject.name || !newProject.budget) return;
-
-    try {
-        await addDoc(collection(db, "projects"), {
-            name: newProject.name,
-            client: newProject.client,
-            budget: Number(newProject.budget),
-            expenses: 0,
-            status: 'active',
-            createdAt: new Date().toISOString()
-        });
-        alert("Proyecto creado exitosamente");
-        setNewProject({ name: '', client: '', budget: '' });
-        setShowProjectForm(false);
-        fetchData();
-    } catch (err) {
-        console.error(err);
-        alert("Error al crear proyecto");
-    }
-  };
+  // ... (handleCreateProject stays same)
 
   const handleAssignViatico = async (e) => {
       e.preventDefault();
-      if (!viaticoUser || !viaticoAmount) return;
+      if (!viaticoUser || !viaticoAmount || !viaticoProject) return;
 
       try {
+          const amount = Number(viaticoAmount);
+          const user = users.find(u => u.id === viaticoUser);
+          const project = projects.find(p => p.id === viaticoProject);
+
+          // 1. Update User Balance
           const userRef = doc(db, "users", viaticoUser);
           await updateDoc(userRef, {
-              balance: increment(Number(viaticoAmount))
+              balance: increment(amount)
           });
+
+          // 2. Create Allocation Record
+          await addDoc(collection(db, "allocations"), {
+              userId: viaticoUser,
+              userName: user?.displayName || 'Unknown',
+              projectId: viaticoProject,
+              projectName: project?.name || 'Unknown',
+              amount: amount,
+              date: new Date().toISOString(),
+              createdAt: new Date().toISOString()
+          });
+
           alert("Viático asignado exitosamente");
           setViaticoAmount('');
           setViaticoUser('');
+          setViaticoProject('');
           fetchData(); 
       } catch (err) {
           console.error(err);
@@ -148,6 +125,20 @@ export default function AdminProjects() {
                 </div>
                 <form onSubmit={handleAssignViatico} className="space-y-4">
                     <div>
+                        <label className="block text-sm font-medium text-gray-700">Proyecto</label>
+                        <select 
+                            className="mt-1 w-full p-2 border rounded"
+                            value={viaticoProject}
+                            onChange={e => setViaticoProject(e.target.value)}
+                            required
+                        >
+                            <option value="">Seleccionar Proyecto...</option>
+                            {projects.map(p => (
+                                <option key={p.id} value={p.id}>{p.name}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div>
                         <label className="block text-sm font-medium text-gray-700">Profesional</label>
                         <select 
                             className="mt-1 w-full p-2 border rounded"
@@ -155,7 +146,7 @@ export default function AdminProjects() {
                             onChange={e => setViaticoUser(e.target.value)}
                             required
                         >
-                            <option value="">Seleccionar...</option>
+                            <option value="">Seleccionar Profesional...</option>
                             {users.map(u => (
                                 <option key={u.id} value={u.id}>
                                     {u.displayName} (Saldo actual: {formatCurrency(u.balance || 0)})
