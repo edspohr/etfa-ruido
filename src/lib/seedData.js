@@ -89,7 +89,7 @@ export async function seedDatabase() {
     projects.push({
       name: `${type} - ${client} ${i + 1}`,
       client: client,
-      budget: 10000000 + Math.floor(Math.random() * 50) * 1000000, // 10M - 60M
+      budget: 500000 + Math.floor(Math.random() * 25) * 100000, // 500k - 3M
       expenses: 0, // Will update based on expenses for realism? Or just mock basic stats
       status: "active",
       createdAt: new Date().toISOString(),

@@ -14,17 +14,45 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     async function fetchData() {
-        // Fetch Projects
-        const projectsSnap = await getDocs(collection(db, "projects"));
-        const projectsData = projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setProjects(projectsData);
+        try {
+            // 1. Fetch Projects
+            const projectsSnap = await getDocs(collection(db, "projects"));
+            const projectsData = projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-        // Fetch Pending Expenses count
-        const q = query(collection(db, "expenses"), where("status", "==", "pending"));
-        const pendingSnap = await getDocs(q);
-        setPendingCount(pendingSnap.size);
+            // 2. Fetch All Expenses (to aggregate)
+            const expensesSnap = await getDocs(collection(db, "expenses"));
+            const expensesDocs = expensesSnap.docs.map(doc => doc.data());
 
-        setLoading(false);
+            // 3. Aggregate Expenses per Project
+            const expensesByProject = {};
+            let pending = 0;
+
+            expensesDocs.forEach(exp => {
+                if (exp.status === 'pending') pending++;
+                
+                // Only count approved/pending (or just approved? user said 'assigned vs rendered', usually implies spent)
+                // Let's count all 'active' spending (approved + pending)
+                if (exp.status === 'approved' || exp.status === 'pending') {
+                    if (!expensesByProject[exp.projectId]) {
+                        expensesByProject[exp.projectId] = 0;
+                    }
+                    expensesByProject[exp.projectId] += Number(exp.amount) || 0;
+                }
+            });
+
+            // 4. Merge into Projects
+            const finalProjects = projectsData.map(p => ({
+                ...p,
+                expenses: expensesByProject[p.id] || 0
+            }));
+
+            setProjects(finalProjects);
+            setPendingCount(pending);
+        } catch (e) {
+            console.error("Error loading dashboard:", e);
+        } finally {
+            setLoading(false);
+        }
     }
     fetchData();
   }, []);
