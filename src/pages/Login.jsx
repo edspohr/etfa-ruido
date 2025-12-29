@@ -22,7 +22,7 @@ export default function Login() {
     <div className="min-h-screen flex items-center justify-center bg-gray-100">
       <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-md text-center">
         <div className="flex justify-center mb-8">
-            <img src="/logo.png" alt="ETFA Ruido" className="h-32 w-auto" />
+            <img src="/logo.png" alt="ETFA Ruido" className="h-48 w-auto" />
         </div>
         <h2 className="text-2xl font-bold mb-6 text-gray-800">Gestión de Gastos</h2>
         
