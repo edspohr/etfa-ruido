@@ -42,6 +42,7 @@ export default function ExpenseForm() {
         }));
       }
     } catch (err) {
+      console.error("AI Error:", err);
       alert("Error al procesar la imagen con IA. Por favor ingrese los datos manualmente.");
     } finally {
       setLoading(false);

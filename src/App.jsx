@@ -8,7 +8,7 @@ import UserDashboard from './pages/UserDashboard';
 import UserExpenses from './pages/UserExpenses';
 import ExpenseForm from './pages/ExpenseForm';
 import ProtectedRoute from './components/ProtectedRoute';
-import { useAuth } from './context/AuthContext';
+import { useAuth } from './context/useAuth';
 
 function RootRedirect() {
   const { currentUser, userRole } = useAuth();

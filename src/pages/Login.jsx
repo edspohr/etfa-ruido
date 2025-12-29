@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/useAuth';
 import { useNavigate } from 'react-router-dom';
 import { LogIn } from 'lucide-react';
 
@@ -21,10 +21,8 @@ export default function Login() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100">
       <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-md text-center">
-        <div className="flex justify-center mb-4">
-            <div className="bg-blue-600 p-3 rounded-full">
-                <LogIn className="text-white w-8 h-8" />
-            </div>
+        <div className="flex justify-center mb-6">
+            <img src="/logo.png" alt="ETFA Ruido" className="h-16 w-auto" />
         </div>
         <h2 className="text-2xl font-bold mb-6 text-gray-800">ETFA Ruido - Gestión de Gastos</h2>
         

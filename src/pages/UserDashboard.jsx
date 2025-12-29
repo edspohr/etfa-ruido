@@ -1,5 +1,5 @@
 import Layout from '../components/Layout';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/useAuth';
 import { mockProjects, formatCurrency } from '../lib/mockData';
 import { PlusCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -10,7 +10,7 @@ export default function UserDashboard() {
   const userBalance = 350000; 
 
   return (
-    <Layout title="Mi Panel">
+    <Layout title={`Hola, ${currentUser?.displayName?.split(' ')[0] || 'Usuario'}`}>
          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
                 <h3 className="text-gray-500 text-sm font-medium">Mi Cuenta Corriente (Viáticos)</h3>

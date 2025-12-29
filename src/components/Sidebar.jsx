@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/useAuth';
 import { 
   PieChart, LayoutDashboard, FolderOpen, CheckCircle, 
   FileText, UserCircle, Receipt, LogOut 
@@ -22,9 +22,8 @@ export default function Sidebar({ isOpen, setIsOpen }) {
       ${isOpen ? 'translate-x-0' : '-translate-x-full'} 
       md:relative md:translate-x-0 transition duration-200 ease-in-out z-20
     `}>
-      <div className="text-white flex items-center space-x-2 px-4 mb-6">
-        <PieChart className="w-8 h-8" />
-        <span className="text-2xl font-extrabold">ETFA Ruido</span>
+      <div className="flex items-center justify-center px-4 mb-8 mt-2">
+        <img src="/logo.png" alt="ETFA Ruido" className="h-12 w-auto bg-white p-1 rounded" />
       </div>
 
       <div className="px-4 mb-6 border-b border-gray-700 pb-4">
