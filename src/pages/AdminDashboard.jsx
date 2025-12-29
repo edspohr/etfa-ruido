@@ -12,23 +12,22 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [seeding, setSeeding] = useState(false);
 
-  const fetchData = useCallback(async () => {
-      // Fetch Projects
-      const projectsSnap = await getDocs(collection(db, "projects"));
-      const projectsData = projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setProjects(projectsData);
-
-      // Fetch Pending Expenses count
-      const q = query(collection(db, "expenses"), where("status", "==", "pending"));
-      const pendingSnap = await getDocs(q);
-      setPendingCount(pendingSnap.size);
-
-      setLoading(false);
-  }, []);
-
   useEffect(() => {
+    async function fetchData() {
+        // Fetch Projects
+        const projectsSnap = await getDocs(collection(db, "projects"));
+        const projectsData = projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setProjects(projectsData);
+
+        // Fetch Pending Expenses count
+        const q = query(collection(db, "expenses"), where("status", "==", "pending"));
+        const pendingSnap = await getDocs(q);
+        setPendingCount(pendingSnap.size);
+
+        setLoading(false);
+    }
     fetchData();
-  }, [fetchData]);
+  }, []);
 
   const handleSeed = async () => {
       if (!confirm("Esto borrará/sobrescribirá datos. ¿Estás seguro?")) return;
@@ -36,7 +35,15 @@ export default function AdminDashboard() {
       try {
           await seedDatabase();
           alert("Datos cargados correctamente");
-          fetchData(); // Refresh data
+          
+          // Refresh Data Manually
+          const projectsSnap = await getDocs(collection(db, "projects"));
+          const projectsData = projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          setProjects(projectsData);
+
+          const q = query(collection(db, "expenses"), where("status", "==", "pending"));
+          const pendingSnap = await getDocs(q);
+          setPendingCount(pendingSnap.size);
       } catch (e) {
           console.error(e);
           alert("Error cargando datos");
