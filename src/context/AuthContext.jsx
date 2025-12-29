@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { onAuthStateChanged, signInWithPopup, signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { onAuthStateChanged, signInWithPopup, signInWithEmailAndPassword, signOut, setPersistence, browserLocalPersistence } from 'firebase/auth';
 import { auth, googleProvider, db, isConfigured } from '../lib/firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { AuthContext } from './AuthContextDefinition';
@@ -57,7 +57,13 @@ export function AuthProvider({ children }) {
 
   async function loginWithGoogle() {
     if (!auth) return; 
-    return signInWithPopup(auth, googleProvider);
+    try {
+        await setPersistence(auth, browserLocalPersistence);
+        return await signInWithPopup(auth, googleProvider);
+    } catch (error) {
+        console.error("Google Login Error:", error);
+        throw error;
+    }
   }
 
   function login(email, password) {
