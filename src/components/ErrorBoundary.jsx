@@ -33,7 +33,6 @@ class ErrorBoundary extends React.Component {
                 {this.state.error?.componentStack}
             </div>
           </div>
-          </div>
         </div>
       );
     }
