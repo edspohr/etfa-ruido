@@ -1,13 +1,18 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
+import { useAuth } from '../context/useAuth';
 import { parseReceiptImage } from '../lib/gemini';
-import { mockProjects } from '../lib/mockData';
+import { db } from '../lib/firebase';
+import { collection, addDoc, getDocs, query, where, doc, updateDoc, increment } from 'firebase/firestore';
 import { Upload, Loader2, Camera } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 export default function ExpenseForm() {
+  const { currentUser } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+  const [projects, setProjects] = useState([]);
+  
   const [formData, setFormData] = useState({
     projectId: '',
     date: '',
@@ -17,6 +22,16 @@ export default function ExpenseForm() {
     receiptImage: null
   });
   const [previewUrl, setPreviewUrl] = useState(null);
+
+  useEffect(() => {
+      async function fetchProjects() {
+          const q = query(collection(db, "projects"), where("status", "==", "active"));
+          const snapshot = await getDocs(q);
+          const data = snapshot.docs.map(d => ({id: d.id, ...d.data()}));
+          setProjects(data);
+      }
+      fetchProjects();
+  }, []);
 
   const handleFileChange = async (e) => {
     const file = e.target.files[0];
@@ -49,16 +64,50 @@ export default function ExpenseForm() {
     }
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.projectId) {
         alert("Por favor selecciona un proyecto.");
         return;
     }
-    // Logic to save to Firestore would go here
-    console.log("Submitting expense:", formData);
-    alert("Gasto enviado correctamente (Simulación)");
-    navigate('/dashboard');
+    if (!currentUser) return;
+
+    try {
+        setLoading(true);
+        
+        // 1. Find Project Name
+        const selectedProject = projects.find(p => p.id === formData.projectId);
+
+        // 2. Save Expense
+        await addDoc(collection(db, "expenses"), {
+            userId: currentUser.uid,
+            userName: currentUser.displayName,
+            projectId: formData.projectId,
+            projectName: selectedProject?.name || 'Unknown',
+            date: formData.date,
+            merchant: formData.merchant,
+            description: formData.description,
+            amount: Number(formData.amount),
+            status: "pending",
+            createdAt: new Date().toISOString()
+            // In a real app we would upload the image to Storage here and save the URL
+        });
+
+        // 3. Deduct Balance
+        const userRef = doc(db, "users", currentUser.uid);
+        await updateDoc(userRef, {
+            balance: increment(-Number(formData.amount))
+        });
+
+        alert("Rendición enviada exitosamente.");
+        navigate('/dashboard');
+
+    } catch (e) {
+        console.error("Error submitting expense:", e);
+        alert("Error al enviar la rendición.");
+    } finally {
+        setLoading(false);
+    }
   };
 
   return (
@@ -105,7 +154,7 @@ export default function ExpenseForm() {
                         onChange={e => setFormData({...formData, projectId: e.target.value})}
                     >
                         <option value="">Selecciona un proyecto...</option>
-                        {mockProjects.map(p => (
+                        {projects.map(p => (
                             <option key={p.id} value={p.id}>{p.name}</option>
                         ))}
                     </select>
@@ -158,10 +207,11 @@ export default function ExpenseForm() {
             </div>
 
             <button 
-                type="submit" 
-                className="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 transition"
+                type="submit"
+                disabled={loading}
+                className="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 transition disabled:opacity-50"
             >
-                Enviar Rendición
+                {loading ? 'Enviando...' : 'Enviar Rendición'}
             </button>
         </form>
       </div>
