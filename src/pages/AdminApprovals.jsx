@@ -9,7 +9,19 @@ export default function AdminApprovals() {
   const [pendingExpenses, setPendingExpenses] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // ... (fetchPending stays same) ...
+  const fetchPending = async () => {
+      try {
+          setLoading(true);
+          const q = query(collection(db, "expenses"), where("status", "==", "pending"));
+          const snapshot = await getDocs(q);
+          const data = snapshot.docs.map(d => ({id: d.id, ...d.data()}));
+          setPendingExpenses(data);
+      } catch (e) {
+          console.error("Error fetching pending:", e);
+      } finally {
+          setLoading(false);
+      }
+  };
 
   const handleExportCSV = async () => {
       try {
@@ -53,7 +65,46 @@ export default function AdminApprovals() {
   };
 
 
-  // ... (useEffect, handleApprove, handleReject stay same) ...
+  useEffect(() => {
+    fetchPending();
+  }, []);
+
+  const handleApprove = async (expenseId) => {
+      try {
+          // Just update status
+          await updateDoc(doc(db, "expenses", expenseId), {
+              status: "approved"
+          });
+          fetchPending();
+      } catch (e) {
+          console.error("Error approving:", e);
+          alert("Error al aprobar");
+      }
+  };
+
+  const handleReject = async (expense) => {
+      if (!confirm("¿Rechazar este gasto? El monto será devuelto al saldo del usuario.")) return;
+
+      try {
+          const batch = writeBatch(db);
+          
+          // 1. Mark as rejected
+          const expenseRef = doc(db, "expenses", expense.id);
+          batch.update(expenseRef, { status: "rejected" });
+
+          // 2. Refund User
+          if (expense.userId) {
+              const userRef = doc(db, "users", expense.userId);
+              batch.update(userRef, { balance: increment(expense.amount) });
+          }
+
+          await batch.commit();
+          fetchPending();
+      } catch (e) {
+          console.error("Error rejecting:", e);
+          alert("Error al rechazar");
+      }
+  };
   
   if (loading) return <Layout title="Aprobaciones"><p>Cargando...</p></Layout>;
 
