@@ -1,5 +1,7 @@
 import { auth } from '../lib/firebase';
 import { signOut } from 'firebase/auth';
+import { Navigate } from 'react-router-dom';
+import { useAuth } from '../context/useAuth';
 
 export default function ProtectedRoute({ children, requiredRole }) {
   const { currentUser, userRole } = useAuth();
