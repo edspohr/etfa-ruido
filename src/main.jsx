@@ -7,10 +7,10 @@ import ErrorBoundary from './components/ErrorBoundary.jsx'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <AuthProvider>
-      <ErrorBoundary>
+    <ErrorBoundary>
+      <AuthProvider>
         <App />
-      </ErrorBoundary>
-    </AuthProvider>
+      </AuthProvider>
+    </ErrorBoundary>
   </React.StrictMode>,
 )

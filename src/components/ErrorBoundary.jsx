@@ -27,11 +27,12 @@ class ErrorBoundary extends React.Component {
             >
               Recargar Página
             </button>
-            {import.meta.env.DEV && (
-                <pre className="mt-4 p-2 bg-gray-100 text-xs text-left overflow-auto max-h-40">
-                    {this.state.error?.toString()}
-                </pre>
-            )}
+            <div className="mt-4 p-2 bg-gray-100 text-xs text-left overflow-auto max-h-40 border border-gray-300 rounded text-red-500 font-mono">
+                <p>Error Debug Info:</p>
+                {this.state.error?.toString()}
+                {this.state.error?.componentStack}
+            </div>
+          </div>
           </div>
         </div>
       );
