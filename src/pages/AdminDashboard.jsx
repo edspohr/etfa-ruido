@@ -19,31 +19,39 @@ export default function AdminDashboard() {
             const projectsSnap = await getDocs(collection(db, "projects"));
             const projectsData = projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-            // 2. Fetch All Expenses (to aggregate)
+            // 2. Fetch All Allocations (to sum up Assigned Budget)
+            const allocationsSnap = await getDocs(collection(db, "allocations"));
+            const allocationsDocs = allocationsSnap.docs.map(doc => doc.data());
+
+            // 3. Fetch All Expenses (to sum up Rendered)
             const expensesSnap = await getDocs(collection(db, "expenses"));
             const expensesDocs = expensesSnap.docs.map(doc => doc.data());
 
-            // 3. Aggregate Expenses per Project
+            // 4. Aggregate Data per Project
             const expensesByProject = {};
+            const budgetByProject = {};
             let pending = 0;
 
+            // Sum Expenses
             expensesDocs.forEach(exp => {
                 if (exp.status === 'pending') pending++;
-                
-                // Only count approved/pending (or just approved? user said 'assigned vs rendered', usually implies spent)
-                // Let's count all 'active' spending (approved + pending)
                 if (exp.status === 'approved' || exp.status === 'pending') {
-                    if (!expensesByProject[exp.projectId]) {
-                        expensesByProject[exp.projectId] = 0;
-                    }
-                    expensesByProject[exp.projectId] += Number(exp.amount) || 0;
+                    expensesByProject[exp.projectId] = (expensesByProject[exp.projectId] || 0) + (Number(exp.amount) || 0);
                 }
             });
 
-            // 4. Merge into Projects
+            // Sum Allocations (Assigned Budget)
+            allocationsDocs.forEach(alloc => {
+                if (alloc.projectId) {
+                    budgetByProject[alloc.projectId] = (budgetByProject[alloc.projectId] || 0) + (Number(alloc.amount) || 0);
+                }
+            });
+
+            // 5. Merge into Projects
             const finalProjects = projectsData.map(p => ({
                 ...p,
-                expenses: expensesByProject[p.id] || 0
+                expenses: expensesByProject[p.id] || 0,
+                budget: budgetByProject[p.id] || 0 // Overwrite static budget with calculated sum
             }));
 
             setProjects(finalProjects);
