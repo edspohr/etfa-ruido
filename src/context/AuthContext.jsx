@@ -84,7 +84,7 @@ export function AuthProvider({ children }) {
                   <p className="text-gray-600 mb-4">La aplicación no pudo conectar con Firebase.</p>
                   <p className="text-sm text-red-500 mb-4">Posible causa: Variables de entorno faltantes o inválidas.</p>
                   <div className="bg-gray-50 p-4 rounded text-left text-sm font-mono text-gray-700 overflow-x-auto mb-6">
-                      <p>Verifica en Vercel (Settings -> Environment Variables) que existan:</p>
+                      <p>Verifica en Vercel (Settings &rarr; Environment Variables) que existan:</p>
                       <ul className="list-disc ml-5 mt-2">
                           <li>VITE_FIREBASE_API_KEY</li>
                           <li>...y las demás variables de .env</li>
