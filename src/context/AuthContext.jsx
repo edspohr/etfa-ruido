@@ -9,17 +9,30 @@ export function AuthProvider({ children }) {
   const [userRole, setUserRole] = useState(null);
   const [loading, setLoading] = useState(isConfigured);
 
+  async function ensureUserExists(user) {
+      const userRef = doc(db, "users", user.uid);
+      const userSnap = await getDoc(userRef);
+      if (!userSnap.exists()) {
+          await setDoc(userRef, {
+              uid: user.uid,
+              email: user.email,
+              displayName: user.displayName || user.email.split('@')[0],
+              role: 'professional',
+              balance: 0
+          });
+      }
+  }
+
   useEffect(() => {
     if (!isConfigured) {
         return;
     }
 
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setCurrentUser(user);
       if (user) {
          try {
-             // Safe check if db is initialized (it should be if isConfigured is true)
              if (db) {
+                 await ensureUserExists(user);
                  const userRef = doc(db, "users", user.uid);
                  const userSnap = await getDoc(userRef);
                  if (userSnap.exists()) {
@@ -27,9 +40,11 @@ export function AuthProvider({ children }) {
                  }
              }
          } catch (e) {
-             console.error("Error fetching user role:", e);
+             console.error("Error ensuring user exists:", e);
          }
+         setCurrentUser(user);
       } else {
+        setCurrentUser(null);
         setUserRole(null);
       }
       setLoading(false);
@@ -38,26 +53,23 @@ export function AuthProvider({ children }) {
     return unsubscribe;
   }, []);
 
+  async function ensureUserExists(user) {
+      const userRef = doc(db, "users", user.uid);
+      const userSnap = await getDoc(userRef);
+      if (!userSnap.exists()) {
+          await setDoc(userRef, {
+              uid: user.uid,
+              email: user.email,
+              displayName: user.displayName || user.email.split('@')[0],
+              role: 'professional',
+              balance: 0
+          });
+      }
+  }
+
   async function loginWithGoogle() {
     if (!auth) return; 
-    const result = await signInWithPopup(auth, googleProvider);
-    // Check if user exists in Firestore, if not create as 'professional' default
-    const userRef = doc(db, "users", result.user.uid);
-    const userSnap = await getDoc(userRef);
-    
-    if (!userSnap.exists()) {
-       await setDoc(userRef, {
-         uid: result.user.uid,
-         email: result.user.email,
-         displayName: result.user.displayName,
-         role: 'professional', // Default role
-         balance: 0
-       });
-       setUserRole('professional');
-    } else {
-       setUserRole(userSnap.data().role);
-    }
-    return result;
+    return signInWithPopup(auth, googleProvider);
   }
 
   function login(email, password) {

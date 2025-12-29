@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { LogIn } from 'lucide-react';
 
 export default function Login() {
-  const { loginWithGoogle, login } = useAuth();
+  const { loginWithGoogle, login, resetPassword } = useAuth();
   const navigate = useNavigate();
   const [error, setError] = useState('');
   const [email, setEmail] = useState('');
@@ -29,6 +29,20 @@ export default function Login() {
     } catch (err) {
       setError('Error al iniciar sesión: ' + err.message);
     }
+  };
+
+  const handleResetPassword = async () => {
+      if (!email) {
+          setError("Por favor ingresa tu correo electrónico para recuperar la contraseña.");
+          return;
+      }
+      try {
+          setError('');
+          await resetPassword(email);
+          alert(`Se ha enviado un correo de recuperación a ${email}`);
+      } catch (err) {
+          setError("Error al enviar correo: " + err.message);
+      }
   };
 
   return (
@@ -64,6 +78,12 @@ export default function Login() {
                     placeholder="••••••"
                 />
             </div>
+            <div className="text-right">
+                <button type="button" onClick={handleResetPassword} className="text-sm text-blue-600 hover:underline">
+                    ¿Olvidaste tu contraseña?
+                </button>
+            </div>
+            
             <button
                 type="submit"
                 className="w-full bg-blue-600 text-white font-bold py-2 px-4 rounded hover:bg-blue-700 transition duration-200"
