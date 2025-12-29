@@ -4,7 +4,7 @@ import { useAuth } from '../context/useAuth';
 import { db } from '../lib/firebase';
 import { doc, getDoc, collection, getDocs, query, where } from 'firebase/firestore';
 import { formatCurrency } from '../lib/mockData';
-import { PlusCircle } from 'lucide-react';
+import { PlusCircle, Wallet } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 export default function UserDashboard() {
@@ -44,16 +44,21 @@ export default function UserDashboard() {
   return (
     <Layout title={`Hola, ${currentUser?.displayName?.split(' ')[0] || 'Usuario'}`}>
          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
-                <h3 className="text-gray-500 text-sm font-medium">Mi Cuenta Corriente (Viáticos)</h3>
-                <p className={`text-4xl font-bold ${balance < 0 ? 'text-red-500' : 'text-blue-600'}`}>
-                    {formatCurrency(balance)}
-                </p>
-                <p className="text-gray-400 text-sm mt-2">Saldo disponible para gastos.</p>
+            <div className="bg-gradient-to-br from-blue-600 to-blue-800 p-6 rounded-2xl shadow-lg border border-blue-500 text-white relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-4 opacity-10">
+                    <Wallet className="w-24 h-24" />
+                </div>
+                <div className="relative z-10">
+                    <h3 className="text-blue-100 text-sm font-medium mb-1">Mi Cuenta Corriente(Viáticos)</h3>
+                    <p className="text-4xl font-bold mb-2">
+                        {formatCurrency(balance)}
+                    </p>
+                    <p className="text-blue-200 text-sm">Saldo disponible para gastos.</p>
+                </div>
             </div>
             
-            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100 flex flex-col justify-center">
-                 <Link to="/dashboard/new-expense" className="w-full bg-green-600 text-white px-4 py-4 rounded-lg hover:bg-green-700 text-lg flex items-center justify-center font-semibold transition shadow-lg hover:shadow-xl transform hover:-translate-y-0.5">
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-center">
+                 <Link to="/dashboard/new-expense" className="w-full bg-green-600 text-white px-4 py-4 rounded-xl hover:bg-green-700 text-lg flex items-center justify-center font-bold transition shadow-md hover:shadow-lg transform active:scale-95">
                     <PlusCircle className="mr-2 w-6 h-6" />
                     Rendir un Gasto
                 </Link>

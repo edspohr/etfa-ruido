@@ -144,12 +144,12 @@ export default function ExpenseForm() {
             </div>
 
             {/* Form Fields */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Proyecto *</label>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Proyecto *</label>
                     <select 
                         required
-                        className="w-full border border-gray-300 rounded-md p-2 focus:ring-blue-500 focus:border-blue-500"
+                        className="w-full border border-gray-300 rounded-lg p-3 text-base focus:ring-blue-500 focus:border-blue-500 bg-white"
                         value={formData.projectId}
                         onChange={e => setFormData({...formData, projectId: e.target.value})}
                     >
@@ -161,33 +161,33 @@ export default function ExpenseForm() {
                 </div>
 
                 <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Fecha</label>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Fecha</label>
                     <input 
                         type="date" 
                         required
-                        className="w-full border border-gray-300 rounded-md p-2"
+                        className="w-full border border-gray-300 rounded-lg p-3 text-base"
                         value={formData.date}
                         onChange={e => setFormData({...formData, date: e.target.value})}
                     />
                 </div>
 
                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Monto (CLP)</label>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Monto (CLP)</label>
                     <input 
                         type="number" 
                         required
                         placeholder="0"
-                        className="w-full border border-gray-300 rounded-md p-2"
+                        className="w-full border border-gray-300 rounded-lg p-3 text-base"
                         value={formData.amount}
                         onChange={e => setFormData({...formData, amount: e.target.value})}
                     />
                 </div>
 
                 <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Comercio / Lugar</label>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Comercio / Lugar</label>
                     <input 
                         type="text" 
-                        className="w-full border border-gray-300 rounded-md p-2"
+                        className="w-full border border-gray-300 rounded-lg p-3 text-base"
                         value={formData.merchant}
                         onChange={e => setFormData({...formData, merchant: e.target.value})}
                         placeholder="Ej: Restaurant El Paso"
@@ -195,9 +195,9 @@ export default function ExpenseForm() {
                 </div>
 
                 <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Descripción</label>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Descripción</label>
                     <textarea 
-                        className="w-full border border-gray-300 rounded-md p-2"
+                        className="w-full border border-gray-300 rounded-lg p-3 text-base"
                         rows="3"
                         value={formData.description}
                         onChange={e => setFormData({...formData, description: e.target.value})}
@@ -209,7 +209,7 @@ export default function ExpenseForm() {
             <button 
                 type="submit"
                 disabled={loading}
-                className="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 transition disabled:opacity-50"
+                className="w-full bg-blue-600 text-white font-bold py-4 px-6 rounded-xl hover:bg-blue-700 transition disabled:opacity-50 shadow-lg text-lg"
             >
                 {loading ? 'Enviando...' : 'Enviar Rendición'}
             </button>
