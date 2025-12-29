@@ -1,5 +1,6 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/useAuth';
+import { 
   PieChart, LayoutDashboard, FolderOpen, CheckCircle, 
   FileText, UserCircle, Receipt, LogOut, Wallet 
 } from 'lucide-react';
