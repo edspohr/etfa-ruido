@@ -18,9 +18,51 @@ export default function AdminProjects() {
   const [viaticoProject, setViaticoProject] = useState('');
   const [viaticoAmount, setViaticoAmount] = useState('');
 
-  // ... (fetchData stays same)
+  const fetchData = async () => {
+    try {
+        setLoading(true);
+        // data fetching logic
+        const pSnap = await getDocs(collection(db, "projects"));
+        const pData = pSnap.docs.map(d => ({id: d.id, ...d.data()}));
+        setProjects(pData);
 
-  // ... (handleCreateProject stays same)
+        const uQuery = query(collection(db, "users"), where("role", "==", "professional"));
+        const uSnap = await getDocs(uQuery);
+        const uData = uSnap.docs.map(d => ({id: d.id, ...d.data()}));
+        setUsers(uData);
+    } catch (e) {
+        console.error("Error fetching admin data:", e);
+    } finally {
+        setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const handleCreateProject = async (e) => {
+    e.preventDefault();
+    if (!newProject.name || !newProject.budget) return;
+
+    try {
+        await addDoc(collection(db, "projects"), {
+            name: newProject.name,
+            client: newProject.client,
+            budget: Number(newProject.budget),
+            expenses: 0,
+            status: 'active',
+            createdAt: new Date().toISOString()
+        });
+        alert("Proyecto creado exitosamente");
+        setNewProject({ name: '', client: '', budget: '' });
+        setShowProjectForm(false);
+        fetchData();
+    } catch (err) {
+        console.error(err);
+        alert("Error al crear proyecto");
+    }
+  };
 
   const handleAssignViatico = async (e) => {
       e.preventDefault();
