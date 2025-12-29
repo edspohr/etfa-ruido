@@ -3,7 +3,7 @@ import Login from './pages/Login';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminProjects from './pages/AdminProjects';
 import AdminApprovals from './pages/AdminApprovals';
-import AdminInvoicing from './pages/AdminInvoicing';
+import AdminBalances from './pages/AdminBalances';
 import UserDashboard from './pages/UserDashboard';
 import UserExpenses from './pages/UserExpenses';
 import ExpenseForm from './pages/ExpenseForm';
