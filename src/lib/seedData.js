@@ -1,144 +1,130 @@
 import { db } from "./firebase";
-import { collection, doc, setDoc, writeBatch } from "firebase/firestore";
+import { collection, doc, writeBatch, getDocs } from "firebase/firestore";
 
 export async function seedDatabase() {
   const batch = writeBatch(db);
 
+  console.log("Starting data cleanup...");
+
+  // 0. Clean existing data
+  const collections = ["users", "projects", "expenses"];
+  for (const colName of collections) {
+    const snap = await getDocs(collection(db, colName));
+    snap.docs.forEach((d) => {
+      batch.delete(doc(db, colName, d.id));
+    });
+  }
+
+  // Commit deletion first to avoid batch limit issues if many docs
+  // But for now, we'll try to do it all in one go or separate batches if needed.
+  // Given "clean" might be large, let's commit clean up first.
+  await batch.commit();
+  console.log("Cleanup complete. Starting seeding...");
+
+  const seedBatch = writeBatch(db);
+
   // 1. Create Mock Professionals
   const users = [
     {
-      uid: "mock_user_1",
+      uid: "user_ana",
       email: "ana@etfa.cl",
       displayName: "Ana Contreras",
       role: "professional",
-      balance: 350000,
+      balance: 150000,
     },
     {
-      uid: "mock_user_2",
+      uid: "user_carlos",
       email: "carlos@etfa.cl",
       displayName: "Carlos Rojas",
       role: "professional",
-      balance: 200000,
+      balance: 80000,
     },
     {
-      uid: "mock_user_3",
+      uid: "user_sofia",
       email: "sofia@etfa.cl",
-      displayName: "Sofia Mendoza",
+      displayName: "Sofía Mendoza",
+      role: "professional",
+      balance: 320000,
+    },
+    {
+      uid: "user_miguel",
+      email: "miguel@etfa.cl",
+      displayName: "Miguel Ángel",
       role: "professional",
       balance: 0,
+    },
+    {
+      uid: "user_laura",
+      email: "laura@etfa.cl",
+      displayName: "Laura Vicuña",
+      role: "professional",
+      balance: 500000,
     },
   ];
 
   users.forEach((user) => {
-    const userRef = doc(db, "users", user.uid);
-    batch.set(userRef, user);
+    seedBatch.set(doc(db, "users", user.uid), user);
   });
 
-  // 2. Create Projects
-  const projects = [
-    {
-      name: "Monitoreo Mina El Abra",
-      client: "Freeport-McMoRan",
-      budget: 45000000,
-      expenses: 31000000,
-      status: "active",
-      createdAt: new Date().toISOString(),
-    },
-    {
-      name: "Estudio de Impacto Acústico",
-      client: "Constructora XYZ",
-      budget: 18000000,
-      expenses: 2500000,
-      status: "active",
-      createdAt: new Date().toISOString(),
-    },
-    {
-      name: "Mediciones Central Nehuenco",
-      client: "Colbún S.A.",
-      budget: 32000000,
-      expenses: 19000000,
-      status: "active",
-      createdAt: new Date().toISOString(),
-    },
-    {
-      name: "Mapa de Ruido Santiago",
-      client: "Gobierno Regional",
-      budget: 25000000,
-      expenses: 0,
-      status: "active",
-      createdAt: new Date().toISOString(),
-    },
+  // 2. Create 15 Projects
+  const clients = [
+    "Minera Escondida",
+    "Codelco",
+    "Constructora SALFA",
+    "Gobierno Regional",
+    "Aguas Andinas",
   ];
-
-  // We need IDs for projects to link expenses
-  const projectRefs = projects.map(() => doc(collection(db, "projects")));
-  projectRefs.forEach((ref, index) => {
-    batch.set(ref, { ...projects[index], id: ref.id });
-  });
-
-  // 3. Create Expenses (Approved and Pending)
-  const expenses = [
-    {
-      userId: "mock_user_1",
-      userName: "Ana Contreras",
-      projectId: projectRefs[0].id,
-      projectName: "Monitoreo Mina El Abra",
-      description: "Arriendo de sonómetro",
-      amount: 120000,
-      date: "2024-08-10",
-      status: "approved",
-    },
-    {
-      userId: "mock_user_1",
-      userName: "Ana Contreras",
-      projectId: projectRefs[0].id,
-      projectName: "Monitoreo Mina El Abra",
-      description: "Cena equipo en Calama",
-      amount: 45000,
-      date: "2024-08-11",
-      status: "approved",
-    },
-    {
-      userId: "mock_user_1",
-      userName: "Ana Contreras",
-      projectId: projectRefs[1].id,
-      projectName: "Estudio de Impacto Acústico",
-      description: "Transporte a terreno",
-      amount: 25000,
-      date: "2024-08-12",
-      status: "pending",
-    },
-    {
-      userId: "mock_user_2",
-      userName: "Carlos Rojas",
-      projectId: projectRefs[3].id,
-      projectName: "Mapa de Ruido Santiago",
-      description: "Alojamiento",
-      amount: 80000,
-      date: "2024-08-13",
-      status: "pending",
-    },
-    {
-      userId: "mock_user_2",
-      userName: "Carlos Rojas",
-      projectId: projectRefs[3].id,
-      projectName: "Mapa de Ruido Santiago",
-      description: "Materiales de Oficina",
-      amount: 15600,
-      date: "2024-08-14",
-      status: "pending",
-    },
+  const projectNames = [
+    "Monitoreo Ruido",
+    "Estudio Impacto",
+    "Línea Base",
+    "Vigilancia Ocupacional",
+    "Modelación Acústica",
   ];
+  const projects = [];
 
-  expenses.forEach((expense) => {
-    const expenseRef = doc(collection(db, "expenses"));
-    batch.set(expenseRef, {
-      ...expense,
-      id: expenseRef.id,
+  for (let i = 0; i < 15; i++) {
+    const client = clients[i % clients.length];
+    const type = projectNames[i % projectNames.length];
+    projects.push({
+      name: `${type} - ${client} ${i + 1}`,
+      client: client,
+      budget: 10000000 + Math.floor(Math.random() * 50) * 1000000, // 10M - 60M
+      expenses: 0, // Will update based on expenses for realism? Or just mock basic stats
+      status: "active",
       createdAt: new Date().toISOString(),
     });
+  }
+
+  const projectRefs = projects.map(() => doc(collection(db, "projects")));
+  projectRefs.forEach((ref, index) => {
+    seedBatch.set(ref, { ...projects[index], id: ref.id });
   });
 
-  await batch.commit();
-  console.log("Database Seeded Successfully");
+  // 3. Create 40 Expenses
+  const statuses = ["approved", "approved", "pending", "pending", "rejected"]; // Weighted
+  for (let i = 0; i < 50; i++) {
+    const user = users[i % users.length];
+    const projectRef = projectRefs[i % projectRefs.length];
+    const project = projects[i % projects.length];
+    const status = statuses[i % statuses.length];
+    const amount = (Math.floor(Math.random() * 20) + 1) * 5000; // 5000 - 100000
+
+    const expenseRef = doc(collection(db, "expenses"));
+    seedBatch.set(expenseRef, {
+      id: expenseRef.id,
+      userId: user.uid,
+      userName: user.displayName,
+      projectId: projectRef.id,
+      projectName: project.name,
+      description: `Gasto simulado #${i + 1} - ${status}`,
+      amount: amount,
+      date: new Date(2024, 0, i + 1).toISOString().split("T")[0], // Spread dates
+      status: status,
+      createdAt: new Date().toISOString(),
+    });
+  }
+
+  await seedBatch.commit();
+  console.log("Database Seeded Successfully with 50+ records");
 }
