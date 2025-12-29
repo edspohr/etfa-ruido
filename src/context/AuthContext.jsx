@@ -24,7 +24,7 @@ export function AuthProvider({ children }) {
   }
 
   useEffect(() => {
-    if (!isConfigured) {
+    if (!isConfigured || !auth) {
         return;
     }
 
@@ -76,20 +76,20 @@ export function AuthProvider({ children }) {
     logout
   };
 
-  if (!isConfigured) {
+  if (!isConfigured || !auth) {
       return (
           <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4">
               <div className="bg-white p-8 rounded-lg shadow-md max-w-lg w-full text-center border-l-4 border-yellow-500">
-                  <h2 className="text-2xl font-bold text-gray-800 mb-4">Configuración Pendiente</h2>
-                  <p className="text-gray-600 mb-4">La aplicación no está conectada a Firebase.</p>
+                  <h2 className="text-2xl font-bold text-gray-800 mb-4">Configuración Pendiente o Errónea</h2>
+                  <p className="text-gray-600 mb-4">La aplicación no pudo conectar con Firebase.</p>
+                  <p className="text-sm text-red-500 mb-4">Posible causa: Variables de entorno faltantes o inválidas.</p>
                   <div className="bg-gray-50 p-4 rounded text-left text-sm font-mono text-gray-700 overflow-x-auto mb-6">
-                      <p>Edita el archivo <span className="font-bold">.env</span> y agrega tus credenciales:</p>
+                      <p>Verifica en Vercel (Settings -> Environment Variables) que existan:</p>
                       <ul className="list-disc ml-5 mt-2">
                           <li>VITE_FIREBASE_API_KEY</li>
-                          <li>...y las demás variables requeridas.</li>
+                          <li>...y las demás variables de .env</li>
                       </ul>
                   </div>
-                  <p className="text-xs text-gray-400">Consulta el archivo .env.example para ver el formato.</p>
               </div>
           </div>
       );
