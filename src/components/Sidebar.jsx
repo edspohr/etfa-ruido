@@ -47,9 +47,9 @@ export default function Sidebar({ isOpen, setIsOpen }) {
               <CheckCircle className="w-5 h-5 mr-3" />
               Aprobaciones
             </Link>
-            <Link to="/admin/invoicing" className={linkClass('/admin/invoicing')} onClick={() => setIsOpen(false)}>
-              <FileText className="w-5 h-5 mr-3" />
-              Pre-Facturas
+            <Link to="/admin/balances" className={linkClass('/admin/balances')} onClick={() => setIsOpen(false)}>
+              <Wallet className="w-5 h-5 mr-3" />
+              Balances de Profesionales
             </Link>
           </>
         ) : (

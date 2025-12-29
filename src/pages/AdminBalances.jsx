@@ -12,27 +12,35 @@ export default function AdminInvoicing() {
     if (!acc[key]) acc[key] = [];
     acc[key].push(expense);
     return acc;
-  }, {});
+import { db } from '../lib/firebase';
+import { collection, query, where, getDocs } from 'firebase/firestore';
+import { formatCurrency } from '../lib/mockData';
+import { Wallet, ArrowRight } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
-  const getGroupTitle = (key) => {
-    if (groupBy === 'project') {
-      return mockProjects.find(p => p.id === key)?.name || 'Proyecto Desconocido';
-    } else {
-      return Object.values(mockUsers).find(u => u.uid === key)?.displayName || 'Usuario Desconocido';
+export default function AdminBalances() {
+  const [professionals, setProfessionals] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchPros() {
+        try {
+            const q = query(collection(db, "users"), where("role", "==", "professional"));
+            const snapshot = await getDocs(q);
+            const data = snapshot.docs.map(d => ({id: d.id, ...d.data()}));
+            setProfessionals(data);
+        } catch (e) {
+            console.error("Error fetching professionals:", e);
+        } finally {
+            setLoading(false);
+        }
     }
-  };
+    fetchPros();
+  }, []);
+
+  if (loading) return <Layout title="Balances de Profesionales"><p>Cargando...</p></Layout>;
 
   return (
-    <Layout title="Gestión de Pre-Facturación">
-      <div className="flex justify-between items-center mb-6">
-        <p className="text-gray-600">Visualiza gastos aprobados listos para facturar.</p>
-        <div className="bg-white rounded-lg shadow-sm p-1 border border-gray-200">
-            <button 
-                onClick={() => setGroupBy('project')}
-                className={`px-4 py-1.5 rounded-md text-sm font-medium transition ${groupBy === 'project' ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}`}
-            >
-                Por Proyecto
-            </button>
             <button 
                 onClick={() => setGroupBy('professional')}
                 className={`px-4 py-1.5 rounded-md text-sm font-medium transition ${groupBy === 'professional' ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}`}
