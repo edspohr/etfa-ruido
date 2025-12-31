@@ -1,14 +1,21 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../context/useAuth';
 import { useNavigate } from 'react-router-dom';
 import { LogIn } from 'lucide-react';
 
 export default function Login() {
-  const { login, resetPassword } = useAuth();
+  const { login, resetPassword, currentUser } = useAuth();
   const navigate = useNavigate();
   const [error, setError] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+
+  // Fix: Navigate only when currentUser is set to avoid race conditions
+  useEffect(() => {
+    if (currentUser) {
+       navigate('/dashboard');
+    }
+  }, [currentUser, navigate]);
 
   /* 
    * Google Login removed by request. 
@@ -21,7 +28,7 @@ export default function Login() {
     try {
       setError('');
       await login(email, password);
-      navigate('/dashboard');
+      // Navigation is handled by useEffect
     } catch (err) {
       setError('Error al iniciar sesión: ' + err.message);
     }
