@@ -1,12 +1,36 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Sidebar from './Sidebar';
 import { Menu } from 'lucide-react';
+import { useAuth } from '../context/useAuth';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../lib/firebase';
+import ForcePasswordChange from './ForcePasswordChange';
 
 export default function Layout({ children, title }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { currentUser } = useAuth();
+  const [mustChangePass, setMustChangePass] = useState(false);
+
+  useEffect(() => {
+    async function checkUserStatus() {
+        if (!currentUser) return;
+        try {
+            const userRef = doc(db, "users", currentUser.uid);
+            const snap = await getDoc(userRef);
+            if (snap.exists() && snap.data().forcePasswordChange) {
+                setMustChangePass(true);
+            }
+        } catch (e) {
+            console.error(e);
+        }
+    }
+    checkUserStatus();
+  }, [currentUser]);
 
   return (
     <div className="flex h-screen bg-gray-100 overflow-hidden">
+      {mustChangePass && currentUser && <ForcePasswordChange user={currentUser} />}
+      
       <Sidebar isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
       
       <div className="flex-1 flex flex-col overflow-hidden relative">

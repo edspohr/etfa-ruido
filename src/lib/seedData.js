@@ -30,6 +30,7 @@ export async function seedDatabase() {
       role: "professional",
       code: "PMS",
       balance: 0,
+      forcePasswordChange: true,
     },
     {
       uid: "user_gonzalo",
@@ -38,6 +39,7 @@ export async function seedDatabase() {
       role: "professional",
       code: "GRM",
       balance: 0,
+      forcePasswordChange: true,
     },
     {
       uid: "user_francisco",
@@ -46,6 +48,7 @@ export async function seedDatabase() {
       role: "professional",
       code: "FGG",
       balance: 0,
+      forcePasswordChange: true,
     },
     {
       uid: "user_cristobal",
@@ -54,6 +57,7 @@ export async function seedDatabase() {
       role: "professional",
       code: "CRR",
       balance: 0,
+      forcePasswordChange: true,
     },
     {
       uid: "user_maria",
@@ -62,6 +66,7 @@ export async function seedDatabase() {
       role: "admin",
       code: "MAS",
       balance: 0,
+      forcePasswordChange: true,
     },
     {
       uid: "user_andres",
@@ -70,6 +75,7 @@ export async function seedDatabase() {
       role: "admin",
       code: "AGS",
       balance: 0,
+      forcePasswordChange: true,
     },
     {
       uid: "user_carlos",
@@ -78,6 +84,16 @@ export async function seedDatabase() {
       role: "admin",
       code: "CML",
       balance: 0,
+      forcePasswordChange: true,
+    },
+    {
+      uid: "user_edmundo",
+      email: "edmundo@spohr.cl",
+      displayName: "Edmundo Spohr",
+      role: "admin",
+      code: "ESA",
+      balance: 0,
+      forcePasswordChange: true,
     },
   ];
 

@@ -5,6 +5,7 @@ import AdminProjects from './pages/AdminProjects';
 import AdminApprovals from './pages/AdminApprovals';
 import AdminBalances from './pages/AdminBalances';
 import AdminProjectDetails from './pages/AdminProjectDetails';
+import AdminUserSeeder from './pages/AdminUserSeeder';
 import UserDashboard from './pages/UserDashboard';
 import UserExpenses from './pages/UserExpenses';
 import ExpenseForm from './pages/ExpenseForm';
@@ -30,6 +31,7 @@ function App() {
         <Route path="/admin/projects/:id" element={<ProtectedRoute requiredRole="admin"><AdminProjectDetails /></ProtectedRoute>} />
         <Route path="/admin/approvals" element={<ProtectedRoute requiredRole="admin"><AdminApprovals /></ProtectedRoute>} />
         <Route path="/admin/balances" element={<ProtectedRoute requiredRole="admin"><AdminBalances /></ProtectedRoute>} />
+        <Route path="/admin/users-seeder" element={<ProtectedRoute requiredRole="admin"><AdminUserSeeder /></ProtectedRoute>} />
         
         {/* User Routes */}
         <Route path="/dashboard" element={<ProtectedRoute requiredRole="professional"><UserDashboard /></ProtectedRoute>} />

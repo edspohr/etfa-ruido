@@ -100,8 +100,14 @@ export default function AdminDashboard() {
                 className="flex items-center text-sm bg-gray-800 text-white px-3 py-2 rounded hover:bg-gray-700 disabled:opacity-50"
             >
                 <Database className="w-4 h-4 mr-2" />
-                {seeding ? 'Generando...' : 'Generar Datos de Prueba'}
+                {seeding ? 'Generando...' : 'Generar Datos (Perfiles)'}
             </button>
+            <a 
+                href="/admin/users-seeder" 
+                className="ml-2 flex items-center text-sm bg-blue-600 text-white px-3 py-2 rounded hover:bg-blue-700"
+            >
+                Crear Cuentas (Auth)
+            </a>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
