@@ -71,12 +71,23 @@ export default function AdminApprovals() {
     fetchPending();
   }, []);
 
-  const handleApprove = async (expenseId) => {
+  const handleApprove = async (expense) => {
       try {
-          // Just update status
-          await updateDoc(doc(db, "expenses", expenseId), {
-              status: "approved"
-          });
+          const batch = writeBatch(db);
+          
+          // 1. Update Expense Status
+          const expenseRef = doc(db, "expenses", expense.id);
+          batch.update(expenseRef, { status: "approved" });
+
+          // 2. Update Project Total Expenses
+          if (expense.projectId) {
+              const projectRef = doc(db, "projects", expense.projectId);
+              batch.update(projectRef, {
+                  expenses: increment(expense.amount)
+              });
+          }
+
+          await batch.commit();
           fetchPending();
       } catch (e) {
           console.error("Error approving:", e);
@@ -166,7 +177,7 @@ export default function AdminApprovals() {
                                         <FileText className="w-6 h-6" />
                                     </button>
                                     <button 
-                                        onClick={() => handleApprove(e.id)}
+                                        onClick={() => handleApprove(e)}
                                         className="text-green-600 hover:text-green-800 p-1 hover:bg-green-50 rounded"
                                         title="Aprobar"
                                     >
