@@ -13,7 +13,7 @@ export default function AdminProjects() {
 
   // Form States
   const [showProjectForm, setShowProjectForm] = useState(false);
-  const [newProject, setNewProject] = useState({ name: '', client: '', budget: '', code: '', recurrence: '' });
+  const [newProject, setNewProject] = useState({ name: '', client: '', code: '', recurrence: '' });
   
   const [viaticoUser, setViaticoUser] = useState('');
   const [viaticoProject, setViaticoProject] = useState('');
@@ -49,7 +49,7 @@ export default function AdminProjects() {
 
   const handleCreateProject = async (e) => {
     e.preventDefault();
-    if (!newProject.name || !newProject.budget) return;
+    if (!newProject.name) return;
 
     try {
         await addDoc(collection(db, "projects"), {
@@ -57,13 +57,12 @@ export default function AdminProjects() {
             code: newProject.code || '',
             recurrence: newProject.recurrence || '',
             client: newProject.client,
-            budget: Number(newProject.budget),
             expenses: 0,
             status: 'active',
             createdAt: new Date().toISOString()
         });
         alert("Proyecto creado exitosamente");
-        setNewProject({ name: '', client: '', budget: '', code: '', recurrence: '' });
+        setNewProject({ name: '', client: '', code: '', recurrence: '' });
         setShowProjectForm(false);
         fetchData();
     } catch (err) {
@@ -145,6 +144,13 @@ export default function AdminProjects() {
           alert("Error asignando viático");
       }
   };
+  
+  const formatProjectName = (p) => {
+      let displayName = p.name;
+      if (p.code) displayName = `[${p.code}] ${displayName}`;
+      if (p.recurrence) displayName = `${displayName} (${p.recurrence})`;
+      return displayName;
+  };
 
   if (loading) return <Layout title="Gestión de Proyectos">Cargando...</Layout>;
 
@@ -206,16 +212,6 @@ export default function AdminProjects() {
                                 onChange={e => setNewProject({...newProject, client: e.target.value})}
                             />
                         </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700">Presupuesto ($)</label>
-                            <input 
-                                type="number" 
-                                className="mt-1 w-full p-2 border rounded"
-                                value={newProject.budget}
-                                onChange={e => setNewProject({...newProject, budget: e.target.value})}
-                                required 
-                            />
-                        </div>
                         <button type="submit" className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700">
                             Guardar Proyecto
                         </button>
@@ -242,7 +238,7 @@ export default function AdminProjects() {
                             <option value="">Seleccionar Proyecto...</option>
                             {projects.map(p => (
                                 <option key={p.id} value={p.id}>
-                                    {p.code ? `[${p.code}] ` : ''}{p.name} {p.recurrence ? `(${p.recurrence})` : ''}
+                                    {formatProjectName(p)}
                                 </option>
                             ))}
                         </select>
@@ -296,7 +292,6 @@ export default function AdminProjects() {
                         <tr className="bg-gray-50 border-b">
                             <th className="px-6 py-3 font-medium text-gray-500">Proyecto</th>
                             <th className="px-6 py-3 font-medium text-gray-500">Cliente</th>
-                            <th className="px-6 py-3 font-medium text-gray-500">Presupuesto</th>
                             <th className="px-6 py-3 font-medium text-gray-500">Gastado</th>
                             <th className="px-6 py-3 font-medium text-gray-500">Estado</th>
                             <th className="px-6 py-3 font-medium text-gray-500">Acciones</th>
@@ -307,13 +302,10 @@ export default function AdminProjects() {
                             <tr key={p.id} className="border-b last:border-0 hover:bg-gray-50">
                                 <td className="px-6 py-4 font-medium">
                                     <Link to={`/admin/projects/${p.id}`} className="text-blue-600 hover:text-blue-800 hover:underline">
-                                        {p.code && <span className="text-xs font-mono bg-gray-100 text-gray-600 px-1 py-0.5 rounded mr-2">{p.code}</span>}
-                                        {p.name}
-                                        {p.recurrence && <span className="ml-2 text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">({p.recurrence})</span>}
+                                        {formatProjectName(p)}
                                     </Link>
                                 </td>
                                 <td className="px-6 py-4 text-gray-600">{p.client}</td>
-                                <td className="px-6 py-4">{formatCurrency(p.budget)}</td>
                                 <td className="px-6 py-4">{formatCurrency(p.expenses || 0)}</td>
                                 <td className="px-6 py-4"><span className="bg-green-100 text-green-800 px-2 py-1 rounded-full text-xs font-semibold">Activo</span></td>
                                 <td className="px-6 py-4">

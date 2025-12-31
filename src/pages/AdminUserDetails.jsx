@@ -20,7 +20,14 @@ export default function AdminUserDetails() {
         const uRef = doc(db, "users", id);
         const uSnap = await getDoc(uRef);
         if (uSnap.exists()) {
-            setUser({ id: uSnap.id, ...uSnap.data() });
+            let userData = { id: uSnap.id, ...uSnap.data() };
+            
+            // 2.2 Special Case: Terreno
+            if (userData.email === 'terreno@etfa-ruido.cl' && (!userData.code || userData.code !== 'TER')) {
+                // Auto-fix in memory (and ideally in DB, but let's stick to display for read-only view)
+                userData.code = 'TER';
+            }
+            setUser(userData);
         }
 
         // 2. Get Expenses
@@ -60,18 +67,15 @@ export default function AdminUserDetails() {
         const expenseRef = doc(db, "expenses", expenseId);
         
         // If Rejecting, we need to REVERSE the balance credit (subtract amount)
+        let balanceChange = 0;
         if (newStatus === 'rejected') {
-             // For User Details, we know the user is 'id' (the profile owner)
-             // Unless it's a company expense? User profile shouldn't show company expenses generally, 
-             // but if they did, we should check.
-             
-             // Check expense specific data just in case
              const exp = expenses.find(e => e.id === expenseId);
              if (exp && !exp.isCompanyExpense) {
                  const userRef = doc(db, "users", id);
                  await updateDoc(userRef, {
                      balance: increment(-amount) 
                  });
+                 balanceChange = -amount;
              }
         }
     
@@ -88,7 +92,17 @@ export default function AdminUserDetails() {
         }
 
         alert("Estado actualizado.");
-        fetchData();
+        
+        // Optimistic / Local Update (No Re-fetch)
+        setExpenses(prev => prev.map(e => {
+            if (e.id === expenseId) return { ...e, status: newStatus };
+            return e;
+        }));
+        
+        if (balanceChange !== 0) {
+            setUser(prev => ({ ...prev, balance: (prev.balance || 0) + balanceChange }));
+        }
+
     } catch (e) {
         console.error("Error updating status:", e);
         alert("Error al actualizar.");
@@ -115,7 +129,10 @@ export default function AdminUserDetails() {
                 </div>
                 <div>
                     <h3 className="text-sm font-medium text-gray-500 mb-1">Información</h3>
-                    <p className="text-lg font-bold text-gray-800">{user.email}</p>
+                    <p className="text-lg font-bold text-gray-800">
+                        {user.displayName} {user.code ? `[${user.code}]` : ''}
+                    </p>
+                    <p className="text-sm text-gray-500">{user.email}</p>
                     <p className="text-sm text-gray-500 capitalize">{user.role}</p>
                 </div>
             </div>

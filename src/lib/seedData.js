@@ -135,7 +135,6 @@ export async function seedDatabase(currentUserId) {
       id: "project_caja_chica",
       name: "Caja Chica",
       client: "Interno",
-      budget: 0,
       status: "active",
       type: "petty_cash", // Marker for logic
       createdAt: new Date().toISOString(),

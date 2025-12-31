@@ -68,7 +68,7 @@ export default function AdminDashboard() {
             const finalProjects = projectsData.map(p => ({
                 ...p,
                 expenses: expensesByProject[p.id] || 0,
-                budget: budgetByProject[p.id] || 0 // Overwrite static budget with calculated sum
+                assigned: budgetByProject[p.id] || 0 // New Logic: Budget is dynamic sum of allocations
             }));
 
             setProjects(finalProjects);
@@ -104,7 +104,7 @@ export default function AdminDashboard() {
       setSeeding(false);
   };
 
-  const totalBudget = projects.reduce((acc, p) => acc + (p.budget || 0), 0);
+  const totalAssigned = projects.reduce((acc, p) => acc + (p.assigned || 0), 0);
 
   if (loading) return <Layout title="Dashboard General"><p className="p-8">Cargando...</p></Layout>;
 
@@ -148,8 +148,8 @@ export default function AdminDashboard() {
                 <p className="text-3xl font-bold text-gray-800">{projects.length}</p>
             </div>
             <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
-                <h3 className="text-gray-500 text-sm font-medium">Presupuesto Total</h3>
-                <p className="text-3xl font-bold text-gray-800">{formatCurrency(totalBudget)}</p>
+                <h3 className="text-gray-500 text-sm font-medium">Total Asignado</h3>
+                <p className="text-3xl font-bold text-gray-800">{formatCurrency(totalAssigned)}</p>
             </div>
             <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
                 <h3 className="text-gray-500 text-sm font-medium">Rendiciones Pendientes</h3>
@@ -165,24 +165,26 @@ export default function AdminDashboard() {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {projects.map(p => {
                         const expenses = p.expenses || 0;
-                        const budget = p.budget || 0;
-                        const percentage = budget > 0 ? (expenses / budget) * 100 : 0;
+                        const assigned = p.assigned || 0;
+                        const percentage = assigned > 0 ? (expenses / assigned) * 100 : 0;
                         
                         return (
                             <Link to={`/admin/projects/${p.id}`} key={p.id} className="block transition hover:scale-105 duration-200">
                             <div className="bg-white p-5 rounded-lg shadow-sm border border-gray-100 flex flex-col justify-between h-full hover:shadow-md transition">
                                 <div>
-                                    <h3 className="font-bold text-lg text-gray-800 mb-1">{p.name}</h3>
+                                    <h3 className="font-bold text-lg text-gray-800 mb-1">
+                                        {p.code ? `[${p.code}] ` : ''}{p.name}{p.recurrence ? ` (${p.recurrence})` : ''}
+                                    </h3>
                                     <p className="text-sm text-gray-500 mb-4">{p.client}</p>
                                     
                                     <div className="flex justify-between items-end mb-2">
                                         <div>
-                                            <p className="text-xs text-gray-500 uppercase font-semibold">Asignado (Viático)</p>
-                                            <p className="text-xl font-bold text-gray-800">{formatCurrency(budget)}</p>
+                                            <p className="text-xs text-gray-500 uppercase font-semibold">Asignado</p>
+                                            <p className="text-xl font-bold text-gray-800">{formatCurrency(assigned)}</p>
                                         </div>
                                         <div className="text-right">
                                             <p className="text-xs text-gray-500 uppercase font-semibold">Rendido</p>
-                                            <p className={`text-xl font-bold ${expenses > budget ? 'text-red-600' : 'text-blue-600'}`}>
+                                            <p className={`text-xl font-bold ${expenses > assigned ? 'text-red-600' : 'text-blue-600'}`}>
                                                 {formatCurrency(expenses)}
                                             </p>
                                         </div>
@@ -192,7 +194,7 @@ export default function AdminDashboard() {
                                 <div className="mt-2">
                                     <div className="w-full bg-gray-100 rounded-full h-2 mb-1">
                                         <div 
-                                            className={`h-2 rounded-full ${expenses > budget ? 'bg-red-500' : 'bg-blue-500'}`} 
+                                            className={`h-2 rounded-full ${expenses > assigned ? 'bg-red-500' : 'bg-blue-500'}`} 
                                             style={{ width: `${Math.min(percentage, 100)}%` }}
                                         ></div>
                                     </div>

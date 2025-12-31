@@ -89,16 +89,28 @@ export default function AdminProjectDetails() {
         }
         
         // If Approving, Update Project Expenses Total
+        let projectExpenseChange = 0;
         if (newStatus === 'approved') {
              await updateDoc(doc(db, "projects", id), {
                  expenses: increment(amount)
              });
+             projectExpenseChange = amount;
         }
 
         await updateDoc(expenseRef, updateData);
 
         alert("Estado actualizado.");
-        fetchData();
+        
+        // Optimistic Update
+        setExpenses(prev => prev.map(e => {
+            if (e.id === expenseId) return { ...e, status: newStatus, rejectionReason: rejectionReason || null };
+            return e;
+        }));
+
+        if (projectExpenseChange !== 0) {
+            setProject(prev => ({ ...prev, expenses: (prev.expenses || 0) + projectExpenseChange }));
+        }
+
     } catch (e) {
         console.error("Error updating status:", e);
         alert("Error al actualizar.");
@@ -121,20 +133,29 @@ export default function AdminProjectDetails() {
         </div>
 
         {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
-                <h3 className="text-sm font-medium text-gray-500 mb-1">Presupuesto Total</h3>
-                <p className="text-2xl font-bold text-gray-800">{formatCurrency(project.budget)}</p>
-            </div>
-            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
-                <h3 className="text-sm font-medium text-gray-500 mb-1">Gastos Totales (Aprobados)</h3>
-                <p className="text-2xl font-bold text-blue-600">{formatCurrency(project.expenses || 0)}</p>
-            </div>
-            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
-                <h3 className="text-sm font-medium text-gray-500 mb-1">Disponible</h3>
-                <p className="text-2xl font-bold text-green-600">{formatCurrency(project.budget - (project.expenses || 0))}</p>
-            </div>
-        </div>
+        {(() => {
+             // Calculate Total Assigned dynamically from allocations
+             const totalAssigned = allocations.reduce((acc, a) => acc + (Number(a.amount) || 0), 0);
+             const totalExpenses = project.expenses || 0;
+             const available = totalAssigned - totalExpenses;
+
+             return (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                    <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
+                        <h3 className="text-sm font-medium text-gray-500 mb-1">Total Asignado</h3>
+                        <p className="text-2xl font-bold text-gray-800">{formatCurrency(totalAssigned)}</p>
+                    </div>
+                    <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
+                        <h3 className="text-sm font-medium text-gray-500 mb-1">Gastos Totales (Aprobados)</h3>
+                        <p className="text-2xl font-bold text-blue-600">{formatCurrency(totalExpenses)}</p>
+                    </div>
+                    <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
+                        <h3 className="text-sm font-medium text-gray-500 mb-1">Disponible</h3>
+                        <p className={`text-2xl font-bold ${available < 0 ? 'text-red-500' : 'text-green-600'}`}>{formatCurrency(available)}</p>
+                    </div>
+                </div>
+             );
+        })()}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             

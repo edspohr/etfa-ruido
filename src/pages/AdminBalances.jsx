@@ -56,10 +56,10 @@ export default function AdminBalances() {
                                     {u.displayName?.substring(0,2).toUpperCase()}
                                 </div>
                                 <Link to={`/admin/users/${u.id}`} className="hover:text-blue-600 hover:underline font-bold">
-                                    {u.displayName}
+                                    {u.displayName} {u.code ? `[${u.code}]` : ''} <span className="text-gray-400 font-normal text-xs ml-1">({u.email})</span>
                                 </Link>
                             </td>
-                            <td className="px-6 py-4 text-gray-600">{u.email}</td>
+                            <td className="px-6 py-4 text-gray-600 hidden">{u.email}</td> {/* Hidden email col as it affects layout if too long, integrated in name */}
                             <td className="px-6 py-4">
                                 <div className="flex items-center">
                                     <Wallet className="w-4 h-4 text-gray-400 mr-2" />
