@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { onAuthStateChanged, signInWithPopup, signInWithEmailAndPassword, signOut, setPersistence, browserLocalPersistence } from 'firebase/auth';
+import { onAuthStateChanged, signInWithPopup, signInWithEmailAndPassword, signOut, setPersistence, browserLocalPersistence, sendPasswordResetEmail } from 'firebase/auth';
 import { auth, googleProvider, db, isConfigured } from '../lib/firebase';
 import { doc, getDoc, setDoc, query, collection, where, getDocs, deleteDoc, writeBatch } from 'firebase/firestore';
 import { AuthContext } from './AuthContextDefinition';
@@ -162,6 +162,10 @@ export function AuthProvider({ children }) {
     return signInWithEmailAndPassword(auth, email, password);
   }
 
+  function resetPassword(email) {
+    return sendPasswordResetEmail(auth, email);
+  }
+
   function logout() {
     return signOut(auth);
   }
@@ -171,6 +175,7 @@ export function AuthProvider({ children }) {
     userRole,
     loginWithGoogle,
     login,
+    resetPassword,
     logout
   };
 

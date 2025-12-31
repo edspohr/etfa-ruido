@@ -4,21 +4,17 @@ import { useNavigate } from 'react-router-dom';
 import { LogIn } from 'lucide-react';
 
 export default function Login() {
-  const { loginWithGoogle, login, resetPassword } = useAuth();
+  const { login, resetPassword } = useAuth();
   const navigate = useNavigate();
   const [error, setError] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-  const handleGoogleLogin = async () => {
-    try {
-      setError('');
-      await loginWithGoogle();
-      navigate('/dashboard'); 
-    } catch (err) {
-      setError('Error initiating Google Login: ' + err.message);
-    }
-  };
+  /* 
+   * Google Login removed by request. 
+   * To restore, uncomment import and this function.
+   */
+  // const handleGoogleLogin = ...
 
   const handleEmailLogin = async (e) => {
     e.preventDefault();
@@ -92,22 +88,11 @@ export default function Login() {
             </button>
         </form>
 
-        <div className="relative my-6">
-            <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-300"></div>
-            </div>
-            <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-white text-gray-500">O continúa con</span>
-            </div>
+        <div className="mt-6 text-center">
+            <p className="text-sm text-gray-500">
+                Si no tienes cuenta, contacta a un administrador.
+            </p>
         </div>
-
-        <button
-          onClick={handleGoogleLogin}
-          className="w-full bg-white text-gray-700 border border-gray-300 py-3 px-4 rounded flex items-center justify-center hover:bg-gray-50 transition duration-200"
-        >
-          <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-6 h-6 mr-3" />
-          Google
-        </button>
         
         <p className="mt-6 text-sm text-gray-400">Acceso exclusivo para personal autorizado.</p>
       </div>
