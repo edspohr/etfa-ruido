@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { db } from '../lib/firebase';
 import { collection, getDocs, addDoc, query, where, doc, updateDoc, increment } from 'firebase/firestore';
-import { formatCurrency } from '../lib/mockData';
+import { formatCurrency } from '../utils/format';
 import { Plus, DollarSign } from 'lucide-react';
 
 export default function AdminProjects() {
@@ -76,7 +77,7 @@ export default function AdminProjects() {
           // 1. Update User Balance
           const userRef = doc(db, "users", viaticoUser);
           await updateDoc(userRef, {
-              balance: increment(amount)
+              balance: increment(-amount)
           });
 
           // 2. Create Allocation Record
@@ -232,7 +233,11 @@ export default function AdminProjects() {
                     <tbody>
                         {projects.map(p => (
                             <tr key={p.id} className="border-b last:border-0 hover:bg-gray-50">
-                                <td className="px-6 py-4 font-medium">{p.name}</td>
+                                <td className="px-6 py-4 font-medium">
+                                    <Link to={`/admin/projects/${p.id}`} className="text-blue-600 hover:text-blue-800 hover:underline">
+                                        {p.name}
+                                    </Link>
+                                </td>
                                 <td className="px-6 py-4 text-gray-600">{p.client}</td>
                                 <td className="px-6 py-4">{formatCurrency(p.budget)}</td>
                                 <td className="px-6 py-4">{formatCurrency(p.expenses || 0)}</td>

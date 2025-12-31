@@ -29,4 +29,22 @@ if (isConfigured) {
   }
 }
 
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+
+export async function uploadReceiptImage(file, userId) {
+  if (!storage) throw new Error("Firebase Storage not initialized");
+
+  // Create a unique filename
+  const timestamp = Date.now();
+  const extension = file.name.split(".").pop();
+  const filename = `${timestamp}.${extension}`;
+  const path = `receipts/${userId}/${filename}`;
+
+  const storageRef = ref(storage, path);
+  const snapshot = await uploadBytes(storageRef, file);
+  const downloadURL = await getDownloadURL(snapshot.ref);
+
+  return downloadURL;
+}
+
 export { auth, googleProvider, db, storage, isConfigured };

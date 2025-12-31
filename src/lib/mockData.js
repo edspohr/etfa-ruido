@@ -1,3 +1,5 @@
+import { formatCurrency } from "../utils/format";
+
 export const mockUsers = {
   admin: {
     uid: "admin1",
@@ -103,8 +105,3 @@ export const mockExpenses = [
     status: "pending",
   },
 ];
-
-export const formatCurrency = (amount) =>
-  new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP" }).format(
-    amount
-  );

@@ -119,16 +119,10 @@ export async function seedDatabase() {
         date: new Date().toISOString(),
       });
 
-      // Track balance
-      userBalances[user.uid] += amount;
+      // Track balance (Allocation = Debt, so it DECREASES balance)
+      userBalances[user.uid] -= amount;
     }
   }
-
-  // Update Users with calculated balances
-  users.forEach((user) => {
-    user.balance = userBalances[user.uid];
-    seedBatch.set(doc(db, "users", user.uid), user);
-  });
 
   // 4. Create 50 Expenses
   const statuses = ["approved", "approved", "pending", "pending", "rejected"];
@@ -139,18 +133,24 @@ export async function seedDatabase() {
     const status = statuses[i % statuses.length];
     const amount = (Math.floor(Math.random() * 20) + 1) * 5000; // 5000 - 100000
 
-    // Deduct from balance if approved/pending (simulation logic)
-    // users are already set, so we don't update them here again in this batch for simplicity,
-    // assuming 'balance' in users collection is 'current available balance'.
-    // ideally we would deduct, but for seeding let's just leave the initial allocation as the "loaded" amount.
+    // Update balance logic: Expense INCREASES balance (reduces debt)
+    // Only if it's not rejected (or depending on when you count it. Usually Pending counts as rendered for view, Approved confirms it).
+    // In our App logic:
+    // ExpenseForm: `increment(amount)` (Immediate increment on submit)
+    // AdminApprovals (Reject): `increment(-amount)` (Undo)
+    // So Expenses in DB should imply the balance was already incremented.
+
+    // So for every expense seeded, we should ADD to balance.
+    userBalances[user.uid] += amount;
 
     const expenseRef = doc(collection(db, "expenses"));
     seedBatch.set(expenseRef, {
       id: expenseRef.id,
       userId: user.uid,
-      userName: user.displayName,
+      userName: user.displayName || user.email,
       projectId: projectRef.id,
       projectName: project.name,
+      category: "Otros", // Default category for seed
       description: `Gasto simulado #${i + 1} - ${status}`,
       amount: amount,
       date: new Date(2024, 0, i + 1).toISOString().split("T")[0],
@@ -158,6 +158,12 @@ export async function seedDatabase() {
       createdAt: new Date().toISOString(),
     });
   }
+
+  // Update Users with calculated balances
+  users.forEach((user) => {
+    user.balance = userBalances[user.uid];
+    seedBatch.set(doc(db, "users", user.uid), user);
+  });
 
   await seedBatch.commit();
   console.log("Database Seeded Successfully with Allocations");

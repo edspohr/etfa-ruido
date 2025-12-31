@@ -2,12 +2,14 @@ import { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
 import { db } from '../lib/firebase';
 import { collection, query, where, getDocs, doc, updateDoc, increment, writeBatch, orderBy } from 'firebase/firestore';
-import { formatCurrency } from '../lib/mockData';
-import { CheckCircle, XCircle, Download } from 'lucide-react';
+import { formatCurrency } from '../utils/format';
+import { CheckCircle, XCircle, Download, FileText } from 'lucide-react';
 
 export default function AdminApprovals() {
   const [pendingExpenses, setPendingExpenses] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // ... (fetchPending remains same)
 
   const fetchPending = async () => {
       try {
@@ -83,7 +85,7 @@ export default function AdminApprovals() {
   };
 
   const handleReject = async (expense) => {
-      if (!confirm("¿Rechazar este gasto? El monto será devuelto al saldo del usuario.")) return;
+      if (!confirm("¿Rechazar este gasto? El monto será descontado del saldo del usuario.")) return;
 
       try {
           const batch = writeBatch(db);
@@ -92,10 +94,10 @@ export default function AdminApprovals() {
           const expenseRef = doc(db, "expenses", expense.id);
           batch.update(expenseRef, { status: "rejected" });
 
-          // 2. Refund User
+          // 2. Refund User (INVERTED LOGIC: Expense added funds, so Reject removes them)
           if (expense.userId) {
               const userRef = doc(db, "users", expense.userId);
-              batch.update(userRef, { balance: increment(expense.amount) });
+              batch.update(userRef, { balance: increment(-expense.amount) });
           }
 
           await batch.commit();
@@ -104,6 +106,14 @@ export default function AdminApprovals() {
           console.error("Error rejecting:", e);
           alert("Error al rechazar");
       }
+  };
+  
+  const handleViewReceipt = (url) => {
+      if (!url) {
+          alert("No hay comprobante adjunto.");
+          return;
+      }
+      window.open(url, '_blank');
   };
   
   if (loading) return <Layout title="Aprobaciones"><p>Cargando...</p></Layout>;
@@ -133,7 +143,6 @@ export default function AdminApprovals() {
                             <th className="px-6 py-3 font-medium text-gray-500">Fecha</th>
                             <th className="px-6 py-3 font-medium text-gray-500">Profesional</th>
                             <th className="px-6 py-3 font-medium text-gray-500">Proyecto</th>
-                            <th className="px-6 py-3 font-medium text-gray-500">Descripción</th>
                             <th className="px-6 py-3 font-medium text-gray-500">Monto</th>
                             <th className="px-6 py-3 font-medium text-gray-500">Acciones</th>
                         </tr>
@@ -143,10 +152,19 @@ export default function AdminApprovals() {
                             <tr key={e.id} className="border-b last:border-0 hover:bg-gray-50">
                                 <td className="px-6 py-4 text-sm text-gray-600">{e.date}</td>
                                 <td className="px-6 py-4 font-medium text-gray-800">{e.userName || 'N/A'}</td>
-                                <td className="px-6 py-4 text-gray-600 text-sm">{e.projectName || 'N/A'}</td>
-                                <td className="px-6 py-4 text-gray-600">{e.description}</td>
+                                <div className="flex flex-col">
+                                    <td className="px-6 py-4 text-gray-600 text-sm font-medium">{e.projectName || 'N/A'}</td>
+                                    <span className="px-6 text-xs text-gray-400">{e.description}</span>
+                                </div>
                                 <td className="px-6 py-4 font-semibold">{formatCurrency(e.amount)}</td>
                                 <td className="px-6 py-4 flex space-x-2">
+                                     <button 
+                                        onClick={() => handleViewReceipt(e.imageUrl)}
+                                        className="text-blue-600 hover:text-blue-800 p-1 hover:bg-blue-50 rounded"
+                                        title="Ver Comprobante"
+                                    >
+                                        <FileText className="w-6 h-6" />
+                                    </button>
                                     <button 
                                         onClick={() => handleApprove(e.id)}
                                         className="text-green-600 hover:text-green-800 p-1 hover:bg-green-50 rounded"

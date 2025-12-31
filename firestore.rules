@@ -2,19 +2,34 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Allow users to read and write their own data
+    
+    // Helper function to check if user is admin
+    function isAdmin() {
+      return request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Users: Read/Write own only OR Admin
     match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if request.auth != null && (request.auth.uid == userId || isAdmin());
     }
     
-    // Allow admins to read everything (example logic, adjust as needed)
-    // match /{document=**} {
-    //   allow read: if request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-    // }
+    // Projects: Read assigned/authenticated, Write Admin only
+    match /projects/{projectId} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+    
+    // Expenses: Create/Read own, Admin read/write all
+    match /expenses/{expenseId} {
+      allow read: if request.auth != null && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
 
-    // Default deny
-    match /{document=**} {
-      allow read, write: if request.auth != null;
+    // Allocations: Read own, Write Admin only
+    match /allocations/{allocationId} {
+      allow read: if request.auth != null && (resource.data.userId == request.auth.uid || isAdmin());
+      allow write: if isAdmin();
     }
   }
 }

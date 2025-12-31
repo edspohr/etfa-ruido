@@ -29,7 +29,7 @@ export async function parseReceiptImage(file) {
       Extract the following information in JSON format:
       - date: standardized YYYY-MM-DD format
       - merchant: name of the place
-      - amount: total amount as a number (remove currency symbols)
+      - amount: total amount as a number (remove currency symbols, ignore decimals/cents, treat as integer CLP)
       - description: a short summary of the items (e.g. "Lunch", "Hardware materials")
       
       If you cannot find a field, return null for it.

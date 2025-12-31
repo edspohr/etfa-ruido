@@ -3,7 +3,7 @@ import Layout from '../components/Layout';
 import { useAuth } from '../context/useAuth';
 import { db } from '../lib/firebase';
 import { doc, getDoc, collection, getDocs, query, where } from 'firebase/firestore';
-import { formatCurrency } from '../lib/mockData';
+import { formatCurrency } from '../utils/format';
 import { PlusCircle, Wallet } from 'lucide-react';
 import { Link } from 'react-router-dom';
 

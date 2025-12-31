@@ -3,7 +3,7 @@ import Layout from '../components/Layout';
 import { db } from '../lib/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { seedDatabase } from '../lib/seedData';
-import { formatCurrency } from '../lib/mockData'; // Reuse format helper, or move it to utils
+import { formatCurrency } from '../utils/format';
 import { Database } from 'lucide-react';
 
 export default function AdminDashboard() {

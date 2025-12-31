@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
 import { db } from '../lib/firebase';
 import { collection, query, where, getDocs } from 'firebase/firestore';
-import { formatCurrency } from '../lib/mockData';
+import { formatCurrency } from '../utils/format';
 import { Wallet, ArrowRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -67,12 +67,12 @@ export default function AdminBalances() {
                                 </div>
                             </td>
                             <td className="px-6 py-4">
-                                {(u.balance || 0) > 0 ? (
-                                    <span className="bg-green-100 text-green-800 px-2 py-1 rounded-full text-xs font-semibold">Con Fondos</span>
-                                ) : (u.balance || 0) < 0 ? (
-                                    <span className="bg-red-100 text-red-800 px-2 py-1 rounded-full text-xs font-semibold">Saldo Negativo</span>
+                                {(u.balance || 0) < 0 ? (
+                                    <span className="bg-green-100 text-green-800 px-2 py-1 rounded-full text-xs font-semibold">Por Rendir (Fondos)</span>
+                                ) : (u.balance || 0) > 0 ? (
+                                    <span className="bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full text-xs font-semibold">Saldo a Favor</span>
                                 ) : (
-                                    <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded-full text-xs font-semibold">Sin Fondos</span>
+                                    <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded-full text-xs font-semibold">Saludable (0)</span>
                                 )}
                             </td>
                         </tr>
