@@ -37,7 +37,7 @@ export default function ExpenseForm() {
 
   useEffect(() => {
       async function fetchProjects() {
-          const q = query(collection(db, "projects"), where("status", "==", "active"));
+          const q = query(collection(db, "projects"), where("status", "!=", "deleted"));
           const snapshot = await getDocs(q);
           const data = snapshot.docs.map(d => ({id: d.id, ...d.data()}));
           setProjects(data);
@@ -137,8 +137,13 @@ export default function ExpenseForm() {
             createdAt: new Date().toISOString()
         });
 
-        // 3. Update Balance (INVERTED LOGIC: Expense INCREASES balance/accountability cleared)
-        const userRef = doc(db, "users", currentUser.uid);
+        // 3. Update Balance
+        // If Caja Chica -> Deduction from Virtual User
+        // If Normal -> Deduction from Current User (Expense clears debt, so it ADDS to balance/reduces negative)
+        
+        const targetUserId = isCajaChica ? 'user_caja_chica' : currentUser.uid;
+        const userRef = doc(db, "users", targetUserId);
+        
         await updateDoc(userRef, {
             balance: increment(amountNum)
         });
@@ -208,9 +213,13 @@ export default function ExpenseForm() {
                         >
                             <option value="">Selecciona un proyecto...</option>
                             {projects.map(p => {
-                                // Optional visual hint for restricted projects
-                                const isRestricted = (p.name.toLowerCase().includes("caja chica") || p.type === 'petty_cash') && userRole !== 'admin';
-                                if (isRestricted) return null; // Or render disabled option
+                                // Filter Deleted (already done by query but double check)
+                                if (p.status === 'deleted') return null;
+
+                                // Filter Caja Chica for Non-Admins
+                                const isCajaChica = (p.name.toLowerCase().includes("caja chica") || p.type === 'petty_cash');
+                                if (isCajaChica && userRole !== 'admin') return null;
+                                
                                 return <option key={p.id} value={p.id}>{p.name}</option>
                             })}
                         </select>

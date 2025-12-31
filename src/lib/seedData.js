@@ -98,6 +98,16 @@ export async function seedDatabase(currentUserId) {
       balance: 0,
       forcePasswordChange: true,
     },
+    // Pseudo-User for Caja Chica Shared Balance
+    {
+      uid: "user_caja_chica",
+      email: "caja-chica@system.local",
+      displayName: "Fondo Caja Chica",
+      role: "admin", // Admin role to be safe, but mostly internal
+      code: "CCH",
+      balance: 0,
+      forcePasswordChange: false,
+    },
   ];
 
   // We will update balances as we create allocations
@@ -110,8 +120,23 @@ export async function seedDatabase(currentUserId) {
     await seedBatch.set(doc(db, "users", user.uid), user);
   }
 
-  // 3. OPTIONAL: Create ONE default project or leave empty?
-  // User asked for "Ready to operate", implies empty is better.
+  // 3. Create Default Projects
+  const commonProjects = [
+    {
+      id: "project_caja_chica",
+      name: "Caja Chica",
+      client: "Interno",
+      budget: 0,
+      status: "active",
+      type: "petty_cash", // Marker for logic
+      createdAt: new Date().toISOString(),
+    },
+  ];
+
+  for (const p of commonProjects) {
+    await seedBatch.set(doc(db, "projects", p.id), p);
+  }
+
   console.log("Skipping mock projects/expenses for Production/Demo mode.");
 
   await seedBatch.commit();

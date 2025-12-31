@@ -8,7 +8,7 @@ import { PlusCircle, Wallet } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 export default function UserDashboard() {
-  const { currentUser } = useAuth();
+  const { currentUser, userRole } = useAuth();
   const [balance, setBalance] = useState(0);
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -28,7 +28,14 @@ export default function UserDashboard() {
             // 2. Get Active Projects
             const q = query(collection(db, "projects"), where("status", "==", "active"));
             const pSnap = await getDocs(q);
-            const pData = pSnap.docs.map(d => ({id: d.id, ...d.data()}));
+            const pData = pSnap.docs
+                .map(d => ({id: d.id, ...d.data()}))
+                .filter(p => {
+                    // Filter Caja Chica
+                    const isCajaChica = p.name.toLowerCase().includes("caja chica") || p.type === 'petty_cash';
+                    if (isCajaChica && userRole !== 'admin') return false;
+                    return true;
+                });
             setProjects(pData);
         } catch (e) {
             console.error("Error fetching dashboard:", e);
@@ -37,7 +44,7 @@ export default function UserDashboard() {
         }
     }
     fetchData();
-  }, [currentUser]);
+  }, [currentUser, userRole]);
 
   if (loading) return <Layout title="Dashboard">Cargando...</Layout>;
 

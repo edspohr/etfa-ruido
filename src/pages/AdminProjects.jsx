@@ -4,7 +4,7 @@ import Layout from '../components/Layout';
 import { db } from '../lib/firebase';
 import { collection, getDocs, addDoc, query, where, doc, updateDoc, increment } from 'firebase/firestore';
 import { formatCurrency } from '../utils/format';
-import { Plus, DollarSign } from 'lucide-react';
+import { Plus, DollarSign, Trash2 } from 'lucide-react';
 
 export default function AdminProjects() {
   const [projects, setProjects] = useState([]);
@@ -23,10 +23,15 @@ export default function AdminProjects() {
     try {
         setLoading(true);
         // data fetching logic
-        const pSnap = await getDocs(collection(db, "projects"));
+        const qProjects = query(collection(db, "projects"), where("status", "!=", "deleted"));
+        const pSnap = await getDocs(qProjects);
         const pData = pSnap.docs.map(d => ({id: d.id, ...d.data()}));
         setProjects(pData);
-
+        
+        // Fetch ALL users (including admins/hidden) for internal use, or keep filtering?
+        // We need 'user_caja_chica' if we want to manually assign?
+        // Actually, for the SELECT, we only want professionals. 
+        // Logic: If 'Caja Chica' project selected -> Auto-assign to hidden user. 
         const uQuery = query(collection(db, "users"), where("role", "==", "professional"));
         const uSnap = await getDocs(uQuery);
         const uData = uSnap.docs.map(d => ({id: d.id, ...d.data()}));
@@ -65,25 +70,62 @@ export default function AdminProjects() {
     }
   };
 
+  const handleDeleteProject = async (projectId) => {
+      const pin = prompt("Ingrese clave maestra para ELIMINAR este proyecto:");
+      if (pin !== "1234") {
+          alert("Clave incorrecta.");
+          return;
+      }
+
+      if (!confirm("El proyecto se ocultará pero los datos se conservan. ¿Confirmar?")) return;
+
+      try {
+          await updateDoc(doc(db, "projects", projectId), {
+              status: 'deleted'
+          });
+          alert("Proyecto eliminado.");
+          fetchData();
+      } catch (e) {
+          console.error(e);
+          alert("Error al eliminar.");
+      }
+  };
+
   const handleAssignViatico = async (e) => {
       e.preventDefault();
       if (!viaticoUser || !viaticoAmount || !viaticoProject) return;
 
       try {
           const amount = Number(viaticoAmount);
-          const user = users.find(u => u.id === viaticoUser);
           const project = projects.find(p => p.id === viaticoProject);
+          
+          let targetUserId = viaticoUser;
+          let targetUserName = '';
+
+          // CAJA CHICA LOGIC
+          const isCajaChica = project?.type === 'petty_cash' || project?.name?.toLowerCase().includes('caja chica');
+          if (isCajaChica) {
+              targetUserId = 'user_caja_chica';
+              targetUserName = 'Fondo Caja Chica';
+          } else {
+              const user = users.find(u => u.id === viaticoUser);
+              if (!user) { alert("Usuario no encontrado"); return; }
+              targetUserName = user.displayName;
+          }
+
+          if (!targetUserId) return;
 
           // 1. Update User Balance
-          const userRef = doc(db, "users", viaticoUser);
+          const userRef = doc(db, "users", targetUserId);
+          
           await updateDoc(userRef, {
               balance: increment(-amount)
           });
 
           // 2. Create Allocation Record
           await addDoc(collection(db, "allocations"), {
-              userId: viaticoUser,
-              userName: user?.displayName || 'Unknown',
+              userId: targetUserId,
+              userName: targetUserName || 'Unknown',
               projectId: viaticoProject,
               projectName: project?.name || 'Unknown',
               amount: amount,
@@ -181,22 +223,27 @@ export default function AdminProjects() {
                             ))}
                         </select>
                     </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700">Profesional</label>
-                        <select 
-                            className="mt-1 w-full p-2 border rounded"
-                            value={viaticoUser}
-                            onChange={e => setViaticoUser(e.target.value)}
-                            required
-                        >
-                            <option value="">Seleccionar Profesional...</option>
-                            {users.map(u => (
-                                <option key={u.id} value={u.id}>
-                                    {u.displayName} (Saldo actual: {formatCurrency(u.balance || 0)})
-                                </option>
-                            ))}
-                        </select>
-                    </div>
+
+                    {/* Show Professional Select ONLY if NOT Caja Chica */}
+                    {!(projects.find(p => p.id === viaticoProject)?.type === 'petty_cash' || projects.find(p => p.id === viaticoProject)?.name?.toLowerCase().includes('caja chica')) && (
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">Profesional</label>
+                            <select 
+                                className="mt-1 w-full p-2 border rounded"
+                                value={viaticoUser}
+                                onChange={e => setViaticoUser(e.target.value)}
+                                required={!(projects.find(p => p.id === viaticoProject)?.type === 'petty_cash')}
+                            >
+                                <option value="">Seleccionar Profesional...</option>
+                                {users.map(u => (
+                                    <option key={u.id} value={u.id}>
+                                        {u.displayName} (Saldo: {formatCurrency(u.balance || 0)})
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
+
                     <div>
                         <label className="block text-sm font-medium text-gray-700">Monto a Cargar ($)</label>
                         <input 
@@ -228,6 +275,7 @@ export default function AdminProjects() {
                             <th className="px-6 py-3 font-medium text-gray-500">Presupuesto</th>
                             <th className="px-6 py-3 font-medium text-gray-500">Gastado</th>
                             <th className="px-6 py-3 font-medium text-gray-500">Estado</th>
+                            <th className="px-6 py-3 font-medium text-gray-500">Acciones</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -242,6 +290,15 @@ export default function AdminProjects() {
                                 <td className="px-6 py-4">{formatCurrency(p.budget)}</td>
                                 <td className="px-6 py-4">{formatCurrency(p.expenses || 0)}</td>
                                 <td className="px-6 py-4"><span className="bg-green-100 text-green-800 px-2 py-1 rounded-full text-xs font-semibold">Activo</span></td>
+                                <td className="px-6 py-4">
+                                    <button 
+                                        onClick={() => handleDeleteProject(p.id)}
+                                        className="text-red-500 hover:text-red-700 p-1"
+                                        title="Eliminar Proyecto"
+                                    >
+                                        <Trash2 className="w-5 h-5" />
+                                    </button>
+                                </td>
                             </tr>
                         ))}
                         {projects.length === 0 && (
