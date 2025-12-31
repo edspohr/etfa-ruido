@@ -25,7 +25,7 @@ export async function parseReceiptImage(file) {
     });
 
     const prompt = `
-      Analyze this image of a receipt/invoice. 
+      Analyze this document (image or PDF) of a receipt/invoice. 
       Extract the following information in JSON format:
       - date: standardized YYYY-MM-DD format
       - merchant: name of the place
@@ -41,7 +41,7 @@ export async function parseReceiptImage(file) {
       {
         inlineData: {
           data: base64Data,
-          mimeType: file.type,
+          mimeType: file.type, // Works for image/jpeg, image/png, application/pdf
         },
       },
     ]);
