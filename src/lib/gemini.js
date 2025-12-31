@@ -7,7 +7,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 const API_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
 const genAI = new GoogleGenerativeAI(API_KEY);
 
-export async function parseReceiptImage(file) {
+export async function parseReceiptImage(file, availableCategories = []) {
   if (!API_KEY) {
     console.warn("Gemini API Key is missing.");
     return null;
@@ -24,6 +24,13 @@ export async function parseReceiptImage(file) {
       reader.readAsDataURL(file);
     });
 
+    const categoriesList =
+      availableCategories.length > 0
+        ? `\n- category: one of the following exact strings: ${availableCategories.join(
+            ", "
+          )}. If unsure, use 'Otros'.`
+        : `\n- category: suggest a category if possible, or null.`;
+
     const prompt = `
       Analyze this document (image or PDF) of a receipt/invoice. 
       Extract the following information in JSON format:
@@ -31,6 +38,7 @@ export async function parseReceiptImage(file) {
       - merchant: name of the place
       - amount: total amount as a number (remove currency symbols, ignore decimals/cents, treat as integer CLP)
       - description: a short summary of the items (e.g. "Lunch", "Hardware materials")
+      ${categoriesList}
       
       If you cannot find a field, return null for it.
       JSON:

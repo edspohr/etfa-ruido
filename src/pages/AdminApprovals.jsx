@@ -4,10 +4,15 @@ import { db } from '../lib/firebase';
 import { collection, query, where, getDocs, doc, updateDoc, increment, writeBatch, orderBy } from 'firebase/firestore';
 import { formatCurrency } from '../utils/format';
 import { CheckCircle, XCircle, Download, FileText } from 'lucide-react';
+import RejectionModal from '../components/RejectionModal';
 
 export default function AdminApprovals() {
   const [pendingExpenses, setPendingExpenses] = useState([]);
   const [loading, setLoading] = useState(true);
+  
+  // Rejection Modal State
+  const [rejectionModalOpen, setRejectionModalOpen] = useState(false);
+  const [selectedExpenseToReject, setSelectedExpenseToReject] = useState(null);
 
   // ... (fetchPending remains same)
 
@@ -32,7 +37,7 @@ export default function AdminApprovals() {
           const expenses = snapshot.docs.map(d => d.data());
 
           // Define CSV Headers
-          const headers = ["Fecha", "Profesional", "Proyecto", "Descripción", "Categoría", "Monto", "Estado"];
+          const headers = ["Fecha", "Profesional", "Proyecto", "Descripción", "Categoría", "Monto", "Estado", "Motivo Rechazo"];
           
           // Map Data to CSV Rows
           const rows = expenses.map(e => [
@@ -42,7 +47,8 @@ export default function AdminApprovals() {
               `"${(e.description || "").replace(/"/g, '""')}"`, // Escape quotes
               e.category || "",
               e.amount || 0,
-              e.status === 'approved' ? 'Aprobado' : e.status === 'rejected' ? 'Rechazado' : 'Pendiente'
+              e.status === 'approved' ? 'Aprobado' : e.status === 'rejected' ? 'Rechazado' : 'Pendiente',
+              `"${(e.rejectionReason || "").replace(/"/g, '""')}"`
           ]);
 
           // Construct CSV String
@@ -95,15 +101,21 @@ export default function AdminApprovals() {
       }
   };
 
-  const handleReject = async (expense) => {
-      if (!confirm("¿Rechazar este gasto? El monto será descontado del saldo del usuario.")) return;
+  const openRejectionModal = (expense) => {
+      setSelectedExpenseToReject(expense);
+      setRejectionModalOpen(true);
+  };
 
+  const handleConfirmRejection = async (expense, reason) => {
       try {
           const batch = writeBatch(db);
           
-          // 1. Mark as rejected
+          // 1. Mark as rejected and add reason
           const expenseRef = doc(db, "expenses", expense.id);
-          batch.update(expenseRef, { status: "rejected" });
+          batch.update(expenseRef, { 
+              status: "rejected",
+              rejectionReason: reason 
+          });
 
           // 2. Refund User (INVERTED LOGIC: Expense added funds, so Reject removes them)
           if (expense.userId) {
@@ -184,7 +196,7 @@ export default function AdminApprovals() {
                                         <CheckCircle className="w-6 h-6" />
                                     </button>
                                     <button 
-                                        onClick={() => handleReject(e)}
+                                        onClick={() => openRejectionModal(e)}
                                         className="text-red-500 hover:text-red-700 p-1 hover:bg-red-50 rounded"
                                         title="Rechazar"
                                     >
@@ -198,6 +210,13 @@ export default function AdminApprovals() {
             </div>
         )}
       </div>
+
+      <RejectionModal 
+          isOpen={rejectionModalOpen}
+          onClose={() => setRejectionModalOpen(false)}
+          onConfirm={handleConfirmRejection}
+          expense={selectedExpenseToReject}
+      />
     </Layout>
   );
 }

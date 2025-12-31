@@ -5,6 +5,7 @@ import { db } from '../lib/firebase';
 import { doc, getDoc, collection, query, where, getDocs, updateDoc, increment } from 'firebase/firestore';
 import { formatCurrency } from '../utils/format';
 import { ArrowLeft, CheckCircle, XCircle, FileText, Calendar, User } from 'lucide-react';
+import RejectionModal from '../components/RejectionModal';
 
 export default function AdminProjectDetails() {
   const { id } = useParams();
@@ -12,6 +13,10 @@ export default function AdminProjectDetails() {
   const [expenses, setExpenses] = useState([]);
   const [allocations, setAllocations] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // Rejection Modal
+  const [rejectionModalOpen, setRejectionModalOpen] = useState(false);
+  const [selectedExpenseToReject, setSelectedExpenseToReject] = useState(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -50,19 +55,29 @@ export default function AdminProjectDetails() {
     if (id) fetchData();
   }, [id, fetchData]);
 
-  const handleUpdateStatus = async (expenseId, newStatus, amount, userId) => {
-    if (!confirm(`¿Estás seguro de cambiar el estado a ${newStatus.toUpperCase()}?`)) return;
+  const handleUpdateStatus = async (expenseId, newStatus, amount, userId, rejectionReason = null) => {
+    // Intercept Rejection to open Modal
+    if (newStatus === 'rejected' && !rejectionReason) {
+        const expense = expenses.find(e => e.id === expenseId);
+        setSelectedExpenseToReject(expense);
+        setRejectionModalOpen(true);
+        return;
+    }
+
+    if (!rejectionReason && !confirm(`¿Estás seguro de cambiar el estado a ${newStatus.toUpperCase()}?`)) return;
 
     try {
         const expenseRef = doc(db, "expenses", expenseId);
         
+        let updateData = { status: newStatus };
+        if (rejectionReason) {
+            updateData.rejectionReason = rejectionReason;
+        }
+
         // If Rejecting, we need to REVERSE the balance credit (subtract amount)
-        // because the user was credited when they submitted the expense.
         if (newStatus === 'rejected') {
-             // Only if it's NOT a company expense (which doesn't affect balance)
              const exp = expenses.find(e => e.id === expenseId);
              if (exp && !exp.isCompanyExpense) {
-                 // Check logical target ("Caja Chica" uses virtual user)
                  const isCajaChica = project?.name?.toLowerCase().includes("caja chica") || project?.type === 'petty_cash';
                  const targetUserId = isCajaChica ? 'user_caja_chica' : userId;
                  
@@ -73,28 +88,14 @@ export default function AdminProjectDetails() {
              }
         }
         
-        // Note: If approving, we don't need to change balance, as it was already credited on submission?
-        // Wait, normally approval confirms the reimbursement. 
-        // In this "Balance = Debt" model:
-        // - Allocation (Debt) -> Balance decreases (gets more negative).
-        // - Expense (Payback) -> Balance increases (gets closer to 0 or positive).
-        // So upon submission, we already credited them. 
-        // If we Reject, we assume the expense was invalid, so we put the debt back (decrement).
-        // If we Approve, status just changes, balance remains credited.
-
-        await updateDoc(expenseRef, { status: newStatus });
-        
-        // Update Project Expenses Total if Approved?
-        // Or do we track 'expenses' field in project document?
-        // Current logic in AdminProjects list uses `p.expenses`. 
-        // We should PROBABLY update the project total when approved.
-        // Assuming `p.expenses` tracks APPROVED expenses.
-        
+        // If Approving, Update Project Expenses Total
         if (newStatus === 'approved') {
              await updateDoc(doc(db, "projects", id), {
                  expenses: increment(amount)
              });
         }
+
+        await updateDoc(expenseRef, updateData);
 
         alert("Estado actualizado.");
         fetchData();
@@ -104,6 +105,9 @@ export default function AdminProjectDetails() {
     }
   };
 
+  const handleConfirmRejection = (expense, reason) => {
+      handleUpdateStatus(expense.id, 'rejected', expense.amount, expense.userId, reason);
+  };
 
   if (loading) return <Layout title="Detalles del Proyecto">Cargando...</Layout>;
   if (!project) return <Layout title="Error">Proyecto no encontrado.</Layout>;
@@ -168,6 +172,9 @@ export default function AdminProjectDetails() {
                                         <p className="text-xs truncate max-w-[150px]">{e.description}</p>
                                         {e.imageUrl && (
                                             <a href={e.imageUrl} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline text-xs block mt-1">Ver Boleta</a>
+                                        )}
+                                        {e.rejectionReason && e.status === 'rejected' && (
+                                            <p className="text-xs text-red-500 mt-1 italic">"{e.rejectionReason}"</p>
                                         )}
                                     </td>
                                     <td className="px-4 py-3 font-bold text-gray-700">{formatCurrency(e.amount)}</td>
@@ -244,6 +251,13 @@ export default function AdminProjectDetails() {
             </div>
 
         </div>
+
+        <RejectionModal 
+          isOpen={rejectionModalOpen}
+          onClose={() => setRejectionModalOpen(false)}
+          onConfirm={handleConfirmRejection}
+          expense={selectedExpenseToReject}
+        />
     </Layout>
   );
 }

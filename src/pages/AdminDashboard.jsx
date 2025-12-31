@@ -1,17 +1,19 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { db } from '../lib/firebase';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import { seedDatabase } from '../lib/seedData';
 import { formatCurrency } from '../utils/format';
 import { useAuth } from '../context/useAuth';
-import { Database } from 'lucide-react';
+import { Database, Wallet } from 'lucide-react';
 
 export default function AdminDashboard() {
   const { currentUser } = useAuth();
+  const navigate = useNavigate();
   const [projects, setProjects] = useState([]);
   const [pendingCount, setPendingCount] = useState(0);
+  const [cajaChicaBalance, setCajaChicaBalance] = useState(0);
   const [loading, setLoading] = useState(true);
   const [seeding, setSeeding] = useState(false);
 
@@ -30,7 +32,19 @@ export default function AdminDashboard() {
             const expensesSnap = await getDocs(collection(db, "expenses"));
             const expensesDocs = expensesSnap.docs.map(doc => doc.data());
 
-            // 4. Aggregate Data per Project
+            // 4. Fetch Caja Chica Balance
+            // Try to find user 'user_caja_chica'
+            try {
+                const cajaRef = doc(db, "users", "user_caja_chica");
+                const cajaSnap = await getDoc(cajaRef);
+                if (cajaSnap.exists()) {
+                    setCajaChicaBalance(cajaSnap.data().balance || 0);
+                }
+            } catch (err) {
+                console.warn("Could not fetch user_caja_chica:", err);
+            }
+
+            // 5. Aggregate Data per Project
             const expensesByProject = {};
             const budgetByProject = {};
             let pending = 0;
@@ -50,7 +64,7 @@ export default function AdminDashboard() {
                 }
             });
 
-            // 5. Merge into Projects
+            // 6. Merge into Projects
             const finalProjects = projectsData.map(p => ({
                 ...p,
                 expenses: expensesByProject[p.id] || 0,
@@ -69,6 +83,7 @@ export default function AdminDashboard() {
   }, []);
 
   const handleSeed = async () => {
+      // ... (existing seed logic)
       if (!confirm("Esto borrará/sobrescribirá datos. ¿Estás seguro?")) return;
       
       const pin = prompt("Ingrese la clave de seguridad para confirmar:");
@@ -81,15 +96,7 @@ export default function AdminDashboard() {
       try {
           await seedDatabase(currentUser.uid);
           alert("Datos cargados correctamente");
-          
-          // Refresh Data Manually
-          const projectsSnap = await getDocs(collection(db, "projects"));
-          const projectsData = projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-          setProjects(projectsData);
-
-          const q = query(collection(db, "expenses"), where("status", "==", "pending"));
-          const pendingSnap = await getDocs(q);
-          setPendingCount(pendingSnap.size);
+          window.location.reload(); 
       } catch (e) {
           console.error(e);
           alert("Error cargando datos: " + e.message);
@@ -120,7 +127,22 @@ export default function AdminDashboard() {
             </a>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 bg-gray-50 p-4 rounded-xl mb-8">
+             {/* Caja Chica Card */}
+            <div className="bg-white p-6 rounded-lg shadow-md border-l-4 border-l-teal-500 relative overflow-hidden group">
+                <div className="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition">
+                    <Wallet className="w-16 h-16 text-teal-600" />
+                </div>
+                <h3 className="text-gray-500 text-sm font-bold uppercase tracking-wider mb-2">Fondo Caja Chica</h3>
+                <p className="text-3xl font-extrabold text-teal-600 mb-4">{formatCurrency(cajaChicaBalance)}</p>
+                <button 
+                    onClick={() => navigate('/admin/balances')} 
+                    className="text-xs font-bold text-white bg-teal-600 px-3 py-1.5 rounded hover:bg-teal-700 transition"
+                >
+                    RECARGAR / VER DETALLE
+                </button>
+            </div>
+
             <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
                 <h3 className="text-gray-500 text-sm font-medium">Proyectos Activos</h3>
                 <p className="text-3xl font-bold text-gray-800">{projects.length}</p>
