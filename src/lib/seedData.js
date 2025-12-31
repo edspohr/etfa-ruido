@@ -1,7 +1,7 @@
 import { db } from "./firebase";
 import { collection, doc, writeBatch, getDocs } from "firebase/firestore";
 
-export async function seedDatabase() {
+export async function seedDatabase(currentUserId) {
   const batch = writeBatch(db);
 
   console.log("Starting data cleanup...");
@@ -11,6 +11,9 @@ export async function seedDatabase() {
   for (const colName of collections) {
     const snap = await getDocs(collection(db, colName));
     snap.docs.forEach((d) => {
+      // CRITICAL: PROTEGER AL ADMIN ACTUAL (si no, pierde permisos a mitad del proceso)
+      if (colName === "users" && d.id === currentUserId) return;
+
       batch.delete(doc(db, colName, d.id));
     });
   }

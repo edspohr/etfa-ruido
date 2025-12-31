@@ -4,9 +4,11 @@ import { db } from '../lib/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { seedDatabase } from '../lib/seedData';
 import { formatCurrency } from '../utils/format';
+import { useAuth } from '../context/useAuth';
 import { Database } from 'lucide-react';
 
 export default function AdminDashboard() {
+  const { currentUser } = useAuth();
   const [projects, setProjects] = useState([]);
   const [pendingCount, setPendingCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -69,7 +71,7 @@ export default function AdminDashboard() {
       if (!confirm("Esto borrará/sobrescribirá datos. ¿Estás seguro?")) return;
       setSeeding(true);
       try {
-          await seedDatabase();
+          await seedDatabase(currentUser.uid);
           alert("Datos cargados correctamente");
           
           // Refresh Data Manually
