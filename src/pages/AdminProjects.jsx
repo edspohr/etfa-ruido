@@ -189,17 +189,13 @@ export default function AdminProjects() {
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-700">Recurrencia</label>
-                            <select 
+                            <input 
+                                type="text" 
                                 className="mt-1 w-full p-2 border rounded"
                                 value={newProject.recurrence}
                                 onChange={e => setNewProject({...newProject, recurrence: e.target.value})}
-                            >
-                                <option value="">Seleccionar...</option>
-                                <option value="mensual">Mensual</option>
-                                <option value="anual">Anual</option>
-                                <option value="unico">Único</option>
-                                <option value="otro">Otro</option>
-                            </select>
+                                placeholder="Ej: A, B, C..."
+                            />
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-700">Cliente</label>
