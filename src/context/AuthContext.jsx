@@ -96,11 +96,20 @@ export function AuthProvider({ children }) {
 
       } else {
           // New User
+          // AUTO-ADMIN FIX: Check if email belongs to initial admins to break Catch-22
+          const adminEmails = [
+              "edmundo@spohr.cl", 
+              "maguirre@etfa-ruido.cl", 
+              "aguell@etfa-ruido.cl", 
+              "cmunoz@etfa-ruido.cl"
+          ];
+          const initialRole = adminEmails.includes(user.email) ? 'admin' : 'professional';
+
           await setDoc(userRef, {
               uid: user.uid,
               email: user.email,
               displayName: user.displayName || user.email.split('@')[0],
-              role: 'professional',
+              role: initialRole,
               balance: 0
           });
       }
