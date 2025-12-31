@@ -138,7 +138,6 @@ export default function AdminUserSeeder() {
       setProcessing(true);
       try {
           // 1. Create in Firestore
-          const usersRef = collection(db, "users");
           // Generate a simple ID or letting Firestore do it? 
           // Seeder uses custom IDs like 'user_xxx'. Let's stick to auth-like or random.
           // Let's use a random ID for Firestore doc first, then the Seeder logic below will migrate it to Auth UID.
