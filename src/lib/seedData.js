@@ -108,6 +108,15 @@ export async function seedDatabase(currentUserId) {
       balance: 0,
       forcePasswordChange: false,
     },
+    {
+      uid: "user_demo",
+      email: "espohr@gmail.com",
+      displayName: "Usuario Demo",
+      role: "professional",
+      code: "DEM",
+      balance: 0,
+      forcePasswordChange: true,
+    },
   ];
 
   // We will update balances as we create allocations
