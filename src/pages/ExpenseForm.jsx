@@ -210,19 +210,31 @@ export default function ExpenseForm() {
     <Layout title="Nueva Rendición">
       <div className="max-w-2xl mx-auto bg-white p-6 rounded-lg shadow-sm">
         
-        {/* Step 1: Upload */}
+        {/* Step 1: Upload or Manual */}
         {step === 'upload' && (
-             <div className="flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-lg p-10 bg-gray-50 hover:bg-gray-100 transition cursor-pointer relative h-64">
-                <input 
-                    type="file" 
-                    accept="image/*" 
-                    onChange={handleFileChange} 
-                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                />
+            <div className="space-y-4">
+                 <div className="flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-lg p-10 bg-gray-50 hover:bg-gray-100 transition cursor-pointer relative h-64">
+                    <input 
+                        type="file" 
+                        accept="image/*" 
+                        onChange={handleFileChange} 
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    />
+                    <div className="text-center">
+                        <Camera className="w-16 h-16 text-blue-500 mx-auto mb-4" />
+                        <h3 className="text-xl font-semibold text-gray-700 mb-2">Subir Boleta o Factura</h3>
+                        <p className="text-gray-500">Toca aquí para tomar una foto o seleccionar archivo</p>
+                    </div>
+                </div>
+
                 <div className="text-center">
-                    <Camera className="w-16 h-16 text-blue-500 mx-auto mb-4" />
-                    <h3 className="text-xl font-semibold text-gray-700 mb-2">Subir Boleta o Factura</h3>
-                    <p className="text-gray-500">Toca aquí para tomar una foto o seleccionar archivo</p>
+                    <span className="text-gray-400 text-sm">o también puedes</span>
+                    <button 
+                        onClick={() => setStep('review')}
+                        className="block w-full mt-2 bg-white border border-gray-300 text-gray-700 font-semibold py-3 px-4 rounded-lg hover:bg-gray-50 transition"
+                    >
+                        Ingresar Manualmente sin Comprobante
+                    </button>
                 </div>
             </div>
         )}
@@ -231,23 +243,25 @@ export default function ExpenseForm() {
         {step === 'review' && (
             <form onSubmit={handleSubmit} className="space-y-6">
                 
-                {/* Image Preview */}
-                <div className="relative rounded-lg overflow-hidden border border-gray-200 bg-black">
-                     <img src={previewUrl} alt="Receipt Preview" className="w-full h-48 object-contain opacity-80" />
-                     <button 
-                        type="button"
-                        onClick={handleCancel}
-                        className="absolute top-2 right-2 bg-white/90 p-2 rounded-full text-gray-700 hover:bg-white"
-                     >
-                        <X className="w-5 h-5" />
-                     </button>
-                     {processingAi && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-black/60 text-white">
-                             <Loader2 className="w-8 h-8 animate-spin mr-2" />
-                             <span className="font-medium">Procesando con IA...</span>
-                        </div>
-                     )}
-                </div>
+                {/* Image Preview - Only if URL exists */}
+                {previewUrl && (
+                    <div className="relative rounded-lg overflow-hidden border border-gray-200 bg-black">
+                         <img src={previewUrl} alt="Receipt Preview" className="w-full h-48 object-contain opacity-80" />
+                         <button 
+                            type="button"
+                            onClick={handleCancel}
+                            className="absolute top-2 right-2 bg-white/90 p-2 rounded-full text-gray-700 hover:bg-white"
+                         >
+                            <X className="w-5 h-5" />
+                         </button>
+                         {processingAi && (
+                            <div className="absolute inset-0 flex items-center justify-center bg-black/60 text-white">
+                                 <Loader2 className="w-8 h-8 animate-spin mr-2" />
+                                 <span className="font-medium">Procesando con IA...</span>
+                            </div>
+                         )}
+                    </div>
+                )}
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {/* ADMIN: Expense Mode Selector */}
