@@ -26,7 +26,7 @@ service cloud.firestore {
     // Expenses: Create/Read own, Admin read/write all
     match /expenses/{expenseId} {
       allow read: if request.auth != null && (resource.data.userId == request.auth.uid || isAdmin());
-      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null && (request.resource.data.userId == request.auth.uid || isAdmin());
       allow update, delete: if isAdmin();
     }
 
