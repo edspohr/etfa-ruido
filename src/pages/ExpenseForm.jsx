@@ -7,12 +7,19 @@ import { collection, addDoc, getDocs, query, where, doc, updateDoc, increment } 
 import { Upload, Loader2, Camera, X, FileText } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
-const CATEGORIES = [
-  "Alimentación", 
+const CATEGORIES_COMMON = [
+  "Alimentación",
+  "Snacks",
   "Combustible", 
   "Traslados", 
   "Materiales", 
   "Otros"
+];
+
+const CATEGORIES_ADMIN = [
+  "Pasajes Aéreo",
+  "Arriendo de Autos",
+  "Arriendo de Equipamiento"
 ];
 
 export default function ExpenseForm() {
@@ -369,9 +376,17 @@ export default function ExpenseForm() {
                             onChange={e => setFormData({...formData, category: e.target.value})}
                         >
                             <option value="">Seleccionar...</option>
-                            {CATEGORIES.map(c => (
+                            <option value="">Seleccionar...</option>
+                            {CATEGORIES_COMMON.map(c => (
                                 <option key={c} value={c}>{c}</option>
                             ))}
+                            {userRole === 'admin' && (
+                                <optgroup label="Solo Admin">
+                                    {CATEGORIES_ADMIN.map(c => (
+                                        <option key={c} value={c}>{c}</option>
+                                    ))}
+                                </optgroup>
+                            )}
                         </select>
                     </div>
 
