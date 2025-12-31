@@ -21,41 +21,62 @@ export async function seedDatabase() {
 
   const seedBatch = writeBatch(db);
 
-  // 1. Create Mock Professionals
+  // 1. Create Real Users
   const users = [
     {
-      uid: "user_ana",
-      email: "ana@etfa.cl",
-      displayName: "Ana Contreras",
+      uid: "user_paula",
+      email: "pmontoya@etfa-ruido.cl",
+      displayName: "Paula Montoya",
       role: "professional",
+      code: "PMS",
+      balance: 0,
+    },
+    {
+      uid: "user_gonzalo",
+      email: "grivas@etfa-ruido.cl",
+      displayName: "Gonzalo Rivas",
+      role: "professional",
+      code: "GRM",
+      balance: 0,
+    },
+    {
+      uid: "user_francisco",
+      email: "fgonzalez@etfa-ruido.cl",
+      displayName: "Francisco Gonzalez",
+      role: "professional",
+      code: "FGG",
+      balance: 0,
+    },
+    {
+      uid: "user_cristobal",
+      email: "craipan@etfa-ruido.cl",
+      displayName: "Cristobal Raipan",
+      role: "professional",
+      code: "CRR",
+      balance: 0,
+    },
+    {
+      uid: "user_maria",
+      email: "maguirre@etfa-ruido.cl",
+      displayName: "María Verónica Aguirre",
+      role: "admin",
+      code: "MAS",
+      balance: 0,
+    },
+    {
+      uid: "user_andres",
+      email: "aguell@etfa-ruido.cl",
+      displayName: "Andrés Güell",
+      role: "admin",
+      code: "AGS",
       balance: 0,
     },
     {
       uid: "user_carlos",
-      email: "carlos@etfa.cl",
-      displayName: "Carlos Rojas",
-      role: "professional",
-      balance: 0,
-    },
-    {
-      uid: "user_sofia",
-      email: "sofia@etfa.cl",
-      displayName: "Sofía Mendoza",
-      role: "professional",
-      balance: 0,
-    },
-    {
-      uid: "user_miguel",
-      email: "miguel@etfa.cl",
-      displayName: "Miguel Ángel",
-      role: "professional",
-      balance: 0,
-    },
-    {
-      uid: "user_laura",
-      email: "laura@etfa.cl",
-      displayName: "Laura Vicuña",
-      role: "professional",
+      email: "cmunoz@etfa-ruido.cl",
+      displayName: "Carlos Muñoz",
+      role: "admin",
+      code: "CML",
       balance: 0,
     },
   ];
