@@ -129,6 +129,41 @@ export default function AdminUserSeeder() {
     }
   };
 
+  // Manual User Creation Function
+  const [newUser, setNewUser] = useState({ displayName: '', email: '', role: 'professional' });
+  const handleCreateSingleUser = async (e) => {
+      e.preventDefault();
+      if (!newUser.email || !newUser.displayName) return;
+      
+      setProcessing(true);
+      try {
+          // 1. Create in Firestore
+          const usersRef = collection(db, "users");
+          // Generate a simple ID or letting Firestore do it? 
+          // Seeder uses custom IDs like 'user_xxx'. Let's stick to auth-like or random.
+          // Let's use a random ID for Firestore doc first, then the Seeder logic below will migrate it to Auth UID.
+          // OR we can just wait for Seeder to pick it up.
+          
+          const tempId = `user_${newUser.email.split('@')[0]}_${Date.now().toString().slice(-4)}`;
+          
+          await setDoc(doc(db, "users", tempId), {
+              ...newUser,
+              balance: 0,
+              forcePasswordChange: true,
+              createdAt: new Date().toISOString()
+          });
+
+          addLog(`✅ Usuario Firestore creado: ${newUser.displayName} (${tempId})`);
+          addLog("Ahora presiona 'Crear Cuentas' arriba para generar su acceso (Auth).");
+          setNewUser({ displayName: '', email: '', role: 'professional' });
+      } catch (e) {
+          console.error(e);
+          addLog("Error creando usuario: " + e.message);
+      } finally {
+          setProcessing(false);
+      }
+  };
+
   return (
     <Layout title="Administración de Usuarios">
         <div className="bg-white p-6 rounded-lg shadow-sm max-w-2xl mx-auto">
@@ -151,6 +186,52 @@ export default function AdminUserSeeder() {
             >
                 {processing ? 'Procesando...' : 'Crear Cuentas y Unificar (gastos2026)'}
             </button>
+            
+            <div className="mt-8 pt-8 border-t border-gray-200">
+                <h3 className="font-bold text-gray-700 mb-4">Agregar Nuevo Usuario (Firestore)</h3>
+                <form onSubmit={handleCreateSingleUser} className="space-y-4">
+                    <div>
+                        <label className="block text-sm text-gray-600">Nombre</label>
+                        <input 
+                            type="text" 
+                            required
+                            className="w-full border p-2 rounded"
+                            value={newUser.displayName}
+                            onChange={e => setNewUser({...newUser, displayName: e.target.value})}
+                            placeholder="Ej: Terreno"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm text-gray-600">Email</label>
+                        <input 
+                            type="email" 
+                            required
+                            className="w-full border p-2 rounded"
+                            value={newUser.email}
+                            onChange={e => setNewUser({...newUser, email: e.target.value})}
+                            placeholder="Ej: terreno@etfa-ruido.cl"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm text-gray-600">Rol</label>
+                        <select 
+                            className="w-full border p-2 rounded"
+                            value={newUser.role}
+                            onChange={e => setNewUser({...newUser, role: e.target.value})}
+                        >
+                            <option value="professional">Profesional</option>
+                            <option value="admin">Administrador</option>
+                        </select>
+                    </div>
+                    <button 
+                        type="submit"
+                        disabled={processing}
+                        className="w-full bg-green-600 text-white py-2 rounded font-bold hover:bg-green-700 disabled:opacity-50"
+                    >
+                        Agregar a la Base de Datos
+                    </button>
+                </form>
+            </div>
 
             <div className="mt-6 bg-gray-900 text-green-400 p-4 rounded font-mono text-xs h-64 overflow-y-auto">
                 {logs.length === 0 ? <p className="text-gray-500">// Esperando iniciar...</p> : logs.map((l, i) => <p key={i}>{l}</p>)}

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { db } from '../lib/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
@@ -146,7 +147,8 @@ export default function AdminDashboard() {
                         const percentage = budget > 0 ? (expenses / budget) * 100 : 0;
                         
                         return (
-                            <div key={p.id} className="bg-white p-5 rounded-lg shadow-sm border border-gray-100 flex flex-col justify-between h-full">
+                            <Link to={`/admin/projects/${p.id}`} key={p.id} className="block transition hover:scale-105 duration-200">
+                            <div className="bg-white p-5 rounded-lg shadow-sm border border-gray-100 flex flex-col justify-between h-full hover:shadow-md transition">
                                 <div>
                                     <h3 className="font-bold text-lg text-gray-800 mb-1">{p.name}</h3>
                                     <p className="text-sm text-gray-500 mb-4">{p.client}</p>

@@ -36,9 +36,9 @@ function App() {
         <Route path="/admin/users-seeder" element={<ProtectedRoute requiredRole="admin"><AdminUserSeeder /></ProtectedRoute>} />
         
         {/* User Routes */}
-        <Route path="/dashboard" element={<ProtectedRoute requiredRole="professional"><UserDashboard /></ProtectedRoute>} />
-        <Route path="/dashboard/expenses" element={<ProtectedRoute requiredRole="professional"><UserExpenses /></ProtectedRoute>} />
-        <Route path="/dashboard/new-expense" element={<ProtectedRoute requiredRole="professional"><ExpenseForm /></ProtectedRoute>} />
+        <Route path="/dashboard" element={<ProtectedRoute requiredRole={['professional', 'admin']}><UserDashboard /></ProtectedRoute>} />
+        <Route path="/dashboard/expenses" element={<ProtectedRoute requiredRole={['professional', 'admin']}><UserExpenses /></ProtectedRoute>} />
+        <Route path="/dashboard/new-expense" element={<ProtectedRoute requiredRole={['professional', 'admin']}><ExpenseForm /></ProtectedRoute>} />
 
         <Route path="/" element={<RootRedirect />} />
       </Routes>

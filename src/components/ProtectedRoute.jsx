@@ -34,9 +34,15 @@ export default function ProtectedRoute({ children, requiredRole }) {
       );
   }
 
-  if (requiredRole && userRole !== requiredRole) {
-    // If user is logged in but tries to access admin, redirect to their dashboard
-    return <Navigate to={userRole === 'admin' ? '/admin' : '/dashboard'} />;
+  if (requiredRole) {
+    const hasRole = Array.isArray(requiredRole) 
+        ? requiredRole.includes(userRole) 
+        : userRole === requiredRole;
+
+    if (!hasRole) {
+        // If user is logged in but tries to access unauthorized route, redirect
+        return <Navigate to={userRole === 'admin' ? '/admin' : '/dashboard'} />;
+    }
   }
 
   return children;

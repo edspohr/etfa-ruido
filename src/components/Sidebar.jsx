@@ -48,6 +48,7 @@ export default function Sidebar({ isOpen, setIsOpen }) {
               Aprobaciones
             </Link>
             <Link to="/admin/balances" className={linkClass('/admin/balances')} onClick={() => setIsOpen(false)}>
+              <Wallet className="w-5 h-5 mr-3" />
               Balances de Profesionales
             </Link>
             
