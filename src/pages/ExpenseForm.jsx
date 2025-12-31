@@ -156,6 +156,9 @@ export default function ExpenseForm() {
             }
         }
         
+        // Determine Status: Auto-approve if Admin submitting for Project/Company
+        const initialStatus = (userRole === 'admin' && expenseMode === 'project') ? 'approved' : 'pending';
+
         await addDoc(collection(db, "expenses"), {
             userId: targetUid,
             userName: targetName,
@@ -167,13 +170,21 @@ export default function ExpenseForm() {
             description: formData.description,
             amount: amountNum,
             imageUrl: imageUrl,
-            status: "pending",
+            status: initialStatus,
             createdAt: new Date().toISOString(),
             isCompanyExpense: isProjectExpense
         });
 
-        // 3. Update Balance
-        // Only update balance if it's NOT a project/company expense
+        // 3. Side Effects
+        // A. If Company/Project Expense AND Approved (Admin): Increment Project Total immediately
+        if (isProjectExpense && initialStatus === 'approved') {
+             const projectRef = doc(db, "projects", formData.projectId);
+             await updateDoc(projectRef, {
+                 expenses: increment(amountNum)
+             });
+        }
+        
+        // B. If Personal/Other User Expense: Update User Balance (Credit them immediately)
         if (!isProjectExpense) {
             // Logic: Is it Caja Chica?
             const targetBalanceId = isCajaChica ? 'user_caja_chica' : targetUid;
@@ -184,7 +195,7 @@ export default function ExpenseForm() {
             });
         }
 
-        alert("Rendición enviada exitosamente.");
+        alert(initialStatus === 'approved' ? "Gasto registrado y aprobado." : "Rendición enviada exitosamente.");
         navigate('/dashboard');
 
     } catch (e) {
