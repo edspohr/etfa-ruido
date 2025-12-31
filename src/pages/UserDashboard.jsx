@@ -81,7 +81,11 @@ export default function UserDashboard() {
                     {projects.map(p => (
                          <div key={p.id} className="border-b last:border-0 pb-4 last:pb-0 flex justify-between items-center">
                             <div>
-                                <p className="font-semibold text-gray-800">{p.name}</p>
+                                <p className="font-semibold text-gray-800">
+                                    {p.code ? <span className="text-xs font-mono bg-blue-50 text-blue-600 px-1 py-0.5 rounded mr-2">{p.code}</span> : null}
+                                    {p.name}
+                                    {p.recurrence ? <span className="ml-2 text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">{p.recurrence}</span> : null}
+                                </p>
                                 <p className="text-sm text-gray-600">{p.client}</p>
                             </div>
                             <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">Activo</span>

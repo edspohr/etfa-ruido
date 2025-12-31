@@ -23,8 +23,12 @@ export default function ExpenseForm() {
   const [projects, setProjects] = useState([]);
   
   const [step, setStep] = useState('upload'); // 'upload' | 'review'
-  const [isCompanyExpense, setIsCompanyExpense] = useState(false);
   
+  // Admin "On Behalf Of" State
+  const [expenseMode, setExpenseMode] = useState('me'); // 'me', 'project', 'other'
+  const [users, setUsers] = useState([]);
+  const [selectedUserId, setSelectedUserId] = useState('');
+
   const [formData, setFormData] = useState({
     projectId: '',
     date: '',
@@ -37,14 +41,25 @@ export default function ExpenseForm() {
   const [previewUrl, setPreviewUrl] = useState(null);
 
   useEffect(() => {
-      async function fetchProjects() {
+      async function fetchData() {
+          // Fetch Projects
           const q = query(collection(db, "projects"), where("status", "!=", "deleted"));
           const snapshot = await getDocs(q);
           const data = snapshot.docs.map(d => ({id: d.id, ...d.data()}));
           setProjects(data);
+
+          // Fetch Users (If Admin)
+          if (userRole === 'admin') {
+              const uQuery = query(collection(db, "users"), where("role", "==", "professional"));
+              const uSnap = await getDocs(uQuery);
+              const uData = uSnap.docs.map(d => ({id: d.id, ...d.data()}));
+              setUsers(uData);
+          }
       }
-      fetchProjects();
-  }, []);
+      if (userRole !== null) { // Wait for role to be known
+          fetchData();
+      }
+  }, [userRole]);
 
   const handleFileChange = async (e) => {
     const file = e.target.files[0];
@@ -122,11 +137,28 @@ export default function ExpenseForm() {
 
         // 2. Save Expense
         const amountNum = Number(formData.amount);
-        const isCompanyExpenseCheck = userRole === 'admin' && isCompanyExpense;
+        
+        let targetUid = currentUser.uid;
+        let targetName = currentUser.displayName;
+        let isProjectExpense = false;
+
+        // Determine Logic based on Mode
+        if (userRole === 'admin') {
+            if (expenseMode === 'project') {
+                targetUid = 'company_expense';
+                targetName = 'Gasto Empresa';
+                isProjectExpense = true;
+            } else if (expenseMode === 'other') {
+                if (!selectedUserId) { alert("Seleccione un profesional."); setLoading(false); return; }
+                const selUser = users.find(u => u.id === selectedUserId);
+                targetUid = selUser.id;
+                targetName = selUser.displayName;
+            }
+        }
         
         await addDoc(collection(db, "expenses"), {
-            userId: isCompanyExpenseCheck ? 'company_expense' : currentUser.uid,
-            userName: isCompanyExpenseCheck ? 'Gasto Empresa' : currentUser.displayName,
+            userId: targetUid,
+            userName: targetName,
             projectId: formData.projectId,
             projectName: selectedProject?.name || 'Unknown',
             category: formData.category,
@@ -137,14 +169,15 @@ export default function ExpenseForm() {
             imageUrl: imageUrl,
             status: "pending",
             createdAt: new Date().toISOString(),
-            isCompanyExpense: isCompanyExpenseCheck
+            isCompanyExpense: isProjectExpense
         });
 
         // 3. Update Balance
-        // If Company Expense -> SKIP Balance Update (No personal debt involved)
-        if (!isCompanyExpenseCheck) {
-            const targetUserId = isCajaChica ? 'user_caja_chica' : currentUser.uid;
-            const userRef = doc(db, "users", targetUserId);
+        // Only update balance if it's NOT a project/company expense
+        if (!isProjectExpense) {
+            // Logic: Is it Caja Chica?
+            const targetBalanceId = isCajaChica ? 'user_caja_chica' : targetUid;
+            const userRef = doc(db, "users", targetBalanceId);
             
             await updateDoc(userRef, {
                 balance: increment(amountNum)
@@ -206,20 +239,69 @@ export default function ExpenseForm() {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* ADMIN: Expense Mode Selector */}
                     {userRole === 'admin' && (
-                        <div className="md:col-span-2 bg-blue-50 p-4 rounded-lg border border-blue-200">
-                            <label className="flex items-center space-x-3 cursor-pointer">
-                                <input 
-                                    type="checkbox" 
-                                    className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500"
-                                    checked={isCompanyExpense}
-                                    onChange={e => setIsCompanyExpense(e.target.checked)}
-                                />
-                                <div>
-                                    <span className="block font-bold text-blue-900">Gasto Empresa / Cargo al Proyecto</span>
-                                    <span className="text-sm text-blue-700">Marcar si paga la empresa directo (No afecta saldos ni reimbolsos).</span>
+                        <div className="md:col-span-2 bg-gray-50 p-4 rounded-lg border border-gray-200 space-y-3">
+                            <label className="block text-sm font-bold text-gray-700">¿A nombre de quién es el gasto?</label>
+                            
+                            <div className="flex flex-wrap gap-4">
+                                <label className="flex items-center space-x-2 cursor-pointer">
+                                    <input 
+                                        type="radio" 
+                                        name="expenseMode" 
+                                        value="me"
+                                        checked={expenseMode === 'me'}
+                                        onChange={() => setExpenseMode('me')}
+                                        className="text-blue-600 focus:ring-blue-500"
+                                    />
+                                    <span className="text-gray-900">Mí mismo</span>
+                                </label>
+
+                                <label className="flex items-center space-x-2 cursor-pointer">
+                                    <input 
+                                        type="radio" 
+                                        name="expenseMode" 
+                                        value="project"
+                                        checked={expenseMode === 'project'}
+                                        onChange={() => setExpenseMode('project')}
+                                        className="text-blue-600 focus:ring-blue-500"
+                                    />
+                                    <span className="text-gray-900">Empresa / Proyecto</span>
+                                </label>
+
+                                <label className="flex items-center space-x-2 cursor-pointer">
+                                    <input 
+                                        type="radio" 
+                                        name="expenseMode" 
+                                        value="other"
+                                        checked={expenseMode === 'other'}
+                                        onChange={() => setExpenseMode('other')}
+                                        className="text-blue-600 focus:ring-blue-500"
+                                    />
+                                    <span className="text-gray-900">Otro Profesional</span>
+                                </label>
+                            </div>
+
+                            {/* User Select if Mode is 'other' */}
+                            {expenseMode === 'other' && (
+                                <div className="mt-2 animate-fadeIn">
+                                    <select 
+                                        className="w-full border border-gray-300 rounded p-2 text-sm"
+                                        value={selectedUserId}
+                                        onChange={e => setSelectedUserId(e.target.value)}
+                                        required
+                                    >
+                                        <option value="">Seleccionar Profesional...</option>
+                                        {users.map(u => (
+                                            <option key={u.id} value={u.id}>{u.displayName}</option>
+                                        ))}
+                                    </select>
                                 </div>
-                            </label>
+                            )}
+                            
+                             {expenseMode === 'project' && (
+                                <p className="text-xs text-blue-600 mt-1">Este gasto se cargará al proyecto pero no afectará saldos de personas.</p>
+                            )}
                         </div>
                     )}
 
