@@ -82,7 +82,7 @@ export default function AdminDashboard() {
           setPendingCount(pendingSnap.size);
       } catch (e) {
           console.error(e);
-          alert("Error cargando datos");
+          alert("Error cargando datos: " + e.message);
       }
       setSeeding(false);
   };
