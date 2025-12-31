@@ -125,6 +125,13 @@ export function AuthProvider({ children }) {
          try {
              if (db) {
                  await ensureUserExists(user);
+             }
+         } catch (e) {
+             console.error("Error ensuring user exists:", e);
+         }
+
+         try {
+             if (db) {
                  const userRef = doc(db, "users", user.uid);
                  const userSnap = await getDoc(userRef);
                  if (userSnap.exists()) {
@@ -132,7 +139,7 @@ export function AuthProvider({ children }) {
                  }
              }
          } catch (e) {
-             console.error("Error ensuring user exists:", e);
+             console.error("Error fetching user role:", e);
          }
          setCurrentUser(user);
       } else {

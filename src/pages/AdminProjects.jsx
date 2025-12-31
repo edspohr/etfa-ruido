@@ -13,7 +13,7 @@ export default function AdminProjects() {
 
   // Form States
   const [showProjectForm, setShowProjectForm] = useState(false);
-  const [newProject, setNewProject] = useState({ name: '', client: '', budget: '' });
+  const [newProject, setNewProject] = useState({ name: '', client: '', budget: '', code: '', recurrence: '' });
   
   const [viaticoUser, setViaticoUser] = useState('');
   const [viaticoProject, setViaticoProject] = useState('');
@@ -54,6 +54,8 @@ export default function AdminProjects() {
     try {
         await addDoc(collection(db, "projects"), {
             name: newProject.name,
+            code: newProject.code || '',
+            recurrence: newProject.recurrence || '',
             client: newProject.client,
             budget: Number(newProject.budget),
             expenses: 0,
@@ -61,7 +63,7 @@ export default function AdminProjects() {
             createdAt: new Date().toISOString()
         });
         alert("Proyecto creado exitosamente");
-        setNewProject({ name: '', client: '', budget: '' });
+        setNewProject({ name: '', client: '', budget: '', code: '', recurrence: '' });
         setShowProjectForm(false);
         fetchData();
     } catch (err) {
@@ -176,6 +178,30 @@ export default function AdminProjects() {
                             />
                         </div>
                         <div>
+                            <label className="block text-sm font-medium text-gray-700">Código de Proyecto</label>
+                            <input 
+                                type="text" 
+                                className="mt-1 w-full p-2 border rounded"
+                                value={newProject.code}
+                                onChange={e => setNewProject({...newProject, code: e.target.value})}
+                                placeholder="Ej: PRJ-001"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">Recurrencia</label>
+                            <select 
+                                className="mt-1 w-full p-2 border rounded"
+                                value={newProject.recurrence}
+                                onChange={e => setNewProject({...newProject, recurrence: e.target.value})}
+                            >
+                                <option value="">Seleccionar...</option>
+                                <option value="mensual">Mensual</option>
+                                <option value="anual">Anual</option>
+                                <option value="unico">Único</option>
+                                <option value="otro">Otro</option>
+                            </select>
+                        </div>
+                        <div>
                             <label className="block text-sm font-medium text-gray-700">Cliente</label>
                             <input 
                                 type="text" 
@@ -283,6 +309,7 @@ export default function AdminProjects() {
                             <tr key={p.id} className="border-b last:border-0 hover:bg-gray-50">
                                 <td className="px-6 py-4 font-medium">
                                     <Link to={`/admin/projects/${p.id}`} className="text-blue-600 hover:text-blue-800 hover:underline">
+                                        {p.code && <span className="text-xs font-mono bg-gray-100 text-gray-600 px-1 py-0.5 rounded mr-2">{p.code}</span>}
                                         {p.name}
                                     </Link>
                                 </td>

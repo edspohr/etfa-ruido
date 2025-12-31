@@ -23,6 +23,7 @@ export default function ExpenseForm() {
   const [projects, setProjects] = useState([]);
   
   const [step, setStep] = useState('upload'); // 'upload' | 'review'
+  const [isCompanyExpense, setIsCompanyExpense] = useState(false);
   
   const [formData, setFormData] = useState({
     projectId: '',
@@ -121,10 +122,11 @@ export default function ExpenseForm() {
 
         // 2. Save Expense
         const amountNum = Number(formData.amount);
+        const isCompanyExpenseCheck = userRole === 'admin' && isCompanyExpense;
         
         await addDoc(collection(db, "expenses"), {
-            userId: currentUser.uid,
-            userName: currentUser.displayName,
+            userId: isCompanyExpenseCheck ? 'company_expense' : currentUser.uid,
+            userName: isCompanyExpenseCheck ? 'Gasto Empresa' : currentUser.displayName,
             projectId: formData.projectId,
             projectName: selectedProject?.name || 'Unknown',
             category: formData.category,
@@ -134,19 +136,20 @@ export default function ExpenseForm() {
             amount: amountNum,
             imageUrl: imageUrl,
             status: "pending",
-            createdAt: new Date().toISOString()
+            createdAt: new Date().toISOString(),
+            isCompanyExpense: isCompanyExpenseCheck
         });
 
         // 3. Update Balance
-        // If Caja Chica -> Deduction from Virtual User
-        // If Normal -> Deduction from Current User (Expense clears debt, so it ADDS to balance/reduces negative)
-        
-        const targetUserId = isCajaChica ? 'user_caja_chica' : currentUser.uid;
-        const userRef = doc(db, "users", targetUserId);
-        
-        await updateDoc(userRef, {
-            balance: increment(amountNum)
-        });
+        // If Company Expense -> SKIP Balance Update (No personal debt involved)
+        if (!isCompanyExpenseCheck) {
+            const targetUserId = isCajaChica ? 'user_caja_chica' : currentUser.uid;
+            const userRef = doc(db, "users", targetUserId);
+            
+            await updateDoc(userRef, {
+                balance: increment(amountNum)
+            });
+        }
 
         alert("Rendición enviada exitosamente.");
         navigate('/dashboard');
@@ -203,6 +206,23 @@ export default function ExpenseForm() {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {userRole === 'admin' && (
+                        <div className="md:col-span-2 bg-blue-50 p-4 rounded-lg border border-blue-200">
+                            <label className="flex items-center space-x-3 cursor-pointer">
+                                <input 
+                                    type="checkbox" 
+                                    className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500"
+                                    checked={isCompanyExpense}
+                                    onChange={e => setIsCompanyExpense(e.target.checked)}
+                                />
+                                <div>
+                                    <span className="block font-bold text-blue-900">Gasto Empresa / Cargo al Proyecto</span>
+                                    <span className="text-sm text-blue-700">Marcar si paga la empresa directo (No afecta saldos ni reimbolsos).</span>
+                                </div>
+                            </label>
+                        </div>
+                    )}
+
                     <div className="md:col-span-2">
                         <label className="block text-sm font-semibold text-gray-700 mb-2">Proyecto *</label>
                         <select 
