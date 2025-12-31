@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { db } from '../lib/firebase';
@@ -13,7 +13,7 @@ export default function AdminUserDetails() {
   const [allocations, setAllocations] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  async function fetchData() {
+  const fetchData = useCallback(async () => {
     try {
         setLoading(true);
         // 1. Get User
@@ -47,11 +47,11 @@ export default function AdminUserDetails() {
     } finally {
         setLoading(false);
     }
-  }
+  }, [id]);
 
   useEffect(() => {
     if (id) fetchData();
-  }, [id]);
+  }, [id, fetchData]);
 
   const handleUpdateStatus = async (expenseId, newStatus, amount) => {
     if (!confirm(`¿Estás seguro de cambiar el estado a ${newStatus.toUpperCase()}?`)) return;

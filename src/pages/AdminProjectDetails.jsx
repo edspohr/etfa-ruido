@@ -13,7 +13,7 @@ export default function AdminProjectDetails() {
   const [allocations, setAllocations] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  async function fetchData() {
+  const fetchData = useCallback(async () => {
     try {
         setLoading(true);
         // 1. Get Project
@@ -44,11 +44,11 @@ export default function AdminProjectDetails() {
     } finally {
         setLoading(false);
     }
-  }
+  }, [id]);
 
   useEffect(() => {
     if (id) fetchData();
-  }, [id]);
+  }, [id, fetchData]);
 
   const handleUpdateStatus = async (expenseId, newStatus, amount, userId) => {
     if (!confirm(`¿Estás seguro de cambiar el estado a ${newStatus.toUpperCase()}?`)) return;
