@@ -76,7 +76,7 @@ export default function Login() {
             </div>
             <div className="text-right">
                 <button type="button" onClick={handleResetPassword} className="text-sm text-blue-600 hover:underline">
-                    ¿Olvidaste tu contraseña?
+                    Crea o resetea tu contraseña
                 </button>
             </div>
             
