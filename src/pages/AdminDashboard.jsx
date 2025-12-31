@@ -102,7 +102,7 @@ export default function AdminDashboard() {
                 className="flex items-center text-sm bg-gray-800 text-white px-3 py-2 rounded hover:bg-gray-700 disabled:opacity-50"
             >
                 <Database className="w-4 h-4 mr-2" />
-                {seeding ? 'Generando...' : 'Generar Datos (Perfiles)'}
+                {seeding ? 'Procesando...' : 'Reiniciar Base de Datos (Solo Usuarios)'}
             </button>
             <a 
                 href="/admin/users-seeder" 
