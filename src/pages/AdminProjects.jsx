@@ -241,7 +241,9 @@ export default function AdminProjects() {
                         >
                             <option value="">Seleccionar Proyecto...</option>
                             {projects.map(p => (
-                                <option key={p.id} value={p.id}>{p.name}</option>
+                                <option key={p.id} value={p.id}>
+                                    {p.code ? `[${p.code}] ` : ''}{p.name} {p.recurrence ? `(${p.recurrence})` : ''}
+                                </option>
                             ))}
                         </select>
                     </div>
@@ -307,6 +309,7 @@ export default function AdminProjects() {
                                     <Link to={`/admin/projects/${p.id}`} className="text-blue-600 hover:text-blue-800 hover:underline">
                                         {p.code && <span className="text-xs font-mono bg-gray-100 text-gray-600 px-1 py-0.5 rounded mr-2">{p.code}</span>}
                                         {p.name}
+                                        {p.recurrence && <span className="ml-2 text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">({p.recurrence})</span>}
                                     </Link>
                                 </td>
                                 <td className="px-6 py-4 text-gray-600">{p.client}</td>

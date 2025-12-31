@@ -55,7 +55,9 @@ export default function AdminBalances() {
                                 <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center mr-3 font-bold text-xs">
                                     {u.displayName?.substring(0,2).toUpperCase()}
                                 </div>
-                                {u.displayName}
+                                <Link to={`/admin/users/${u.id}`} className="hover:text-blue-600 hover:underline font-bold">
+                                    {u.displayName}
+                                </Link>
                             </td>
                             <td className="px-6 py-4 text-gray-600">{u.email}</td>
                             <td className="px-6 py-4">

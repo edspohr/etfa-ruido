@@ -4,11 +4,11 @@ import Layout from '../components/Layout';
 import { db } from '../lib/firebase';
 import { doc, getDoc, collection, query, where, getDocs, updateDoc, increment } from 'firebase/firestore';
 import { formatCurrency } from '../utils/format';
-import { ArrowLeft, CheckCircle, XCircle, FileText, Calendar, User } from 'lucide-react';
+import { ArrowLeft, CheckCircle, XCircle, FileText, Calendar, Wallet } from 'lucide-react';
 
-export default function AdminProjectDetails() {
+export default function AdminUserDetails() {
   const { id } = useParams();
-  const [project, setProject] = useState(null);
+  const [user, setUser] = useState(null);
   const [expenses, setExpenses] = useState([]);
   const [allocations, setAllocations] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -16,15 +16,18 @@ export default function AdminProjectDetails() {
   async function fetchData() {
     try {
         setLoading(true);
-        // 1. Get Project
-        const pRef = doc(db, "projects", id);
-        const pSnap = await getDoc(pRef);
-        if (pSnap.exists()) {
-            setProject({ id: pSnap.id, ...pSnap.data() });
+        // 1. Get User
+        const uRef = doc(db, "users", id);
+        const uSnap = await getDoc(uRef);
+        if (uSnap.exists()) {
+            setUser({ id: uSnap.id, ...uSnap.data() });
         }
 
         // 2. Get Expenses
-        const qExp = query(collection(db, "expenses"), where("projectId", "==", id));
+        // Note: Filters by userId implies "Expenses SUBMITTED by this user" or "Expenses CREDITED to this user"? 
+        // In our model, userId stores the beneficiary of the credit. 
+        // For 'On Behalf Of', if Admin credited User A, userId is User A. So checking userId is correct to see their "Claims".
+        const qExp = query(collection(db, "expenses"), where("userId", "==", id));
         const expSnap = await getDocs(qExp);
         const expData = expSnap.docs
             .map(d => ({id: d.id, ...d.data()}))
@@ -32,7 +35,7 @@ export default function AdminProjectDetails() {
         setExpenses(expData);
 
         // 3. Get Allocations
-        const qAlloc = query(collection(db, "allocations"), where("projectId", "==", id));
+        const qAlloc = query(collection(db, "allocations"), where("userId", "==", id));
         const allocSnap = await getDocs(qAlloc);
         const allocData = allocSnap.docs
             .map(d => ({id: d.id, ...d.data()}))
@@ -50,50 +53,38 @@ export default function AdminProjectDetails() {
     if (id) fetchData();
   }, [id]);
 
-  const handleUpdateStatus = async (expenseId, newStatus, amount, userId) => {
+  const handleUpdateStatus = async (expenseId, newStatus, amount) => {
     if (!confirm(`¿Estás seguro de cambiar el estado a ${newStatus.toUpperCase()}?`)) return;
 
     try {
         const expenseRef = doc(db, "expenses", expenseId);
         
         // If Rejecting, we need to REVERSE the balance credit (subtract amount)
-        // because the user was credited when they submitted the expense.
         if (newStatus === 'rejected') {
-             // Only if it's NOT a company expense (which doesn't affect balance)
+             // For User Details, we know the user is 'id' (the profile owner)
+             // Unless it's a company expense? User profile shouldn't show company expenses generally, 
+             // but if they did, we should check.
+             
+             // Check expense specific data just in case
              const exp = expenses.find(e => e.id === expenseId);
              if (exp && !exp.isCompanyExpense) {
-                 // Check logical target ("Caja Chica" uses virtual user)
-                 const isCajaChica = project?.name?.toLowerCase().includes("caja chica") || project?.type === 'petty_cash';
-                 const targetUserId = isCajaChica ? 'user_caja_chica' : userId;
-                 
-                 const userRef = doc(db, "users", targetUserId);
+                 const userRef = doc(db, "users", id);
                  await updateDoc(userRef, {
                      balance: increment(-amount) 
                  });
              }
         }
-        
-        // Note: If approving, we don't need to change balance, as it was already credited on submission?
-        // Wait, normally approval confirms the reimbursement. 
-        // In this "Balance = Debt" model:
-        // - Allocation (Debt) -> Balance decreases (gets more negative).
-        // - Expense (Payback) -> Balance increases (gets closer to 0 or positive).
-        // So upon submission, we already credited them. 
-        // If we Reject, we assume the expense was invalid, so we put the debt back (decrement).
-        // If we Approve, status just changes, balance remains credited.
-
+    
         await updateDoc(expenseRef, { status: newStatus });
         
-        // Update Project Expenses Total if Approved?
-        // Or do we track 'expenses' field in project document?
-        // Current logic in AdminProjects list uses `p.expenses`. 
-        // We should PROBABLY update the project total when approved.
-        // Assuming `p.expenses` tracks APPROVED expenses.
-        
+        // Update Project Expenses Total if Approved
         if (newStatus === 'approved') {
-             await updateDoc(doc(db, "projects", id), {
-                 expenses: increment(amount)
-             });
+             const exp = expenses.find(e => e.id === expenseId);
+             if (exp?.projectId) {
+                await updateDoc(doc(db, "projects", exp.projectId), {
+                    expenses: increment(amount)
+                });
+             }
         }
 
         alert("Estado actualizado.");
@@ -105,30 +96,42 @@ export default function AdminProjectDetails() {
   };
 
 
-  if (loading) return <Layout title="Detalles del Proyecto">Cargando...</Layout>;
-  if (!project) return <Layout title="Error">Proyecto no encontrado.</Layout>;
+  if (loading) return <Layout title="Detalles del Usuario">Cargando...</Layout>;
+  if (!user) return <Layout title="Error">Usuario no encontrado.</Layout>;
 
   return (
-    <Layout title={`Acciones: ${project.code ? `[${project.code}] ` : ''}${project.name} ${project.recurrence ? `(${project.recurrence})` : ''}`}>
+    <Layout title={`Profesional: ${user.displayName}`}>
         <div className="mb-6">
-            <Link to="/admin/projects" className="text-blue-600 hover:text-blue-800 flex items-center">
-                <ArrowLeft className="w-4 h-4 mr-2" /> Volver a Proyectos
+            <Link to="/admin/balances" className="text-blue-600 hover:text-blue-800 flex items-center">
+                <ArrowLeft className="w-4 h-4 mr-2" /> Volver a Balances
             </Link>
         </div>
 
         {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
-                <h3 className="text-sm font-medium text-gray-500 mb-1">Presupuesto Total</h3>
-                <p className="text-2xl font-bold text-gray-800">{formatCurrency(project.budget)}</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100 flex items-center">
+                <div className="mr-4 bg-gray-100 p-3 rounded-full">
+                    <User className="w-8 h-8 text-gray-500" />
+                </div>
+                <div>
+                    <h3 className="text-sm font-medium text-gray-500 mb-1">Información</h3>
+                    <p className="text-lg font-bold text-gray-800">{user.email}</p>
+                    <p className="text-sm text-gray-500 capitalize">{user.role}</p>
+                </div>
             </div>
-            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
-                <h3 className="text-sm font-medium text-gray-500 mb-1">Gastos Totales (Aprobados)</h3>
-                <p className="text-2xl font-bold text-blue-600">{formatCurrency(project.expenses || 0)}</p>
-            </div>
-            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
-                <h3 className="text-sm font-medium text-gray-500 mb-1">Disponible</h3>
-                <p className="text-2xl font-bold text-green-600">{formatCurrency(project.budget - (project.expenses || 0))}</p>
+            <div className="bg-gradient-to-br from-blue-600 to-blue-800 p-6 rounded-lg shadow-sm border border-blue-500 text-white relative overflow-hidden">
+                 <div className="absolute top-0 right-0 p-4 opacity-10">
+                    <Wallet className="w-16 h-16" />
+                </div>
+                <div className="relative z-10">
+                    <h3 className="text-blue-100 text-sm font-medium mb-1">Saldo Actual (Viático)</h3>
+                    <p className="text-3xl font-bold">
+                        {formatCurrency(user.balance || 0)}
+                    </p>
+                    <p className="text-blue-200 text-xs mt-1">
+                        {(user.balance || 0) < 0 ? "Fondos por Rendir" : "Saldo a Favor"}
+                    </p>
+                </div>
             </div>
         </div>
 
@@ -148,7 +151,7 @@ export default function AdminProjectDetails() {
                         <thead className="sticky top-0 bg-white">
                             <tr className="border-b">
                                 <th className="px-4 py-3 font-medium text-gray-500">Fecha</th>
-                                <th className="px-4 py-3 font-medium text-gray-500">Usuario</th>
+                                <th className="px-4 py-3 font-medium text-gray-500">Proyecto</th>
                                 <th className="px-4 py-3 font-medium text-gray-500">Detalle</th>
                                 <th className="px-4 py-3 font-medium text-gray-500">Monto</th>
                                 <th className="px-4 py-3 font-medium text-gray-500">Estado</th>
@@ -160,8 +163,7 @@ export default function AdminProjectDetails() {
                                 <tr key={e.id} className="border-b last:border-0 hover:bg-gray-50">
                                     <td className="px-4 py-3 text-gray-600">{e.date}</td>
                                     <td className="px-4 py-3 text-gray-800 font-medium">
-                                        {e.userName}
-                                        {e.isCompanyExpense && <span className="block text-xs text-blue-500">Empresa</span>}
+                                        {e.projectName}
                                     </td>
                                     <td className="px-4 py-3 text-gray-600">
                                         <p className="font-medium">{e.category}</p>
@@ -181,10 +183,10 @@ export default function AdminProjectDetails() {
                                     <td className="px-4 py-3">
                                         {e.status === 'pending' && (
                                             <div className="flex space-x-2">
-                                                <button onClick={() => handleUpdateStatus(e.id, 'approved', e.amount, e.userId)} className="text-green-600 hover:text-green-800" title="Aprobar">
+                                                <button onClick={() => handleUpdateStatus(e.id, 'approved', e.amount)} className="text-green-600 hover:text-green-800" title="Aprobar">
                                                     <CheckCircle className="w-5 h-5" />
                                                 </button>
-                                                <button onClick={() => handleUpdateStatus(e.id, 'rejected', e.amount, e.userId)} className="text-red-600 hover:text-red-800" title="Rechazar">
+                                                <button onClick={() => handleUpdateStatus(e.id, 'rejected', e.amount)} className="text-red-600 hover:text-red-800" title="Rechazar">
                                                     <XCircle className="w-5 h-5" />
                                                 </button>
                                             </div>
@@ -207,7 +209,7 @@ export default function AdminProjectDetails() {
                 <div className="px-6 py-4 border-b bg-gray-50 flex justify-between items-center">
                     <h3 className="font-bold text-gray-700 flex items-center">
                         <Calendar className="w-5 h-5 mr-2 text-gray-400" />
-                        Historial de Viáticos Asignados
+                        Historial de Viáticos Recibidos
                     </h3>
                      <span className="text-xs font-medium bg-gray-200 text-gray-600 px-2 py-1 rounded-full">{allocations.length}</span>
                 </div>
@@ -216,7 +218,7 @@ export default function AdminProjectDetails() {
                          <thead className="sticky top-0 bg-white">
                             <tr className="border-b">
                                 <th className="px-4 py-3 font-medium text-gray-500">Fecha</th>
-                                <th className="px-4 py-3 font-medium text-gray-500">Asignado A</th>
+                                <th className="px-4 py-3 font-medium text-gray-500">Proyecto</th>
                                 <th className="px-4 py-3 font-medium text-gray-500">Monto</th>
                             </tr>
                         </thead>
@@ -226,8 +228,7 @@ export default function AdminProjectDetails() {
                                     <td className="px-4 py-3 text-gray-600">{new Date(a.date).toLocaleDateString()}</td>
                                     <td className="px-4 py-3">
                                         <div className="flex items-center">
-                                            <User className="w-4 h-4 mr-2 text-gray-400" />
-                                            {a.userName}
+                                            {a.projectName}
                                         </div>
                                     </td>
                                     <td className="px-4 py-3 font-bold text-gray-700">{formatCurrency(a.amount)}</td>
