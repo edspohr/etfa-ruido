@@ -35,6 +35,12 @@ export default function AdminUserSeeder() {
   const handleCreateAccounts = async () => {
     if (!confirm("Esto creará cuentas de Authentication para los usuarios en la Base de Datos (si no existen). La contraseña será 'gastos2026'. ¿Continuar?")) return;
     
+    const pin = prompt("Ingrese la clave de seguridad para confirmar:");
+    if (pin !== "1234") {
+        addLog("Operación cancelada: Clave incorrecta.");
+        return;
+    }
+    
     setProcessing(true);
     setLogs([]);
     addLog("Iniciando creación de cuentas...");

@@ -69,6 +69,13 @@ export default function AdminDashboard() {
 
   const handleSeed = async () => {
       if (!confirm("Esto borrará/sobrescribirá datos. ¿Estás seguro?")) return;
+      
+      const pin = prompt("Ingrese la clave de seguridad para confirmar:");
+      if (pin !== "1234") {
+          alert("Clave incorrecta. Cancelando operación.");
+          return;
+      }
+
       setSeeding(true);
       try {
           await seedDatabase(currentUser.uid);
