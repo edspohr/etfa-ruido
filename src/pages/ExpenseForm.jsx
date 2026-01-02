@@ -402,30 +402,32 @@ export default function ExpenseForm() {
 
   return (
     <Layout title="Nueva Rendición">
-      <div className="max-w-2xl mx-auto bg-white p-6 rounded-lg shadow-sm">
+      <div className="max-w-2xl mx-auto bg-white p-8 rounded-2xl shadow-soft border border-slate-100">
         
         {/* Step 1: Upload or Manual */}
         {step === 'upload' && (
-            <div className="space-y-4">
-                 <div className="flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-lg p-10 bg-gray-50 hover:bg-gray-100 transition cursor-pointer relative h-64">
+            <div className="space-y-6">
+                 <div className="flex flex-col items-center justify-center border-2 border-dashed border-slate-300 rounded-2xl p-10 bg-slate-50 hover:bg-slate-100 transition cursor-pointer relative h-72 group">
                     <input 
                         type="file" 
                         accept="image/*,application/pdf" 
                         onChange={handleFileChange} 
-                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                     />
-                    <div className="text-center">
-                        <Camera className="w-16 h-16 text-blue-500 mx-auto mb-4" />
-                        <h3 className="text-xl font-semibold text-gray-700 mb-2">Subir Boleta (Foto o PDF)</h3>
-                        <p className="text-gray-500">Toca aquí para subir archivo</p>
+                    <div className="text-center group-hover:scale-105 transition duration-300">
+                        <div className="bg-white p-4 rounded-full shadow-sm mb-4 inline-block">
+                            <Camera className="w-12 h-12 text-slate-600" />
+                        </div>
+                        <h3 className="text-xl font-bold text-slate-700 mb-2">Subir Boleta</h3>
+                        <p className="text-slate-500 text-sm">Toca para tomar foto o seleccionar archivo</p>
                     </div>
                 </div>
 
                 <div className="text-center">
-                    <span className="text-gray-400 text-sm">o también puedes</span>
+                    <span className="text-slate-400 text-sm font-medium">o también puedes</span>
                     <button 
                         onClick={() => setStep('review')}
-                        className="block w-full mt-2 bg-white border border-gray-300 text-gray-700 font-semibold py-3 px-4 rounded-lg hover:bg-gray-50 transition"
+                        className="block w-full mt-3 bg-white border border-slate-200 text-slate-700 font-bold py-4 px-4 rounded-xl hover:bg-slate-50 transition shadow-sm"
                     >
                         Ingresar Manualmente sin Comprobante
                     </button>
@@ -554,7 +556,7 @@ export default function ExpenseForm() {
                         {!isSplitMode ? (
                             <select 
                                 required
-                                className="w-full border border-gray-300 rounded-lg p-3 text-base focus:ring-blue-500 focus:border-blue-500 bg-white"
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-base focus:ring-2 focus:ring-slate-400 focus:border-transparent outline-none transition"
                                 value={formData.projectId}
                                 onChange={e => setFormData({...formData, projectId: e.target.value})}
                             >
@@ -616,10 +618,10 @@ export default function ExpenseForm() {
                     </div>
 
                     <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">Categoría *</label>
+                        <label className="block text-sm font-bold text-slate-700 mb-2">Categoría *</label>
                         <select 
                             required
-                            className="w-full border border-gray-300 rounded-lg p-3 text-base focus:ring-blue-500 focus:border-blue-500 bg-white"
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-base focus:ring-2 focus:ring-slate-400 focus:border-transparent outline-none transition"
                             value={formData.category}
                             onChange={e => setFormData({...formData, category: e.target.value})}
                         >
@@ -639,33 +641,33 @@ export default function ExpenseForm() {
                     </div>
 
                     <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">Fecha</label>
+                        <label className="block text-sm font-bold text-slate-700 mb-2">Fecha</label>
                         <input 
                             type="date" 
                             required
-                            className="w-full border border-gray-300 rounded-lg p-3 text-base"
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-base focus:ring-2 focus:ring-slate-400 focus:border-transparent outline-none transition"
                             value={formData.date}
                             onChange={e => setFormData({...formData, date: e.target.value})}
                         />
                     </div>
 
                      <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">Monto (CLP)</label>
+                        <label className="block text-sm font-bold text-slate-700 mb-2">Monto (CLP)</label>
                         <input 
                             type="number" 
                             required
                             placeholder="0"
-                            className="w-full border border-gray-300 rounded-lg p-3 text-base"
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-base focus:ring-2 focus:ring-slate-400 focus:border-transparent outline-none transition"
                             value={formData.amount}
                             onChange={e => setFormData({...formData, amount: e.target.value})}
                         />
                     </div>
 
                     <div className="md:col-span-2">
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">Comercio / Lugar</label>
+                        <label className="block text-sm font-bold text-slate-700 mb-2">Comercio / Lugar</label>
                         <input 
                             type="text" 
-                            className="w-full border border-gray-300 rounded-lg p-3 text-base"
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-base focus:ring-2 focus:ring-slate-400 focus:border-transparent outline-none transition"
                             value={formData.merchant}
                             onChange={e => setFormData({...formData, merchant: e.target.value})}
                             placeholder="Ej: Restaurant El Paso"
@@ -673,9 +675,9 @@ export default function ExpenseForm() {
                     </div>
 
                     <div className="md:col-span-2">
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">Descripción</label>
+                        <label className="block text-sm font-bold text-slate-700 mb-2">Descripción</label>
                         <textarea 
-                            className="w-full border border-gray-300 rounded-lg p-3 text-base"
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-base focus:ring-2 focus:ring-slate-400 focus:border-transparent outline-none transition"
                             rows="3"
                             value={formData.description}
                             onChange={e => setFormData({...formData, description: e.target.value})}
@@ -688,14 +690,14 @@ export default function ExpenseForm() {
                     <button 
                          type="button"
                          onClick={handleCancel}
-                         className="flex-1 bg-gray-100 text-gray-700 font-bold py-4 px-6 rounded-xl hover:bg-gray-200 transition"
+                         className="flex-1 bg-slate-100 text-slate-700 font-bold py-4 px-6 rounded-xl hover:bg-slate-200 transition"
                     >
                         Cancelar
                     </button>
                     <button 
                         type="submit"
                         disabled={loading || processingAi}
-                        className="flex-1 bg-blue-600 text-white font-bold py-4 px-6 rounded-xl hover:bg-blue-700 transition disabled:opacity-50 shadow-lg text-lg flex justify-center items-center"
+                        className="flex-1 bg-slate-900 text-white font-bold py-4 px-6 rounded-xl hover:bg-slate-800 transition disabled:opacity-50 shadow-lg hover:shadow-xl text-lg flex justify-center items-center"
                     >
                         {loading ? (
                             <>

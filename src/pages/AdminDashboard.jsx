@@ -127,9 +127,9 @@ export default function AdminDashboard() {
             </a>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 bg-gray-50 p-4 rounded-xl mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
              {/* Caja Chica Card */}
-            <div className="bg-white p-6 rounded-lg shadow-md border-l-4 border-l-teal-500 relative overflow-hidden group">
+            <div className="bg-white p-6 rounded-2xl shadow-soft border border-slate-100 relative overflow-hidden group hover:shadow-lg transition duration-300">
                 <div className="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition">
                     <Wallet className="w-16 h-16 text-teal-600" />
                 </div>
@@ -150,17 +150,19 @@ export default function AdminDashboard() {
                 </button>
             </div>
 
-            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
-                <h3 className="text-gray-500 text-sm font-medium">Proyectos Activos</h3>
-                <p className="text-3xl font-bold text-gray-800">{projects.length}</p>
+
+
+            <div className="bg-white p-6 rounded-2xl shadow-soft border border-slate-100 flex flex-col justify-center">
+                <h3 className="text-slate-500 text-sm font-semibold uppercase tracking-wide">Proyectos Activos</h3>
+                <p className="text-3xl font-extrabold text-slate-800 mt-2">{projects.length}</p>
             </div>
-            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
-                <h3 className="text-gray-500 text-sm font-medium">Total Asignado</h3>
-                <p className="text-3xl font-bold text-gray-800">{formatCurrency(totalAssigned)}</p>
+            <div className="bg-white p-6 rounded-2xl shadow-soft border border-slate-100 flex flex-col justify-center">
+                <h3 className="text-slate-500 text-sm font-semibold uppercase tracking-wide">Total Asignado</h3>
+                <p className="text-3xl font-extrabold text-slate-800 mt-2">{formatCurrency(totalAssigned)}</p>
             </div>
-            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
-                <h3 className="text-gray-500 text-sm font-medium">Rendiciones Pendientes</h3>
-                <p className="text-3xl font-bold text-orange-500">{pendingCount}</p>
+            <div className="bg-white p-6 rounded-2xl shadow-soft border border-slate-100 flex flex-col justify-center">
+                <h3 className="text-slate-500 text-sm font-semibold uppercase tracking-wide">Rendiciones Pendientes</h3>
+                <p className="text-3xl font-extrabold text-orange-500 mt-2">{pendingCount}</p>
             </div>
         </div>
 
@@ -177,21 +179,21 @@ export default function AdminDashboard() {
                         
                         return (
                             <Link to={`/admin/projects/${p.id}`} key={p.id} className="block transition hover:scale-105 duration-200">
-                            <div className="bg-white p-5 rounded-lg shadow-sm border border-gray-100 flex flex-col justify-between h-full hover:shadow-md transition">
+                            <div className="bg-white p-6 rounded-2xl shadow-soft border border-slate-100 flex flex-col justify-between h-full hover:shadow-xl hover:-translate-y-1 transition duration-300">
                                 <div>
-                                    <h3 className="font-bold text-lg text-gray-800 mb-1">
+                                    <h3 className="font-bold text-lg text-slate-800 mb-1 leading-tight">
                                         {p.code ? `[${p.code}] ` : ''}{p.name}{p.recurrence ? ` (${p.recurrence})` : ''}
                                     </h3>
-                                    <p className="text-sm text-gray-500 mb-4">{p.client}</p>
+                                    <p className="text-sm text-slate-500 mb-6 font-medium">{p.client}</p>
                                     
-                                    <div className="flex justify-between items-end mb-2">
+                                    <div className="flex justify-between items-end mb-3">
                                         <div>
-                                            <p className="text-xs text-gray-500 uppercase font-semibold">Asignado</p>
-                                            <p className="text-xl font-bold text-gray-800">{formatCurrency(assigned)}</p>
+                                            <p className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Asignado</p>
+                                            <p className="text-lg font-bold text-slate-700">{formatCurrency(assigned)}</p>
                                         </div>
                                         <div className="text-right">
-                                            <p className="text-xs text-gray-500 uppercase font-semibold">Rendido</p>
-                                            <p className={`text-xl font-bold ${expenses > assigned ? 'text-red-600' : 'text-blue-600'}`}>
+                                            <p className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Rendido</p>
+                                            <p className={`text-lg font-bold ${expenses > assigned ? 'text-red-500' : 'text-blue-600'}`}>
                                                 {formatCurrency(expenses)}
                                             </p>
                                         </div>
@@ -199,13 +201,13 @@ export default function AdminDashboard() {
                                 </div>
 
                                 <div className="mt-2">
-                                    <div className="w-full bg-gray-100 rounded-full h-2 mb-1">
+                                    <div className="w-full bg-slate-100 rounded-full h-2 mb-2 overflow-hidden">
                                         <div 
-                                            className={`h-2 rounded-full ${expenses > assigned ? 'bg-red-500' : 'bg-blue-500'}`} 
+                                            className={`h-2 rounded-full transition-all duration-1000 ${expenses > assigned ? 'bg-red-500' : 'bg-blue-500'}`} 
                                             style={{ width: `${Math.min(percentage, 100)}%` }}
                                         ></div>
                                     </div>
-                                    <p className="text-xs text-right text-gray-400">
+                                    <p className="text-xs text-right text-slate-400 font-medium">
                                         {percentage.toFixed(1)}% Ejecutado
                                     </p>
                                 </div>
