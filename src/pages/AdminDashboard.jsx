@@ -136,7 +136,14 @@ export default function AdminDashboard() {
                 <h3 className="text-gray-500 text-sm font-bold uppercase tracking-wider mb-2">Fondo Caja Chica</h3>
                 <p className="text-3xl font-extrabold text-teal-600 mb-4">{formatCurrency(cajaChicaBalance)}</p>
                 <button 
-                    onClick={() => navigate('/admin/balances')} 
+                    onClick={() => {
+                        const cajaProject = projects.find(p => p.name?.toLowerCase().includes("caja chica") || p.type === 'petty_cash');
+                        if (cajaProject) {
+                            navigate(`/admin/projects/${cajaProject.id}`);
+                        } else {
+                            navigate('/admin/balances');
+                        }
+                    }} 
                     className="text-xs font-bold text-white bg-teal-600 px-3 py-1.5 rounded hover:bg-teal-700 transition"
                 >
                     RECARGAR / VER DETALLE

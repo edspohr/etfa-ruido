@@ -7,6 +7,7 @@ import { collection, addDoc, getDocs, query, where, doc, updateDoc, increment } 
 import { Upload, Loader2, Camera, X, FileText, Plus } from 'lucide-react';
 import { formatCurrency } from '../utils/format'; // Validation aid/display
 import { useNavigate } from 'react-router-dom';
+import { compressImage } from '../utils/imageUtils';
 
 const CATEGORIES_COMMON = [
   "Alimentación",
@@ -70,26 +71,31 @@ export default function ExpenseForm() {
   }, [userRole]);
 
   const handleFileChange = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+    const originalFile = e.target.files[0];
+    if (!originalFile) return;
 
-    // Create preview
-    const url = URL.createObjectURL(file);
-    setPreviewUrl(url);
-    setFormData(prev => ({ ...prev, receiptImage: file }));
     setStep('review');
 
-    // AI Processing
+    // AI Processing & Compression
     try {
       setProcessingAi(true);
       
-      // Determine available categories based on role
+      // 1. Compress Image (if it's an image)
+      const compressedFile = await compressImage(originalFile);
+
+      // 2. Set Preview & Data with Compressed File
+      const url = URL.createObjectURL(compressedFile);
+      setPreviewUrl(url);
+      setFormData(prev => ({ ...prev, receiptImage: compressedFile }));
+
+      // 3. Determine available categories based on role
       let availableCats = [...CATEGORIES_COMMON];
       if (userRole === 'admin') {
           availableCats = [...availableCats, ...CATEGORIES_ADMIN];
       }
 
-      const data = await parseReceiptImage(file, availableCats);
+      // 4. AI Analysis (using compressed file)
+      const data = await parseReceiptImage(compressedFile, availableCats);
       if (data) {
         setFormData(prev => ({
           ...prev,
@@ -98,12 +104,19 @@ export default function ExpenseForm() {
           amount: data.amount || prev.amount,
           description: data.description || prev.description,
           category: data.category || prev.category,
-          receiptImage: file
         }));
       }
     } catch (err) {
-      console.error("AI Error:", err);
-      // We don't block the user, just log the error. User can edit manually.
+      console.error("Processing Error:", err);
+      // Fallback: If compression fails (rare), use original? 
+      // Or just continue. If AI fails, we just don't fill fields.
+      // But we should ensure formData has A file.
+      // If compression failed completely, we might not have set formData.receiptImage if it crashed at step 1.
+      // Let's ensure we at least set the original if compression fails, though unlikely.
+      if (!formData.receiptImage) {
+           setFormData(prev => ({ ...prev, receiptImage: originalFile }));
+           setPreviewUrl(URL.createObjectURL(originalFile));
+      }
     } finally {
       setProcessingAi(false);
     }
@@ -446,7 +459,7 @@ export default function ExpenseForm() {
                          {processingAi && (
                             <div className="absolute inset-0 flex items-center justify-center bg-black/60 text-white">
                                  <Loader2 className="w-8 h-8 animate-spin mr-2" />
-                                 <span className="font-medium">Procesando con IA...</span>
+                                 <span className="font-medium">Optimizando y Analizando...</span>
                             </div>
                          )}
                     </div>
