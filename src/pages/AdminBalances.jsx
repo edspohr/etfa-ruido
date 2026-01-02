@@ -13,7 +13,7 @@ export default function AdminBalances() {
   useEffect(() => {
     async function fetchPros() {
         try {
-            const q = query(collection(db, "users"), where("role", "==", "professional"));
+            const q = query(collection(db, "users"), where("role", "in", ["professional", "admin"]));
             const snapshot = await getDocs(q);
             const data = snapshot.docs.map(d => ({id: d.id, ...d.data()}));
             setProfessionals(data);
