@@ -32,7 +32,7 @@ export default function AdminProjects() {
         // We need 'user_caja_chica' if we want to manually assign?
         // Actually, for the SELECT, we only want professionals. 
         // Logic: If 'Caja Chica' project selected -> Auto-assign to hidden user. 
-        const uQuery = query(collection(db, "users"), where("role", "==", "professional"));
+        const uQuery = query(collection(db, "users"), where("role", "in", ["professional", "admin"]));
         const uSnap = await getDocs(uQuery);
         const uData = uSnap.docs.map(d => ({id: d.id, ...d.data()}));
         setUsers(uData);

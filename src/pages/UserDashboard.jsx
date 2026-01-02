@@ -83,8 +83,8 @@ export default function UserDashboard() {
                             <div>
                                 <p className="font-semibold text-gray-800">
                                     {p.code ? <span className="text-xs font-mono bg-blue-50 text-blue-600 px-1 py-0.5 rounded mr-2">{p.code}</span> : null}
+                                    {p.recurrence ? <span className="mr-2 text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">{p.recurrence}</span> : null}
                                     {p.name}
-                                    {p.recurrence ? <span className="ml-2 text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">{p.recurrence}</span> : null}
                                 </p>
                                 <p className="text-sm text-gray-600">{p.client}</p>
                             </div>
