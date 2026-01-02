@@ -146,10 +146,11 @@ export default function AdminProjects() {
   };
   
   const formatProjectName = (p) => {
-      let displayName = p.name;
-      if (p.code) displayName = `[${p.code}] ${displayName}`;
-      if (p.recurrence) displayName = `${displayName} (${p.recurrence})`;
-      return displayName;
+      let parts = [];
+      if (p.code) parts.push(`[${p.code}]`);
+      if (p.recurrence) parts.push(`(${p.recurrence})`);
+      parts.push(p.name);
+      return parts.join(' ');
   };
 
   if (loading) return <Layout title="Gestión de Proyectos">Cargando...</Layout>;

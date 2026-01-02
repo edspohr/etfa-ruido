@@ -125,7 +125,7 @@ export default function AdminProjectDetails() {
   if (!project) return <Layout title="Error">Proyecto no encontrado.</Layout>;
 
   return (
-    <Layout title={`Acciones: ${project.code ? `[${project.code}] ` : ''}${project.name} ${project.recurrence ? `(${project.recurrence})` : ''}`}>
+    <Layout title={`Acciones: ${project.code ? `[${project.code}] ` : ''}${project.recurrence ? `(${project.recurrence}) ` : ''}${project.name}`}>
         <div className="mb-6">
             <Link to="/admin/projects" className="text-blue-600 hover:text-blue-800 flex items-center">
                 <ArrowLeft className="w-4 h-4 mr-2" /> Volver a Proyectos

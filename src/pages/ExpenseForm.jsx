@@ -565,7 +565,7 @@ export default function ExpenseForm() {
                                     if (p.status === 'deleted') return null;
                                     const isCajaChica = (p.name.toLowerCase().includes("caja chica") || p.type === 'petty_cash');
                                     if (isCajaChica && userRole !== 'admin') return null;
-                                    return <option key={p.id} value={p.id}>{p.code ? `[${p.code}] ` : ''}{p.name}{p.recurrence ? ` (${p.recurrence})` : ''}</option>
+                                    return <option key={p.id} value={p.id}>{p.code ? `[${p.code}] ` : ''}{p.recurrence ? `(${p.recurrence}) ` : ''}{p.name}</option>
                                 })}
                             </select>
                         ) : (
@@ -583,7 +583,7 @@ export default function ExpenseForm() {
                                         >
                                             <option value="">Proyecto...</option>
                                             {projects.map(p => (
-                                                <option key={p.id} value={p.id}>{p.code ? `[${p.code}] ` : ''}{p.name}{p.recurrence ? ` (${p.recurrence})` : ''}</option>
+                                                <option key={p.id} value={p.id}>{p.code ? `[${p.code}] ` : ''}{p.recurrence ? `(${p.recurrence}) ` : ''}{p.name}</option>
                                             ))}
                                         </select>
                                         <input 
