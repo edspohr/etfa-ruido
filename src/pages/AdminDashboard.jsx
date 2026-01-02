@@ -163,7 +163,7 @@ export default function AdminDashboard() {
                 <p className="text-gray-500">No hay proyectos activos.</p>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {projects.map(p => {
+                    {projects.filter(p => !p.name.toLowerCase().includes('caja chica') && p.type !== 'petty_cash').map(p => {
                         const expenses = p.expenses || 0;
                         const assigned = p.assigned || 0;
                         const percentage = assigned > 0 ? (expenses / assigned) * 100 : 0;
