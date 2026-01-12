@@ -5,6 +5,7 @@ import { db } from '../lib/firebase';
 import { collection, query, where, getDocs, deleteDoc, doc, updateDoc, increment } from 'firebase/firestore';
 import { formatCurrency } from '../utils/format';
 import { Trash2, AlertCircle } from 'lucide-react';
+import { toast } from 'sonner';
 
 export default function UserExpenses() {
   const { currentUser } = useAuth();
@@ -57,9 +58,10 @@ export default function UserExpenses() {
           
           // Refresh list
           setExpenses(prev => prev.filter(e => e.id !== expense.id));
+          toast.success("Rendición eliminada.");
       } catch (error) {
           console.error("Error deleting expense:", error);
-          alert("Error al eliminar.");
+          toast.error("Error al eliminar.");
       }
   };
 

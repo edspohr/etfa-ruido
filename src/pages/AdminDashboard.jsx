@@ -7,8 +7,10 @@ import { seedDatabase } from '../lib/seedData';
 import { formatCurrency } from '../utils/format';
 import { useAuth } from '../context/useAuth';
 import { Database, Wallet } from 'lucide-react';
+import { toast } from 'sonner';
 
 import { sortProjects } from '../utils/sort';
+import { Skeleton } from '../components/Skeleton';
 
 export default function AdminDashboard() {
   const { currentUser } = useAuth();
@@ -90,25 +92,50 @@ export default function AdminDashboard() {
       
       const pin = prompt("Ingrese la clave de seguridad para confirmar:");
       if (pin !== "1234") {
-          alert("Clave incorrecta. Cancelando operación.");
+          toast.error("Clave incorrecta. Cancelando operación.");
           return;
       }
 
       setSeeding(true);
       try {
           await seedDatabase(currentUser.uid);
-          alert("Datos cargados correctamente");
+          toast.success("Datos cargados correctamente");
           window.location.reload(); 
       } catch (e) {
           console.error(e);
-          alert("Error cargando datos: " + e.message);
+          toast.error("Error cargando datos: " + e.message);
       }
       setSeeding(false);
   };
 
   const totalAssigned = projects.reduce((acc, p) => acc + (p.assigned || 0), 0);
 
-  if (loading) return <Layout title="Dashboard General"><p className="p-8">Cargando...</p></Layout>;
+  if (loading) return (
+      <Layout title="Dashboard General">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
+          {[1,2,3,4].map(i => (
+              <div key={i} className="bg-white p-6 rounded-2xl shadow-soft border border-slate-100 h-32 flex flex-col justify-center">
+                  <div className="flex gap-4 items-center">
+                    <Skeleton className="h-4 w-24 mb-2" />
+                  </div>
+                  <Skeleton className="h-10 w-16" />
+              </div>
+          ))}
+        </div>
+        <div className="mt-8">
+            <Skeleton className="h-8 w-48 mb-4" />
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                 {[1,2,3].map(i => (
+                     <div key={i} className="bg-white p-6 rounded-2xl shadow-soft h-48">
+                         <Skeleton className="h-6 w-3/4 mb-2" />
+                         <Skeleton className="h-4 w-1/2 mb-6" />
+                         <Skeleton className="h-2 w-full rounded-full" />
+                     </div>
+                 ))}
+            </div>
+        </div>
+      </Layout>
+  );
 
   return (
     <Layout title="Dashboard General">

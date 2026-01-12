@@ -5,6 +5,8 @@ import { collection, query, where, getDocs, doc, updateDoc, increment, writeBatc
 import { formatCurrency } from '../utils/format';
 import { CheckCircle, XCircle, Download, FileText } from 'lucide-react';
 import RejectionModal from '../components/RejectionModal';
+import { toast } from 'sonner';
+import { motion } from 'framer-motion';
 
 export default function AdminApprovals() {
   const [pendingExpenses, setPendingExpenses] = useState([]);
@@ -52,7 +54,7 @@ export default function AdminApprovals() {
           }
 
           if (expenses.length === 0) {
-              alert("No hay registros en el rango de fechas seleccionado.");
+              toast.error("No hay registros en el rango de fechas seleccionado.");
               return;
           }
 
@@ -88,7 +90,7 @@ export default function AdminApprovals() {
           document.body.removeChild(link);
       } catch (e) {
           console.error("Error exporting CSV:", e);
-          alert("Error al exportar los datos.");
+          toast.error("Error al exportar los datos.");
       }
   };
 
@@ -114,10 +116,11 @@ export default function AdminApprovals() {
           }
 
           await batch.commit();
-          fetchPending();
-      } catch (e) {
-          console.error("Error approving:", e);
-          alert("Error al aprobar");
+          toast.success("Gasto aprobado."); 
+          setPendingExpenses(prev => prev.filter(e => e.id !== expense.id));
+      } catch (error) {
+          console.error("Error approving:", error);
+          toast.error("Error al aprobar");
       }
   };
 
@@ -163,17 +166,19 @@ export default function AdminApprovals() {
               batch.update(userRef, { balance: increment(-expense.amount) });
           }
 
-          await batch.commit();
-          fetchPending();
+          toast.success("Gasto rechazado y saldo devuelto.");
+          setRejectionModalOpen(false);
+          setSelectedExpenseToReject(null);
+          setPendingExpenses(prev => prev.filter(e => e.id !== selectedExpenseToReject?.id));
       } catch (e) {
           console.error("Error rejecting:", e);
-          alert("Error al rechazar");
+          toast.error("Error al rechazar");
       }
   };
   
   const handleViewReceipt = (url) => {
       if (!url) {
-          alert("No hay comprobante adjunto.");
+          toast.error("No hay comprobante adjunto.");
           return;
       }
       window.open(url, '_blank');
@@ -230,9 +235,15 @@ export default function AdminApprovals() {
                             <th className="px-6 py-3 font-medium text-gray-500">Acciones</th>
                         </tr>
                     </thead>
-                    <tbody>
-                        {pendingExpenses.map(e => (
-                            <tr key={e.id} className="border-b last:border-0 hover:bg-gray-50">
+                    <tbody className="divide-y divide-gray-100">
+                        {pendingExpenses.map((e, index) => (
+                            <motion.tr 
+                                key={e.id} 
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ duration: 0.2, delay: index * 0.05 }}
+                                className="hover:bg-gray-50 transition-colors"
+                            >
                                 <td className="px-6 py-4 text-sm text-gray-600">{e.date}</td>
                                 <td className="px-6 py-4 font-medium text-gray-800">{e.userName || 'N/A'}</td>
                                 <div className="flex flex-col">
@@ -263,7 +274,7 @@ export default function AdminApprovals() {
                                         <XCircle className="w-6 h-6" />
                                     </button>
                                 </td>
-                            </tr>
+                            </motion.tr>
                         ))}
                     </tbody>
                 </table>

@@ -22,6 +22,7 @@ import {
   Wallet,
   User,
 } from "lucide-react";
+import { toast } from 'sonner';
 
 export default function AdminUserDetails() {
   const { id } = useParams();
@@ -118,8 +119,6 @@ export default function AdminUserDetails() {
         }
       }
 
-      alert("Estado actualizado.");
-
       // Optimistic / Local Update (No Re-fetch)
       setExpenses((prev) =>
         prev.map((e) => {
@@ -134,9 +133,10 @@ export default function AdminUserDetails() {
           balance: (prev.balance || 0) + balanceChange,
         }));
       }
+      toast.success("Estado actualizado.");
     } catch (e) {
       console.error("Error updating status:", e);
-      alert("Error al actualizar.");
+      toast.error("Error al actualizar.");
     }
   };
 

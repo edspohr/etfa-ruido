@@ -5,11 +5,14 @@ import { useAuth } from '../context/useAuth';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import ForcePasswordChange from './ForcePasswordChange';
+import PageTransition from './PageTransition';
+import { useLocation } from 'react-router-dom';
 
 export default function Layout({ children, title }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { currentUser } = useAuth();
   const [mustChangePass, setMustChangePass] = useState(false);
+  const location = useLocation();
 
   useEffect(() => {
     async function checkUserStatus() {
@@ -48,7 +51,9 @@ export default function Layout({ children, title }) {
 
         <main className="flex-1 overflow-x-hidden overflow-y-auto bg-slate-50 p-6 md:p-8">
             <div className="max-w-7xl mx-auto">
-                {children}
+                <PageTransition key={location.pathname}>
+                    {children}
+                </PageTransition>
             </div>
         </main>
         

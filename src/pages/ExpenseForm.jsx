@@ -9,6 +9,7 @@ import { formatCurrency } from '../utils/format'; // Validation aid/display
 import { useNavigate } from 'react-router-dom';
 import { compressImage } from '../utils/imageUtils';
 import { sortProjects } from '../utils/sort';
+import { toast } from 'sonner';
 
 const CATEGORIES_COMMON = [
   "Alimentación",
@@ -164,79 +165,79 @@ export default function ExpenseForm() {
     // Common Validation
     const totalAmount = Number(formData.amount);
     if (isNaN(totalAmount) || totalAmount === 0) {
-        alert("Ingrese un monto válido (puede ser negativo para devoluciones/correcciones).");
+        toast.error("Ingrese un monto válido (puede ser negativo para devoluciones/correcciones).");
         return;
     }
 
-    if (isSplitMode) {
-        const sumSplits = splitRows.reduce((acc, row) => acc + (Number(row.amount) || 0), 0);
-        if (Math.abs(sumSplits - totalAmount) > 1) { // 1 peso tolerance
-            alert(`La suma de la distribución (${sumSplits}) no coincide con el total (${totalAmount}). Diferencia: ${totalAmount - sumSplits}`);
-            return;
-        }
-        if (splitRows.some(r => !r.projectId)) {
-            alert("Seleccione proyecto para todas las filas.");
-            return;
-        }
-    } else {
-        if (!formData.projectId) {
-            alert("Por favor selecciona un proyecto.");
-            return;
-        }
-    }
-    
-    if (!isSplitMode) {
-        const selectedProject = projects.find(p => p.id === formData.projectId);
-        const isCajaChica = selectedProject?.name?.toLowerCase().includes("caja chica") || selectedProject?.type === 'petty_cash';
-        
-            if (isCajaChica && userRole !== 'admin') {
-            alert("No tienes permisos para rendir en 'Caja Chica'.");
-            return;
-        }
-    }
-
-    // ---------------------------------------------------------
-    // VALIDATIONS
-    // ---------------------------------------------------------
-
-    // 1. Date Restriction (Max 60 days old)
-    const MAX_DAYS_OLD = 60;
-    const expenseDate = new Date(formData.date);
-    const today = new Date();
-    // Normalize to start of day for accurate day diff
-    expenseDate.setHours(0,0,0,0);
-    today.setHours(0,0,0,0);
-    
-    // Calculate difference in days
-    const diffTime = Math.abs(today - expenseDate);
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-    if (expenseDate < today && diffDays > MAX_DAYS_OLD) {
-        alert(`La fecha del gasto no puede tener más de ${MAX_DAYS_OLD} días de antigüedad.`);
-        return;
-    }
-
-    // 2. Duplicity Check
-    let targetUidCheck = currentUser.uid;
-    if (userRole === 'admin' && expenseMode === 'other' && selectedUserId) {
-        targetUidCheck = selectedUserId;
-    }
-
-    if (!isSplitMode) {
-        const dupQuery = query(
-            collection(db, "expenses"),
-            where("userId", "==", targetUidCheck),
-            where("date", "==", formData.date),
-            where("amount", "==", totalAmount)
-        );
-        
-        const dupSnap = await getDocs(dupQuery);
-        if (!dupSnap.empty) {
-            if (!confirm("Parece que ya existe un gasto con esta fecha y monto para este usuario. ¿Estás seguro de que no es un duplicado?")) {
+        if (isSplitMode) {
+            const sumSplits = splitRows.reduce((acc, row) => acc + (Number(row.amount) || 0), 0);
+            if (Math.abs(sumSplits - totalAmount) > 1) { // 1 peso tolerance
+                toast.error(`La suma de la distribución (${sumSplits}) no coincide con el total (${totalAmount}). Diferencia: ${totalAmount - sumSplits}`);
+                return;
+            }
+            if (splitRows.some(r => !r.projectId)) {
+                toast.error("Seleccione proyecto para todas las filas.");
+                return;
+            }
+        } else {
+            if (!formData.projectId) {
+                toast.error("Por favor selecciona un proyecto.");
                 return;
             }
         }
-    }
+        
+        if (!isSplitMode) {
+            const selectedProject = projects.find(p => p.id === formData.projectId);
+            const isCajaChica = selectedProject?.name?.toLowerCase().includes("caja chica") || selectedProject?.type === 'petty_cash';
+            
+                if (isCajaChica && userRole !== 'admin') {
+                toast.error("No tienes permisos para rendir en 'Caja Chica'.");
+                return;
+            }
+        }
+
+        // ---------------------------------------------------------
+        // VALIDATIONS
+        // ---------------------------------------------------------
+
+        // 1. Date Restriction (Max 60 days old)
+        const MAX_DAYS_OLD = 60;
+        const expenseDate = new Date(formData.date);
+        const today = new Date();
+        // Normalize to start of day for accurate day diff
+        expenseDate.setHours(0,0,0,0);
+        today.setHours(0,0,0,0);
+        
+        // Calculate difference in days
+        const diffTime = Math.abs(today - expenseDate);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+        if (expenseDate < today && diffDays > MAX_DAYS_OLD) {
+            toast.error(`La fecha del gasto no puede tener más de ${MAX_DAYS_OLD} días de antigüedad.`);
+            return;
+        }
+
+        // 2. Duplicity Check
+        let targetUidCheck = currentUser.uid;
+        if (userRole === 'admin' && expenseMode === 'other' && selectedUserId) {
+            targetUidCheck = selectedUserId;
+        }
+
+        if (!isSplitMode) {
+            const dupQuery = query(
+                collection(db, "expenses"),
+                where("userId", "==", targetUidCheck),
+                where("date", "==", formData.date),
+                where("amount", "==", totalAmount)
+            );
+            
+            const dupSnap = await getDocs(dupQuery);
+            if (!dupSnap.empty) {
+                if (!confirm("Parece que ya existe un gasto con esta fecha y monto para este usuario. ¿Estás seguro de que no es un duplicado?")) {
+                    return;
+                }
+            }
+        }
     // ---------------------------------------------------------
 
     try {
@@ -336,7 +337,7 @@ export default function ExpenseForm() {
             }
         }
 
-        alert(initialStatus === 'approved' ? "Gasto registrado y aprobado." : "Rendición enviada exitosamente.");
+        toast.success(initialStatus === 'approved' ? "Gasto registrado y aprobado." : "Rendición enviada exitosamente.");
         if (userRole === 'admin') {
             navigate('/admin/dashboard');
         } else {
@@ -345,7 +346,7 @@ export default function ExpenseForm() {
 
     } catch (e) {
         console.error("Error submitting expense:", e);
-        alert("Error al enviar la rendición: " + e.message);
+        toast.error("Error al enviar la rendición: " + e.message);
     } finally {
         setLoading(false);
     }

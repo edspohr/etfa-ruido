@@ -7,6 +7,7 @@ import { formatCurrency } from '../utils/format';
 import { Plus, DollarSign, Trash2 } from 'lucide-react';
 
 import { sortProjects } from '../utils/sort';
+import { toast } from 'sonner';
 
 export default function AdminProjects() {
   const [projects, setProjects] = useState([]);
@@ -63,13 +64,13 @@ export default function AdminProjects() {
             status: 'active',
             createdAt: new Date().toISOString()
         });
-        alert("Proyecto creado exitosamente");
+        toast.success("Proyecto creado exitosamente");
         setNewProject({ name: '', client: '', code: '', recurrence: '' });
         setShowProjectForm(false);
         fetchData();
     } catch (err) {
         console.error(err);
-        alert("Error al crear proyecto");
+        toast.error("Error al crear proyecto");
     }
   };
 
@@ -112,7 +113,7 @@ export default function AdminProjects() {
               targetUserName = 'Fondo Caja Chica';
           } else {
               const user = users.find(u => u.id === viaticoUser);
-              if (!user) { alert("Usuario no encontrado"); return; }
+              if (!user) { toast.error("Usuario no encontrado"); return; }
               targetUserName = user.displayName;
           }
 
@@ -136,14 +137,14 @@ export default function AdminProjects() {
               createdAt: new Date().toISOString()
           });
 
-          alert("Viático asignado exitosamente");
+          toast.success("Viático asignado exitosamente");
           setViaticoAmount('');
           setViaticoUser('');
           setViaticoProject('');
           fetchData(); 
       } catch (err) {
           console.error(err);
-          alert("Error asignando viático");
+          toast.error("Error asignando viático");
       }
   };
   

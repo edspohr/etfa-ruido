@@ -6,6 +6,7 @@ import { doc, getDoc, collection, query, where, getDocs, updateDoc, increment } 
 import { formatCurrency } from '../utils/format';
 import { ArrowLeft, CheckCircle, XCircle, FileText, Calendar, User } from 'lucide-react';
 import RejectionModal from '../components/RejectionModal';
+import { toast } from 'sonner';
 
 export default function AdminProjectDetails() {
   const { id } = useParams();
@@ -99,7 +100,7 @@ export default function AdminProjectDetails() {
 
         await updateDoc(expenseRef, updateData);
 
-        alert("Estado actualizado.");
+        toast.success("Estado actualizado.");
         
         // Optimistic Update
         setExpenses(prev => prev.map(e => {
@@ -113,7 +114,7 @@ export default function AdminProjectDetails() {
 
     } catch (e) {
         console.error("Error updating status:", e);
-        alert("Error al actualizar.");
+        toast.error("Error al actualizar.");
     }
   };
 
