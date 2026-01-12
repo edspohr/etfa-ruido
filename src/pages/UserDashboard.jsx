@@ -7,6 +7,8 @@ import { formatCurrency } from '../utils/format';
 import { PlusCircle, Wallet } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
+import { sortProjects } from '../utils/sort';
+
 export default function UserDashboard() {
   const { currentUser, userRole } = useAuth();
   const [balance, setBalance] = useState(0);
@@ -36,7 +38,7 @@ export default function UserDashboard() {
                     if (isCajaChica && userRole !== 'admin') return false;
                     return true;
                 });
-            setProjects(pData);
+            setProjects(sortProjects(pData));
         } catch (e) {
             console.error("Error fetching dashboard:", e);
         } finally {
