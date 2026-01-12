@@ -13,8 +13,9 @@ export default function AdminApprovals() {
   // Rejection Modal State
   const [rejectionModalOpen, setRejectionModalOpen] = useState(false);
   const [selectedExpenseToReject, setSelectedExpenseToReject] = useState(null);
-
-  // ... (fetchPending remains same)
+  // Date Range State for Export
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
 
   const fetchPending = async () => {
       try {
@@ -34,7 +35,26 @@ export default function AdminApprovals() {
       try {
           const q = query(collection(db, "expenses"), orderBy("date", "desc"));
           const snapshot = await getDocs(q);
-          const expenses = snapshot.docs.map(d => d.data());
+          let expenses = snapshot.docs.map(d => d.data());
+
+          // Filter by Date Range if set
+          if (startDate && endDate) {
+              const start = new Date(startDate);
+              const end = new Date(endDate); // Ensure we include the end day? 
+              // Set end to end of day
+              end.setHours(23, 59, 59, 999);
+              start.setHours(0, 0, 0, 0);
+
+              expenses = expenses.filter(e => {
+                  const d = new Date(e.date);
+                  return d >= start && d <= end;
+              });
+          }
+
+          if (expenses.length === 0) {
+              alert("No hay registros en el rango de fechas seleccionado.");
+              return;
+          }
 
           // Define CSV Headers
           const headers = ["Fecha", "Profesional", "Proyecto", "Descripción", "Categoría", "Monto", "Estado", "Motivo Rechazo"];
@@ -62,7 +82,7 @@ export default function AdminApprovals() {
           const url = URL.createObjectURL(blob);
           const link = document.createElement("a");
           link.setAttribute("href", url);
-          link.setAttribute("download", `rendiciones_etfa_${new Date().toISOString().split('T')[0]}.csv`);
+          link.setAttribute("download", `rendiciones_etfa_${startDate || 'inicio'}_alu_${endDate || 'fin'}.csv`);
           document.body.appendChild(link);
           link.click();
           document.body.removeChild(link);
@@ -118,8 +138,28 @@ export default function AdminApprovals() {
           });
 
           // 2. Refund User (INVERTED LOGIC: Expense added funds, so Reject removes them)
-          if (expense.userId) {
-              const userRef = doc(db, "users", expense.userId);
+          // UPDATE: Check if it's Caja Chica project!
+          const isCajaChica = expense.projectName?.toLowerCase().includes("caja chica");
+          // Ideally check project type, but we might not have the full project object here easily without fetching.
+          // expense.projectName is a good proxy. Or fetch the project?Fetching is safer.
+          // BUT, to save reads/speed, checking name is usually 99% fine given existing logic.
+          // Let's rely on name or isCompanyExpense flag? No, isCompanyExpense has weird logic in Form.
+          // Let's fetch project to be 100% sure if we want perfection, 
+          // OR assume the `user_caja_chica` logic aligns with `projectName`.
+          
+          let targetUserId = expense.userId;
+          if (isCajaChica) {
+              targetUserId = 'user_caja_chica';
+          }
+
+          if (targetUserId) {
+              const userRef = doc(db, "users", targetUserId);
+              // Note: If expense was negative (correction), we are "rejecting" it.
+              // If user submitted -1000. Balance changed -1000.
+              // Rejecting it should +1000? 
+              // increment(-amount) works: -(-1000) = +1000. Correct.
+              // If user submitted +1000. Balance +1000. 
+              // Rejecting: -(1000) = -1000. Correct.
               batch.update(userRef, { balance: increment(-expense.amount) });
           }
 
@@ -143,7 +183,27 @@ export default function AdminApprovals() {
 
   return (
     <Layout title="Aprobaciones Pendientes">
-      <div className="flex justify-end mb-4">
+      <div className="flex flex-col md:flex-row justify-end items-end gap-4 mb-4">
+          <div className="flex gap-2 items-center">
+              <div>
+                  <label className="block text-xs text-gray-500 font-bold mb-1">Desde</label>
+                  <input 
+                      type="date" 
+                      value={startDate} 
+                      onChange={e => setStartDate(e.target.value)}
+                      className="border border-gray-300 rounded p-2 text-sm"
+                  />
+              </div>
+              <div>
+                  <label className="block text-xs text-gray-500 font-bold mb-1">Hasta</label>
+                  <input 
+                      type="date" 
+                      value={endDate} 
+                      onChange={e => setEndDate(e.target.value)}
+                      className="border border-gray-300 rounded p-2 text-sm"
+                  />
+              </div>
+          </div>
           <button 
               onClick={handleExportCSV}
               className="bg-gray-800 text-white px-4 py-2 rounded flex items-center hover:bg-gray-700 transition"

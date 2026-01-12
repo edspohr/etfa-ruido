@@ -3,11 +3,12 @@ import Layout from '../components/Layout';
 import { useAuth } from '../context/useAuth';
 import { parseReceiptImage } from '../lib/gemini';
 import { db, uploadReceiptImage } from '../lib/firebase';
-import { collection, addDoc, getDocs, query, where, doc, updateDoc, increment } from 'firebase/firestore';
+import { collection, addDoc, getDocs, query, where, doc, updateDoc, setDoc, increment } from 'firebase/firestore';
 import { Upload, Loader2, Camera, X, FileText, Plus } from 'lucide-react';
 import { formatCurrency } from '../utils/format'; // Validation aid/display
 import { useNavigate } from 'react-router-dom';
 import { compressImage } from '../utils/imageUtils';
+import { sortProjects } from '../utils/sort';
 
 const CATEGORIES_COMMON = [
   "Alimentación",
@@ -55,7 +56,7 @@ export default function ExpenseForm() {
           const q = query(collection(db, "projects"), where("status", "!=", "deleted"));
           const snapshot = await getDocs(q);
           const data = snapshot.docs.map(d => ({id: d.id, ...d.data()}));
-          setProjects(data);
+          setProjects(sortProjects(data));
 
           // Fetch Users (If Admin)
           if (userRole === 'admin') {
@@ -108,11 +109,7 @@ export default function ExpenseForm() {
       }
     } catch (err) {
       console.error("Processing Error:", err);
-      // Fallback: If compression fails (rare), use original? 
-      // Or just continue. If AI fails, we just don't fill fields.
-      // But we should ensure formData has A file.
-      // If compression failed completely, we might not have set formData.receiptImage if it crashed at step 1.
-      // Let's ensure we at least set the original if compression fails, though unlikely.
+      // Fallback: If compression fails
       if (!formData.receiptImage) {
            setFormData(prev => ({ ...prev, receiptImage: originalFile }));
            setPreviewUrl(URL.createObjectURL(originalFile));
@@ -166,8 +163,8 @@ export default function ExpenseForm() {
 
     // Common Validation
     const totalAmount = Number(formData.amount);
-    if (!totalAmount || totalAmount <= 0) {
-        alert("Ingrese un monto válido.");
+    if (isNaN(totalAmount) || totalAmount === 0) {
+        alert("Ingrese un monto válido (puede ser negativo para devoluciones/correcciones).");
         return;
     }
 
@@ -188,11 +185,6 @@ export default function ExpenseForm() {
         }
     }
     
-    // "Caja Chica" Check for Single Project Mode (Admin override check inside loop for splits?)
-    // For Split Mode, we need to check ALL projects if user is NOT admin. 
-    // But Split Mode is ADMIN ONLY feature per requirements. "Solo para Admins: Cambia la selección..."
-    // So we assume if isSplitMode, user is Admin (UI should hide it otherwise).
-
     if (!isSplitMode) {
         const selectedProject = projects.find(p => p.id === formData.projectId);
         const isCajaChica = selectedProject?.name?.toLowerCase().includes("caja chica") || selectedProject?.type === 'petty_cash';
@@ -219,24 +211,17 @@ export default function ExpenseForm() {
     const diffTime = Math.abs(today - expenseDate);
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-    // Allow future dates? Usually no, but let's stick to "not older than 60 days"
-    // If date is in past more than 60 days:
     if (expenseDate < today && diffDays > MAX_DAYS_OLD) {
         alert(`La fecha del gasto no puede tener más de ${MAX_DAYS_OLD} días de antigüedad.`);
         return;
     }
 
-    // 2. Duplicity Check (Only relevant if single? Or check each split? Hard to check split duplicity easily. Skip for split mode or check total amount/date match)
-    // Let's keep it simple: Check for SAME User + Date + Amount (Total).
-    
+    // 2. Duplicity Check
     let targetUidCheck = currentUser.uid;
     if (userRole === 'admin' && expenseMode === 'other' && selectedUserId) {
         targetUidCheck = selectedUserId;
     }
 
-    // Only run duplicity check if single mode, or check using total amount for split? 
-    // If split, we create multiple docs with smaller amounts. 
-    // Let's skip strict duplicity check for split mode for now or check against the Total.
     if (!isSplitMode) {
         const dupQuery = query(
             collection(db, "expenses"),
@@ -282,11 +267,6 @@ export default function ExpenseForm() {
             }
         }
 
-        // Determine Status: Auto-approve if Admin submitting for Project/Company
-        // If Split Mode (Admin only), we can assume Approved? 
-        // Requirement 3.2: "La suma de los montos... Al guardar... Crea múltiples documentos".
-        // Requirement 4.1: "Admin debe poder operar".
-        // Usually Admin expenses are approved.
         const initialStatus = (userRole === 'admin') ? 'approved' : 'pending';
 
         const splitGroupId = isSplitMode ? crypto.randomUUID() : null;
@@ -340,57 +320,28 @@ export default function ExpenseForm() {
 
         await Promise.all(savePromises);
 
-        // B. If Personal/Other User Expense: Update User Balance ONE TIME? 
-        // No, balance is tied to the amount. If we split expenses, we credit the User for the SUM of expenses?
-        // Or each expense credits the user? 
-        // Allocation (Viatico) = +Balance.
-        // Expense = No change to balance until Approved? 
-        // Wait. Current Logic: 
-        // Allocation: Balance - Amount (Admin gives money to User). User Balance INCREASES? 
-        // Let's check handleAssignViatico: `balance: increment(-amount)`. Wait.
-        // AdminProjects:124 `updateDoc(userRef, { balance: increment(-amount) })`. 
-        // This decreases Admin balance? Or User balance? 
-        // `userRef` is the Target User (Professional).
-        // If I give money to Professional, their balance should INCREASE (Positive Balance = I owe them / They have funds).
-        // But the code says `increment(-amount)`.
-        // Let's re-read `handleAssignViatico` in `AdminProjects.jsx`.  
-        // `userRef = doc(db, "users", targetUserId)`. `increment(-amount)`.
-        // This implies Balance = Amount User OWES Company? Or what?
-        // Let's look at `AdminUserDetails.jsx`: `(user.balance || 0) < 0 ? "Fondos por Rendir" : "Saldo a Favor"`.
-        // If Balance < 0, "Fondos por Rendir" (User has money to spend/account for).
-        // So `increment(-amount)` makes it negative. So Negative Balance = User has cash.
-        
-        // Expense Submission:
-        // `updateDoc(userRef, { balance: increment(amountNum) })`.
-        // Adds positive amount. Moves balance towards 0.
-        // Logic holds: -100 (Given) + 20 (Spent) = -80 (Left to spend).
-        
-        // Back to Split:
-        // If I submit 2 expenses of 50 each (Total 100).
-        // I should credit the user +50 and +50.
-        // So `increment(item.amount)` inside the loop works perfectly.
-        
+        // B. Update Balances SAFE
         if (!isProjectExpense) {
-            // Logic: Is it Caja Chica? (Complex if splits involve mix of Caja Chica and not? Unlikely).
-            // We assume the User is the same for all splits.
-            
-            // To be safe, we iterate and update for each.
-            // But we can optimize to update ONCE with total.
-            // However, inside loop is safer if logic branches.
             for (const item of itemsToSave) {
                  const pObj = projects.find(p => p.id === item.projectId);
                  const isCajaChica = pObj?.name?.toLowerCase().includes("caja chica") || pObj?.type === 'petty_cash';
                  const targetBalanceId = isCajaChica ? 'user_caja_chica' : targetUid;
                  
                   const userRef = doc(db, "users", targetBalanceId);
-                  await updateDoc(userRef, {
+                  
+                  // Use setDoc with merge to ensure document exists
+                  await setDoc(userRef, {
                       balance: increment(item.amount)
-                  });
+                  }, { merge: true });
             }
         }
 
         alert(initialStatus === 'approved' ? "Gasto registrado y aprobado." : "Rendición enviada exitosamente.");
-        navigate('/admin/dashboard'); // Redirect to dashboard or projects
+        if (userRole === 'admin') {
+            navigate('/admin/dashboard');
+        } else {
+            navigate('/dashboard');
+        }
 
     } catch (e) {
         console.error("Error submitting expense:", e);
@@ -702,7 +653,7 @@ export default function ExpenseForm() {
                         {loading ? (
                             <>
                                 <Loader2 className="w-6 h-6 animate-spin mr-2" />
-                                Enviando...
+                                 Enviando...
                             </>
                         ) : 'Confirmar y Enviar'}
                     </button>

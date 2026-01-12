@@ -45,7 +45,11 @@ export default function UserExpenses() {
           // Exception: Company expenses (if any user can see them here?) don't affect user balance usually,
           // but strict user expenses do.
           if (!expense.isCompanyExpense) {
-               const userRef = doc(db, "users", currentUser.uid);
+               // Check for Caja Chica
+               const isCajaChica = expense.projectName?.toLowerCase().includes("caja chica");
+               const targetUserId = isCajaChica ? 'user_caja_chica' : currentUser.uid;
+
+               const userRef = doc(db, "users", targetUserId);
                await updateDoc(userRef, {
                    balance: increment(-expense.amount)
                });

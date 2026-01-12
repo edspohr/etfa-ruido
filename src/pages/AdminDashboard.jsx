@@ -8,6 +8,8 @@ import { formatCurrency } from '../utils/format';
 import { useAuth } from '../context/useAuth';
 import { Database, Wallet } from 'lucide-react';
 
+import { sortProjects } from '../utils/sort';
+
 export default function AdminDashboard() {
   const { currentUser } = useAuth();
   const navigate = useNavigate();
@@ -71,7 +73,7 @@ export default function AdminDashboard() {
                 assigned: budgetByProject[p.id] || 0 // New Logic: Budget is dynamic sum of allocations
             }));
 
-            setProjects(finalProjects);
+            setProjects(sortProjects(finalProjects));
             setPendingCount(pending);
         } catch (e) {
             console.error("Error loading dashboard:", e);

@@ -6,6 +6,8 @@ import { collection, getDocs, addDoc, query, where, doc, updateDoc, increment } 
 import { formatCurrency } from '../utils/format';
 import { Plus, DollarSign, Trash2 } from 'lucide-react';
 
+import { sortProjects } from '../utils/sort';
+
 export default function AdminProjects() {
   const [projects, setProjects] = useState([]);
   const [users, setUsers] = useState([]);
@@ -26,7 +28,7 @@ export default function AdminProjects() {
         const qProjects = query(collection(db, "projects"), where("status", "!=", "deleted"));
         const pSnap = await getDocs(qProjects);
         const pData = pSnap.docs.map(d => ({id: d.id, ...d.data()}));
-        setProjects(pData);
+        setProjects(sortProjects(pData));
         
         // Fetch ALL users (including admins/hidden) for internal use, or keep filtering?
         // We need 'user_caja_chica' if we want to manually assign?
