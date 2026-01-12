@@ -4,7 +4,7 @@ import Layout from '../components/Layout';
 import { db } from '../lib/firebase';
 import { doc, getDoc, collection, query, where, getDocs, updateDoc, increment, deleteDoc } from 'firebase/firestore';
 import { formatCurrency } from '../utils/format';
-import { ArrowLeft, CheckCircle, XCircle, FileText, Calendar, User, Trash2 } from 'lucide-react';
+import { ArrowLeft, CheckCircle, XCircle, FileText, Calendar, User, Trash2, Pencil } from 'lucide-react';
 import RejectionModal from '../components/RejectionModal';
 import { toast } from 'sonner';
 
@@ -13,11 +13,87 @@ export default function AdminProjectDetails() {
   const [project, setProject] = useState(null);
   const [expenses, setExpenses] = useState([]);
   const [allocations, setAllocations] = useState([]);
+  const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // Rejection Modal
   const [rejectionModalOpen, setRejectionModalOpen] = useState(false);
   const [selectedExpenseToReject, setSelectedExpenseToReject] = useState(null);
+
+  // Edit Allocation Modal
+  const [editingAllocation, setEditingAllocation] = useState(null);
+  const [editForm, setEditForm] = useState({ userId: '', amount: '', date: '' });
+
+  const openEditAllocation = (alloc) => {
+      setEditingAllocation(alloc);
+      setEditForm({ 
+          userId: alloc.userId, 
+          amount: alloc.amount, 
+          date: alloc.date ? alloc.date.split('T')[0] : '' 
+      });
+  };
+
+  const handleUpdateAllocation = async (e) => {
+      e.preventDefault();
+      if (!editingAllocation) return;
+      
+      const oldAmount = Number(editingAllocation.amount);
+      const newAmount = Number(editForm.amount);
+      const oldUserId = editingAllocation.userId;
+      const newUserId = editForm.userId;
+
+      try {
+          // 1. Handle Balance Updates
+          if (oldUserId !== newUserId) {
+              // Revert Old User (Credit back the diff) -> Allocation was Negative Balance, so Revert is Positive
+              await updateDoc(doc(db, "users", oldUserId), {
+                  balance: increment(oldAmount) 
+              });
+              
+              // Charge New User
+              await updateDoc(doc(db, "users", newUserId), {
+                  balance: increment(-newAmount)
+              });
+          } else {
+              // Same User, Diff Adjustment
+              const diff = newAmount - oldAmount; // If increased (100->150), diff is 50. We need to subtract 50 more.
+              if (diff !== 0) {
+                  await updateDoc(doc(db, "users", oldUserId), {
+                      balance: increment(-diff)
+                  });
+              }
+          }
+
+          // 2. Update Allocation Doc
+          const userObj = users.find(u => u.id === newUserId);
+          await updateDoc(doc(db, "allocations", editingAllocation.id), {
+              userId: newUserId,
+              userName: userObj ? userObj.displayName : 'Unknown',
+              amount: newAmount,
+              date: new Date(editForm.date).toISOString()
+          });
+
+          // 3. Update Local State
+          setAllocations(prev => prev.map(a => {
+              if (a.id === editingAllocation.id) {
+                  return {
+                      ...a,
+                      userId: newUserId,
+                      userName: userObj ? userObj.displayName : 'Unknown',
+                      amount: newAmount,
+                      date: new Date(editForm.date).toISOString()
+                  };
+              }
+              return a;
+          }));
+
+          setEditingAllocation(null);
+          toast.success("Viático actualizado exitosamente.");
+      } catch (err) {
+          console.error("Error updating allocation:", err);
+          toast.error("Error al actualizar viático.");
+      }
+  };
 
   const fetchData = useCallback(async () => {
     try {
@@ -44,6 +120,11 @@ export default function AdminProjectDetails() {
             .map(d => ({id: d.id, ...d.data()}))
             .sort((a,b) => new Date(b.date) - new Date(a.date));
         setAllocations(allocData);
+
+        // 4. Get Users (for Edit Dropdown)
+        const uSnap = await getDocs(query(collection(db, "users"), where("role", "in", ["professional", "admin"])));
+        const uData = uSnap.docs.map(d => ({id: d.id, ...d.data()}));
+        setUsers(uData);
 
     } catch (e) {
         console.error("Error fetching details:", e);
@@ -350,7 +431,14 @@ export default function AdminProjectDetails() {
                                         </div>
                                     </td>
                                     <td className="px-4 py-3 font-bold text-gray-700">{formatCurrency(a.amount)}</td>
-                                    <td className="px-4 py-3 text-right">
+                                    <td className="px-4 py-3 text-right flex justify-end gap-2">
+                                        <button 
+                                            onClick={() => openEditAllocation(a)} 
+                                            className="text-gray-400 hover:text-blue-500" 
+                                            title="Editar Viático"
+                                        >
+                                            <Pencil className="w-5 h-5" />
+                                        </button>
                                         <button 
                                             onClick={() => handleDeleteAllocation(a)} 
                                             className="text-gray-400 hover:text-red-500" 
@@ -379,6 +467,66 @@ export default function AdminProjectDetails() {
           onConfirm={handleConfirmRejection}
           expense={selectedExpenseToReject}
         />
+
+        {/* Edit Allocation Modal */}
+        {editingAllocation && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                <div className="bg-white rounded-lg p-6 max-w-md w-full">
+                    <h3 className="text-lg font-bold mb-4">Editar Viático</h3>
+                    <form onSubmit={handleUpdateAllocation} className="space-y-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">Profesional</label>
+                            <select 
+                                className="mt-1 w-full p-2 border rounded"
+                                value={editForm.userId}
+                                onChange={e => setEditForm({...editForm, userId: e.target.value})}
+                                required
+                            >
+                                <option value="">Seleccionar...</option>
+                                {users.map(u => (
+                                    <option key={u.id} value={u.id}>{u.displayName}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">Monto ($)</label>
+                            <input 
+                                type="number" 
+                                className="mt-1 w-full p-2 border rounded"
+                                value={editForm.amount}
+                                onChange={e => setEditForm({...editForm, amount: e.target.value})}
+                                required 
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">Fecha</label>
+                            <input 
+                                type="date" 
+                                className="mt-1 w-full p-2 border rounded"
+                                value={editForm.date}
+                                onChange={e => setEditForm({...editForm, date: e.target.value})}
+                                required 
+                            />
+                        </div>
+                        <div className="flex justify-end gap-2 mt-6">
+                            <button 
+                                type="button"
+                                onClick={() => setEditingAllocation(null)}
+                                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded"
+                            >
+                                Cancelar
+                            </button>
+                            <button 
+                                type="submit"
+                                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                            >
+                                Guardar Cambios
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        )}
     </Layout>
   );
 }

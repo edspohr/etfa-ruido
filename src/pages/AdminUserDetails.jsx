@@ -24,8 +24,10 @@ import {
   User,
   ChevronDown,
   ChevronUp,
-  Trash2
+  Trash2,
+  ArrowRightLeft
 } from "lucide-react";
+import { addDoc } from 'firebase/firestore';
 import { toast } from 'sonner';
 
 export default function AdminUserDetails() {
@@ -40,6 +42,65 @@ export default function AdminUserDetails() {
   const toggleProject = (pid) => {
       if (expandedProject === pid) setExpandedProject(null);
       else setExpandedProject(pid);
+  };
+
+  // Transfer Logic
+  const [transferModalOpen, setTransferModalOpen] = useState(false);
+  const [transferForm, setTransferForm] = useState({ 
+      sourceProjectId: '', 
+      targetProjectId: '', 
+      amount: '' 
+  });
+
+  const handleTransferFunds = async (e) => {
+      e.preventDefault();
+      if (!transferForm.sourceProjectId || !transferForm.targetProjectId || !transferForm.amount) return;
+
+      const amount = Number(transferForm.amount);
+      if (amount <= 0) { toast.error("El monto debe ser positivo"); return; }
+      if (transferForm.sourceProjectId === transferForm.targetProjectId) { toast.error("El proyecto destino debe ser distinto"); return; }
+
+      try {
+          const sourceProject = projectsList.find(p => p.id === transferForm.sourceProjectId);
+          const targetProject = projectsList.find(p => p.id === transferForm.targetProjectId);
+
+          // 1. Create Negative Allocation (Source)
+          await addDoc(collection(db, "allocations"), {
+              userId: id,
+              userName: user.displayName,
+              projectId: sourceProject.id,
+              projectName: sourceProject.name,
+              amount: -amount, // Negative allocation reduces the project budget
+              date: new Date().toISOString(),
+              createdAt: new Date().toISOString(),
+              type: 'transfer_out'
+          });
+
+          // 2. Create Positive Allocation (Target)
+          await addDoc(collection(db, "allocations"), {
+              userId: id,
+              userName: user.displayName,
+              projectId: targetProject.id,
+              projectName: targetProject.name,
+              amount: amount,
+              date: new Date().toISOString(),
+              createdAt: new Date().toISOString(),
+              type: 'transfer_in'
+          });
+
+          // 3. Update User Balance? NO. Net change is 0. (-Amount + Amount = 0).
+
+          toast.success("Fondos reasignados exitosamente.");
+          setTransferModalOpen(false);
+          setTransferForm({ sourceProjectId: '', targetProjectId: '', amount: '' });
+          
+          // Refresh Data
+          fetchData();
+
+      } catch (err) {
+          console.error("Error transferring funds:", err);
+          toast.error("Error al reasignar fondos.");
+      }
   };
 
   const fetchData = useCallback(async () => {
@@ -279,6 +340,12 @@ export default function AdminUserDetails() {
                   <FileText className="w-5 h-5 mr-2 text-gray-400" />
                   Resumen por Proyecto
                </h3>
+               <button 
+                  onClick={() => setTransferModalOpen(true)}
+                  className="text-sm bg-blue-50 text-blue-600 px-3 py-1 rounded-full hover:bg-blue-100 flex items-center font-medium transition"
+               >
+                 <ArrowRightLeft className="w-4 h-4 mr-1" /> Reasignar Recursos
+               </button>
             </div>
             
             <div className="overflow-x-auto">
@@ -472,6 +539,79 @@ export default function AdminUserDetails() {
         </div>
 
       </div>
+      {/* Transfer Modal */}
+      {transferModalOpen && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+              <div className="bg-white rounded-lg p-6 max-w-md w-full">
+                  <h3 className="text-lg font-bold mb-4 flex items-center text-blue-800">
+                      <ArrowRightLeft className="w-5 h-5 mr-2" /> Reasignar Recursos entre Proyectos
+                  </h3>
+                  <p className="text-sm text-gray-500 mb-4">
+                      Mueve saldo asignado de un proyecto a otro. Esto ajustará los totales asignados sin afectar el saldo global del usuario.
+                  </p>
+                  <form onSubmit={handleTransferFunds} className="space-y-4">
+                      <div>
+                          <label className="block text-sm font-medium text-gray-700">Proyecto Origen (Extrae Fondos)</label>
+                          <select 
+                              className="mt-1 w-full p-2 border rounded"
+                              value={transferForm.sourceProjectId}
+                              onChange={e => setTransferForm({...transferForm, sourceProjectId: e.target.value})}
+                              required
+                          >
+                              <option value="">Seleccionar Proyecto...</option>
+                              {projectsList.map(p => (
+                                  <option key={p.id} value={p.id}>
+                                      {p.code ? `[${p.code}] ` : ''}{p.name}
+                                  </option>
+                              ))}
+                          </select>
+                      </div>
+                      <div>
+                          <label className="block text-sm font-medium text-gray-700">Proyecto Destino (Recibe Fondos)</label>
+                          <select 
+                              className="mt-1 w-full p-2 border rounded"
+                              value={transferForm.targetProjectId}
+                              onChange={e => setTransferForm({...transferForm, targetProjectId: e.target.value})}
+                              required
+                          >
+                              <option value="">Seleccionar Proyecto...</option>
+                              {projectsList.map(p => (
+                                  <option key={p.id} value={p.id}>
+                                      {p.code ? `[${p.code}] ` : ''}{p.name}
+                                  </option>
+                              ))}
+                          </select>
+                      </div>
+                      <div>
+                          <label className="block text-sm font-medium text-gray-700">Monto a Reasignar ($)</label>
+                          <input 
+                              type="number" 
+                              className="mt-1 w-full p-2 border rounded"
+                              value={transferForm.amount}
+                              onChange={e => setTransferForm({...transferForm, amount: e.target.value})}
+                              required 
+                              min="0"
+                          />
+                      </div>
+                      <div className="flex justify-end gap-2 mt-6">
+                          <button 
+                              type="button"
+                              onClick={() => setTransferModalOpen(false)}
+                              className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded"
+                          >
+                              Cancelar
+                          </button>
+                          <button 
+                              type="submit"
+                              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                          >
+                              Reasignar
+                          </button>
+                      </div>
+                  </form>
+              </div>
+          </div>
+      )}
     </Layout>
   );
 }
