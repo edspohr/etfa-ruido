@@ -168,8 +168,8 @@ export default function UserDashboard() {
                                        <td className="px-6 py-4 text-right font-medium text-blue-600">
                                            {formatCurrency(row.totalExp)}
                                        </td>
-                                       <td className={`px-6 py-4 text-right font-bold ${row.totalAlloc - row.totalExp >= 0 ? 'text-teal-600' : 'text-red-500'}`}>
-                                           {formatCurrency(row.totalAlloc - row.totalExp)}
+                                       <td className={`px-6 py-4 text-right font-bold ${row.totalExp - row.totalAlloc >= 0 ? 'text-blue-600' : 'text-red-500'}`}>
+                                           {formatCurrency(row.totalExp - row.totalAlloc)}
                                        </td>
                                        <td className="px-6 py-4 text-right">
                                            {row.totalAlloc > row.totalExp ? (

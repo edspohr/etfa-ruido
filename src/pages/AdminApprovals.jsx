@@ -58,20 +58,42 @@ export default function AdminApprovals() {
               return;
           }
 
+          // Fetch Projects for Code/Recurrence lookup
+          const pSnapshot = await getDocs(collection(db, "projects"));
+          const projectMap = {};
+          pSnapshot.docs.forEach(doc => {
+              const data = doc.data();
+              projectMap[doc.id] = data;
+              // Also map by name in case projectId is missing or legacy
+              if (data.name) projectMap[data.name.toLowerCase()] = data;
+          });
+
           // Define CSV Headers
-          const headers = ["Fecha", "Profesional", "Proyecto", "Descripción", "Categoría", "Monto", "Estado", "Motivo Rechazo"];
+          const headers = ["Fecha", "Profesional", "Código Proyecto", "Proyecto", "Recurrencia", "Descripción", "Categoría", "Monto", "Estado", "Motivo Rechazo"];
           
           // Map Data to CSV Rows
-          const rows = expenses.map(e => [
-              e.date || "",
-              e.userName || "",
-              e.projectName || "",
-              `"${(e.description || "").replace(/"/g, '""')}"`, // Escape quotes
-              e.category || "",
-              e.amount || 0,
-              e.status === 'approved' ? 'Aprobado' : e.status === 'rejected' ? 'Rechazado' : 'Pendiente',
-              `"${(e.rejectionReason || "").replace(/"/g, '""')}"`
-          ]);
+          const rows = expenses.map(e => {
+              // Try to find project info
+              let project = null;
+              if (e.projectId && projectMap[e.projectId]) {
+                  project = projectMap[e.projectId];
+              } else if (e.projectName && projectMap[e.projectName.toLowerCase()]) {
+                  project = projectMap[e.projectName.toLowerCase()];
+              }
+
+              return [
+                e.date || "",
+                e.userName || "",
+                project?.code || "",
+                e.projectName || "",
+                project?.recurrence || "",
+                `"${(e.description || "").replace(/"/g, '""')}"`, // Escape quotes
+                e.category || "",
+                e.amount || 0,
+                e.status === 'approved' ? 'Aprobado' : e.status === 'rejected' ? 'Rechazado' : 'Pendiente',
+                `"${(e.rejectionReason || "").replace(/"/g, '""')}"`
+              ];
+          });
 
           // Construct CSV String
           const csvContent = [
