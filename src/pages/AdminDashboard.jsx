@@ -18,8 +18,10 @@ export default function AdminDashboard() {
   const [projects, setProjects] = useState([]);
   const [pendingCount, setPendingCount] = useState(0);
   const [cajaChicaBalance, setCajaChicaBalance] = useState(0);
+  const [cajaChicaSpent, setCajaChicaSpent] = useState(0);
   const [loading, setLoading] = useState(true);
   const [seeding, setSeeding] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
     async function fetchData() {
@@ -56,10 +58,27 @@ export default function AdminDashboard() {
             // Sum Expenses
             expensesDocs.forEach(exp => {
                 if (exp.status === 'pending') pending++;
+                
+                // Track project expenses
                 if (exp.status === 'approved' || exp.status === 'pending') {
                     expensesByProject[exp.projectId] = (expensesByProject[exp.projectId] || 0) + (Number(exp.amount) || 0);
                 }
+
+                // (Caja Chica calculation moved to optimization block below)
             });
+            
+            // Optimization: Find Caja Chica ID first
+            const cajaProject = projectsData.find(p => p.type === 'petty_cash' || p.name.toLowerCase().includes('caja chica'));
+            let ccSpent = 0;
+            if (cajaProject) {
+                // Sum expenses for this project
+                expensesDocs.forEach(e => {
+                     if ((e.status === 'approved' || e.status === 'pending') && e.projectId === cajaProject.id) {
+                         ccSpent += (Number(e.amount) || 0);
+                     }
+                });
+            }
+            setCajaChicaSpent(ccSpent);
 
             // Sum Allocations (Assigned Budget)
             allocationsDocs.forEach(alloc => {
@@ -163,7 +182,16 @@ export default function AdminDashboard() {
                     <Wallet className="w-16 h-16 text-teal-600" />
                 </div>
                 <h3 className="text-gray-500 text-sm font-bold uppercase tracking-wider mb-2">Fondo Caja Chica</h3>
-                <p className="text-3xl font-extrabold text-teal-600 mb-4">{formatCurrency(cajaChicaBalance)}</p>
+                <div className="flex justify-between items-end mb-4">
+                    <div>
+                        <p className="text-xs text-teal-500 font-bold mb-1">DISPONIBLE</p>
+                        <p className="text-3xl font-extrabold text-teal-600">{formatCurrency(cajaChicaBalance)}</p>
+                    </div>
+                    <div className="text-right">
+                        <p className="text-xs text-orange-500 font-bold mb-1">GASTADO</p>
+                        <p className="text-xl font-bold text-orange-600">{formatCurrency(cajaChicaSpent)}</p>
+                    </div>
+                </div>
                 <button 
                     onClick={() => {
                         const cajaProject = projects.find(p => p.name?.toLowerCase().includes("caja chica") || p.type === 'petty_cash');
@@ -196,12 +224,29 @@ export default function AdminDashboard() {
         </div>
 
         <div className="mt-8">
-            <h2 className="text-xl font-bold mb-4 text-gray-800">Resumen de Proyectos</h2>
+            <div className="flex flex-col md:flex-row justify-between items-center mb-6">
+                <h2 className="text-xl font-bold text-gray-800">Resumen de Proyectos</h2>
+                <input 
+                    type="text" 
+                    placeholder="Buscar proyecto..." 
+                    className="mt-2 md:mt-0 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none w-full md:w-64"
+                    value={searchTerm}
+                    onChange={e => setSearchTerm(e.target.value)}
+                />
+            </div>
             {projects.length === 0 ? (
                 <p className="text-gray-500">No hay proyectos activos.</p>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {projects.filter(p => !p.name.toLowerCase().includes('caja chica') && p.type !== 'petty_cash').map(p => {
+                    {projects.filter(p => {
+                        const isNotCaja = !p.name.toLowerCase().includes('caja chica') && p.type !== 'petty_cash';
+                        if (!isNotCaja) return false;
+                        if (!searchTerm) return true;
+                        const lower = searchTerm.toLowerCase();
+                        return p.name.toLowerCase().includes(lower) || 
+                               (p.code && p.code.toLowerCase().includes(lower)) || 
+                               (p.client && p.client.toLowerCase().includes(lower));
+                    }).map(p => {
                         const expenses = p.expenses || 0;
                         const assigned = p.assigned || 0;
                         const percentage = assigned > 0 ? (expenses / assigned) * 100 : 0;

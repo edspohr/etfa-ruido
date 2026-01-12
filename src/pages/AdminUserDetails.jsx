@@ -21,15 +21,24 @@ import {
   Calendar,
   Wallet,
   User,
+  ChevronDown,
+  ChevronUp
 } from "lucide-react";
 import { toast } from 'sonner';
 
 export default function AdminUserDetails() {
   const { id } = useParams();
   const [user, setUser] = useState(null);
+  const [projectsList, setProjectsList] = useState([]);
   const [expenses, setExpenses] = useState([]);
   const [allocations, setAllocations] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [expandedProject, setExpandedProject] = useState(null);
+
+  const toggleProject = (pid) => {
+      if (expandedProject === pid) setExpandedProject(null);
+      else setExpandedProject(pid);
+  };
 
   const fetchData = useCallback(async () => {
     try {
@@ -39,22 +48,11 @@ export default function AdminUserDetails() {
       const uSnap = await getDoc(uRef);
       if (uSnap.exists()) {
         let userData = { id: uSnap.id, ...uSnap.data() };
-
-        // 2.2 Special Case: Terreno
-        if (
-          userData.email === "terreno@etfa-ruido.cl" &&
-          (!userData.code || userData.code !== "TER")
-        ) {
-          // Auto-fix in memory (and ideally in DB, but let's stick to display for read-only view)
-          userData.code = "TER";
-        }
+        // (Terreno logic removed as user is deleted)
         setUser(userData);
       }
 
-      // 2. Get Expenses
-      // Note: Filters by userId implies "Expenses SUBMITTED by this user" or "Expenses CREDITED to this user"?
-      // In our model, userId stores the beneficiary of the credit.
-      // For 'On Behalf Of', if Admin credited User A, userId is User A. So checking userId is correct to see their "Claims".
+      // 2. Get Expenses (for this user)
       const qExp = query(collection(db, "expenses"), where("userId", "==", id));
       const expSnap = await getDocs(qExp);
       const expData = expSnap.docs
@@ -62,7 +60,7 @@ export default function AdminUserDetails() {
         .sort((a, b) => new Date(b.date) - new Date(a.date));
       setExpenses(expData);
 
-      // 3. Get Allocations
+      // 3. Get Allocations (for this user)
       const qAlloc = query(
         collection(db, "allocations"),
         where("userId", "==", id)
@@ -72,6 +70,12 @@ export default function AdminUserDetails() {
         .map((d) => ({ id: d.id, ...d.data() }))
         .sort((a, b) => new Date(b.date) - new Date(a.date));
       setAllocations(allocData);
+
+      // 4. Fetch Projects Map (for correct names/codes)
+      const pSnap = await getDocs(collection(db, "projects"));
+      const pData = pSnap.docs.map(d => ({id: d.id, ...d.data()}));
+      setProjectsList(pData);
+
     } catch (e) {
       console.error("Error fetching details:", e);
     } finally {
@@ -189,179 +193,187 @@ export default function AdminUserDetails() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Expenses List */}
+      <div className="grid grid-cols-1 gap-8">
+        
+        {/* Project Summary Table */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
-          <div className="px-6 py-4 border-b bg-gray-50 flex justify-between items-center">
-            <h3 className="font-bold text-gray-700 flex items-center">
-              <FileText className="w-5 h-5 mr-2 text-gray-400" />
-              Historial de Rendiciones
-            </h3>
-            <span className="text-xs font-medium bg-gray-200 text-gray-600 px-2 py-1 rounded-full">
-              {expenses.length}
-            </span>
-          </div>
-          <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="sticky top-0 bg-white">
-                <tr className="border-b">
-                  <th className="px-4 py-3 font-medium text-gray-500">Fecha</th>
-                  <th className="px-4 py-3 font-medium text-gray-500">
-                    Proyecto
-                  </th>
-                  <th className="px-4 py-3 font-medium text-gray-500">
-                    Detalle
-                  </th>
-                  <th className="px-4 py-3 font-medium text-gray-500">Monto</th>
-                  <th className="px-4 py-3 font-medium text-gray-500">
-                    Estado
-                  </th>
-                  <th className="px-4 py-3 font-medium text-gray-500">
-                    Acción
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {expenses.map((e) => (
-                  <tr
-                    key={e.id}
-                    className="border-b last:border-0 hover:bg-gray-50"
-                  >
-                    <td className="px-4 py-3 text-gray-600">{e.date}</td>
-                    <td className="px-4 py-3 text-gray-800 font-medium">
-                      {e.projectName}
-                    </td>
-                    <td className="px-4 py-3 text-gray-600">
-                      <p className="font-medium">{e.category}</p>
-                      <p className="text-xs truncate max-w-[150px]">
-                        {e.description}
-                      </p>
-                      {e.imageUrl && (
-                        <a
-                          href={e.imageUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-blue-500 hover:underline text-xs block mt-1"
-                        >
-                          Ver Boleta
-                        </a>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 font-bold text-gray-700">
-                      {formatCurrency(e.amount)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={`px-2 py-1 rounded-full text-xs font-semibold
-                                            ${
-                                              e.status === "approved"
-                                                ? "bg-green-100 text-green-800"
-                                                : e.status === "rejected"
-                                                ? "bg-red-100 text-red-800"
-                                                : "bg-yellow-100 text-yellow-800"
-                                            }`}
-                      >
-                        {e.status === "approved"
-                          ? "Aprobado"
-                          : e.status === "rejected"
-                          ? "Rechazado"
-                          : "Pendiente"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      {e.status === "pending" && (
-                        <div className="flex space-x-2">
-                          <button
-                            onClick={() =>
-                              handleUpdateStatus(e.id, "approved", e.amount)
-                            }
-                            className="text-green-600 hover:text-green-800"
-                            title="Aprobar"
-                          >
-                            <CheckCircle className="w-5 h-5" />
-                          </button>
-                          <button
-                            onClick={() =>
-                              handleUpdateStatus(e.id, "rejected", e.amount)
-                            }
-                            className="text-red-600 hover:text-red-800"
-                            title="Rechazar"
-                          >
-                            <XCircle className="w-5 h-5" />
-                          </button>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-                {expenses.length === 0 && (
-                  <tr>
-                    <td
-                      colSpan="6"
-                      className="px-4 py-8 text-center text-gray-500"
-                    >
-                      No hay rendiciones registradas.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+            <div className="px-6 py-4 border-b bg-gray-50">
+               <h3 className="font-bold text-gray-700 flex items-center">
+                  <FileText className="w-5 h-5 mr-2 text-gray-400" />
+                  Resumen por Proyecto
+               </h3>
+            </div>
+            
+            <div className="overflow-x-auto">
+               <table className="w-full text-left text-sm">
+                   <thead className="bg-white">
+                      <tr className="border-b">
+                          <th className="px-6 py-3 font-medium text-gray-500">Proyecto</th>
+                          <th className="px-6 py-3 font-medium text-gray-500">Recurrencia</th>
+                          <th className="px-6 py-3 font-medium text-gray-500 text-right">Total Viáticos</th>
+                          <th className="px-6 py-3 font-medium text-gray-500 text-right">Total Rendido</th>
+                          <th className="px-6 py-3 font-medium text-gray-500 text-right">Estado</th>
+                          <th className="px-6 py-3 font-medium text-gray-500 text-right"></th>
+                      </tr>
+                   </thead>
+                   <tbody className="divide-y divide-gray-100">
+                      {(() => {
+                           // Aggregate Data
+                           const projectStats = {};
+
+                           // Initialize with expenses
+                           expenses.forEach(e => {
+                               const pid = e.projectId || 'unknown';
+                               if (!projectStats[pid]) projectStats[pid] = { totalExp: 0, totalAlloc: 0, name: e.projectName || 'Sin Proyecto' };
+                               projectStats[pid].totalExp += (Number(e.amount) || 0);
+                               // Update name from latest expense if available
+                               if (e.projectName) projectStats[pid].name = e.projectName; 
+                           });
+
+                           // Add allocations
+                           allocations.forEach(a => {
+                               const pid = a.projectId || 'unknown';
+                               if (!projectStats[pid]) projectStats[pid] = { totalExp: 0, totalAlloc: 0, name: a.projectName || 'Sin Proyecto' };
+                               projectStats[pid].totalAlloc += (Number(a.amount) || 0);
+                           });
+
+                           // Map to Array with Metadata
+                           const rows = Object.entries(projectStats).map(([pid, stats]) => {
+                               const projectMeta = projectsList.find(p => p.id === pid);
+                               return {
+                                   id: pid,
+                                   name: projectMeta ? projectMeta.name : stats.name,
+                                   code: projectMeta ? projectMeta.code : '',
+                                   recurrence: projectMeta ? projectMeta.recurrence : '',
+                                   ...stats
+                               };
+                           });
+
+                           if (rows.length === 0) return <tr><td colSpan="6" className="p-8 text-center text-gray-400">No hay actividad registrada.</td></tr>;
+
+                           return rows.map(row => {
+                               const isExpanded = expandedProject === row.id;
+                               // Filter details for this project
+                               const projectExpenses = expenses.filter(e => e.projectId === row.id || (!e.projectId && row.id === 'unknown'));
+                               const projectAllocations = allocations.filter(a => a.projectId === row.id || (!a.projectId && row.id === 'unknown'));
+
+                               return (
+                                   <>
+                                   <tr key={row.id} className={`hover:bg-gray-50 transition cursor-pointer ${isExpanded ? 'bg-gray-50' : ''}`} onClick={() => toggleProject(row.id)}>
+                                       <td className="px-6 py-4">
+                                           <span className="font-medium text-gray-800">
+                                                {row.code ? `[${row.code}] ` : ''}{row.name}
+                                           </span>
+                                       </td>
+                                       <td className="px-6 py-4 text-gray-600">
+                                           {row.recurrence || '-'}
+                                       </td>
+                                       <td className="px-6 py-4 text-right font-medium text-green-600">
+                                           {formatCurrency(row.totalAlloc)}
+                                       </td>
+                                       <td className="px-6 py-4 text-right font-medium text-blue-600">
+                                           {formatCurrency(row.totalExp)}
+                                       </td>
+                                       <td className="px-6 py-4 text-right">
+                                           {row.totalAlloc > row.totalExp ? (
+                                               <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">En Rango</span>
+                                           ) : row.totalExp > row.totalAlloc ? (
+                                                <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full">⚠️ Excedido</span>
+                                           ) : (
+                                                <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full">-</span>
+                                           )}
+                                       </td>
+                                       <td className="px-6 py-4 text-right text-gray-400">
+                                            {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                                       </td>
+                                   </tr>
+                                   {isExpanded && (
+                                       <tr>
+                                           <td colSpan="6" className="bg-gray-50 px-6 py-4">
+                                               <div className="flex flex-col lg:flex-row gap-8 pl-4 border-l-2 border-blue-200">
+                                                    {/* Allocations Detail */}
+                                                    <div className="flex-1">
+                                                        <h4 className="font-semibold text-gray-600 mb-2 flex items-center text-xs uppercase tracking-wider">
+                                                            <Wallet className="w-4 h-4 mr-2" /> Viáticos Asignados
+                                                        </h4>
+                                                        {projectAllocations.length === 0 ? <p className="text-xs text-gray-400 italic">Sin registros</p> : (
+                                                            <div className="bg-white rounded border border-gray-100 overflow-hidden">
+                                                                <table className="w-full text-xs">
+                                                                    <tbody>
+                                                                        {projectAllocations.map(a => (
+                                                                            <tr key={a.id} className="border-b last:border-0">
+                                                                                <td className="px-3 py-2 text-gray-500">{new Date(a.date).toLocaleDateString()}</td>
+                                                                                <td className="px-3 py-2 font-medium text-right text-green-700">{formatCurrency(a.amount)}</td>
+                                                                            </tr>
+                                                                        ))}
+                                                                    </tbody>
+                                                                </table>
+                                                            </div>
+                                                        )}
+                                                    </div>
+
+                                                    {/* Expenses Detail */}
+                                                    <div className="flex-[2]">
+                                                        <h4 className="font-semibold text-gray-600 mb-2 flex items-center text-xs uppercase tracking-wider">
+                                                            <FileText className="w-4 h-4 mr-2" /> Rendiciones
+                                                        </h4>
+                                                        {projectExpenses.length === 0 ? <p className="text-xs text-gray-400 italic">Sin registros</p> : (
+                                                            <div className="bg-white rounded border border-gray-100 overflow-hidden">
+                                                                <table className="w-full text-xs">
+                                                                    <thead className="bg-gray-50">
+                                                                        <tr>
+                                                                            <th className="px-3 py-2 text-left">Fecha</th>
+                                                                            <th className="px-3 py-2 text-left">Detalle</th>
+                                                                            <th className="px-3 py-2 text-right">Monto</th>
+                                                                            <th className="px-3 py-2 text-center">Estado</th>
+                                                                            <th className="px-3 py-2 text-center">Acción</th>
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody>
+                                                                        {projectExpenses.map(e => (
+                                                                            <tr key={e.id} className="border-b last:border-0 hover:bg-gray-50">
+                                                                                <td className="px-3 py-2 text-gray-500 w-24">{e.date}</td>
+                                                                                <td className="px-3 py-2">
+                                                                                    <p className="font-medium text-gray-700">{e.category}</p>
+                                                                                    <p className="text-gray-400 truncate max-w-[150px]">{e.description}</p>
+                                                                                    {e.imageUrl && <a href={e.imageUrl} target="_blank" className="text-blue-500 hover:underline">Ver Boleta</a>}
+                                                                                </td>
+                                                                                <td className="px-3 py-2 font-bold text-gray-700 text-right">{formatCurrency(e.amount)}</td>
+                                                                                <td className="px-3 py-2 text-center">
+                                                                                    <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold
+                                                                                        ${e.status === 'approved' ? 'bg-green-100 text-green-700' : 
+                                                                                          e.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                                                                                        {e.status === 'approved' ? 'OK' : e.status === 'rejected' ? 'RECH' : 'PEND'}
+                                                                                    </span>
+                                                                                </td>
+                                                                                <td className="px-3 py-2 text-center">
+                                                                                    {e.status === 'pending' && (
+                                                                                        <div className="flex justify-center gap-1">
+                                                                                            <button onClick={(ev) => { ev.stopPropagation(); handleUpdateStatus(e.id, 'approved', e.amount); }} className="p-1 text-green-600 hover:bg-green-100 rounded"><CheckCircle className="w-4 h-4"/></button>
+                                                                                            <button onClick={(ev) => { ev.stopPropagation(); handleUpdateStatus(e.id, 'rejected', e.amount); }} className="p-1 text-red-600 hover:bg-red-100 rounded"><XCircle className="w-4 h-4"/></button>
+                                                                                        </div>
+                                                                                    )}
+                                                                                </td>
+                                                                            </tr>
+                                                                        ))}
+                                                                    </tbody>
+                                                                </table>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                               </div>
+                                           </td>
+                                       </tr>
+                                   )}
+                                   </>
+                               );
+                           });
+                      })()}
+                   </tbody>
+               </table>
+            </div>
         </div>
 
-        {/* Allocations List */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
-          <div className="px-6 py-4 border-b bg-gray-50 flex justify-between items-center">
-            <h3 className="font-bold text-gray-700 flex items-center">
-              <Calendar className="w-5 h-5 mr-2 text-gray-400" />
-              Historial de Viáticos Recibidos
-            </h3>
-            <span className="text-xs font-medium bg-gray-200 text-gray-600 px-2 py-1 rounded-full">
-              {allocations.length}
-            </span>
-          </div>
-          <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="sticky top-0 bg-white">
-                <tr className="border-b">
-                  <th className="px-4 py-3 font-medium text-gray-500">Fecha</th>
-                  <th className="px-4 py-3 font-medium text-gray-500">
-                    Proyecto
-                  </th>
-                  <th className="px-4 py-3 font-medium text-gray-500">Monto</th>
-                </tr>
-              </thead>
-              <tbody>
-                {allocations.map((a) => (
-                  <tr
-                    key={a.id}
-                    className="border-b last:border-0 hover:bg-gray-50"
-                  >
-                    <td className="px-4 py-3 text-gray-600">
-                      {new Date(a.date).toLocaleDateString()}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center">{a.projectName}</div>
-                    </td>
-                    <td className="px-4 py-3 font-bold text-gray-700">
-                      {formatCurrency(a.amount)}
-                    </td>
-                  </tr>
-                ))}
-                {allocations.length === 0 && (
-                  <tr>
-                    <td
-                      colSpan="3"
-                      className="px-4 py-8 text-center text-gray-500"
-                    >
-                      No hay viáticos asignados.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
       </div>
     </Layout>
   );

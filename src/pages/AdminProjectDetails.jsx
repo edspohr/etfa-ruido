@@ -136,23 +136,34 @@ export default function AdminProjectDetails() {
         {/* Summary Cards */}
         {(() => {
              // Calculate Total Assigned dynamically from allocations
-             const totalAssigned = allocations.reduce((acc, a) => acc + (Number(a.amount) || 0), 0);
-             const totalExpenses = project.expenses || 0;
-             const available = totalAssigned - totalExpenses;
+             const totalAllocated = allocations.reduce((acc, a) => acc + (Number(a.amount) || 0), 0);
+             
+             // Calculate specific totals from expenses (Approved ones)
+             const approvedExpenses = expenses.filter(e => e.status === 'approved');
+             
+             const totalRenderedByUsers = approvedExpenses
+                 .filter(e => !e.isCompanyExpense)
+                 .reduce((acc, e) => acc + (Number(e.amount) || 0), 0);
+                 
+             const totalSpent = approvedExpenses
+                 .reduce((acc, e) => acc + (Number(e.amount) || 0), 0);
 
              return (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                    <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
-                        <h3 className="text-sm font-medium text-gray-500 mb-1">Total Asignado</h3>
-                        <p className="text-2xl font-bold text-gray-800">{formatCurrency(totalAssigned)}</p>
+                    <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100 flex flex-col justify-center">
+                        <h3 className="text-sm font-bold text-gray-500 mb-1 uppercase tracking-wide">Viático Asignado</h3>
+                        <p className="text-2xl font-bold text-gray-800">{formatCurrency(totalAllocated)}</p>
+                        <p className="text-xs text-gray-400 mt-1">Fondos entregados a profesionales</p>
                     </div>
-                    <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
-                        <h3 className="text-sm font-medium text-gray-500 mb-1">Gastos Totales (Aprobados)</h3>
-                        <p className="text-2xl font-bold text-blue-600">{formatCurrency(totalExpenses)}</p>
+                    <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100 flex flex-col justify-center">
+                        <h3 className="text-sm font-bold text-gray-500 mb-1 uppercase tracking-wide">Gasto Rendido</h3>
+                        <p className="text-2xl font-bold text-blue-600">{formatCurrency(totalRenderedByUsers)}</p>
+                        <p className="text-xs text-gray-400 mt-1">Justificado por profesionales</p>
                     </div>
-                    <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
-                        <h3 className="text-sm font-medium text-gray-500 mb-1">Disponible</h3>
-                        <p className={`text-2xl font-bold ${available < 0 ? 'text-red-500' : 'text-green-600'}`}>{formatCurrency(available)}</p>
+                    <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100 flex flex-col justify-center">
+                        <h3 className="text-sm font-bold text-gray-500 mb-1 uppercase tracking-wide">Gasto Total</h3>
+                        <p className="text-2xl font-bold text-indigo-600">{formatCurrency(totalSpent)}</p>
+                        <p className="text-xs text-gray-400 mt-1">Incluye gastos directos empresa</p>
                     </div>
                 </div>
              );

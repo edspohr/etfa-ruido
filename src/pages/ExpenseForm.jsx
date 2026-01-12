@@ -268,7 +268,8 @@ export default function ExpenseForm() {
             }
         }
 
-        const initialStatus = (userRole === 'admin') ? 'approved' : 'pending';
+        // All expenses start as pending, even for admins (Cross-check requirement)
+        const initialStatus = 'pending';
 
         const splitGroupId = isSplitMode ? crypto.randomUUID() : null;
         

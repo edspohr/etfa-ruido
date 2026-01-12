@@ -21,6 +21,8 @@ export default function AdminProjects() {
   const [viaticoUser, setViaticoUser] = useState('');
   const [viaticoProject, setViaticoProject] = useState('');
   const [viaticoAmount, setViaticoAmount] = useState('');
+  
+  const [projectSearch, setProjectSearch] = useState('');
 
   const fetchData = async () => {
     try {
@@ -287,8 +289,15 @@ export default function AdminProjects() {
 
         {/* Projects List */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
-            <div className="px-6 py-4 border-b bg-gray-50">
+            <div className="px-6 py-4 border-b bg-gray-50 flex flex-col md:flex-row justify-between items-center gap-4">
                 <h3 className="font-bold text-gray-700">Listado de Proyectos</h3>
+                <input 
+                    type="text"
+                    placeholder="Buscar por nombre, código o cliente..."
+                    className="px-4 py-2 border rounded-lg text-sm w-full md:w-64 focus:ring-2 focus:ring-blue-500 outline-none"
+                    value={projectSearch}
+                    onChange={e => setProjectSearch(e.target.value)}
+                />
             </div>
             <div className="overflow-x-auto">
                 <table className="w-full text-left">
@@ -303,8 +312,19 @@ export default function AdminProjects() {
                     </thead>
                     <tbody>
                         {(() => {
-                            const cajaChica = projects.find(p => p.name.toLowerCase().includes('caja chica') || p.type === 'petty_cash');
-                            const otherProjects = projects.filter(p => !p.name.toLowerCase().includes('caja chica') && p.type !== 'petty_cash');
+                            // Filter Logic
+                            const filtered = projects.filter(p => {
+                                if (!projectSearch) return true;
+                                const lower = projectSearch.toLowerCase();
+                                return (
+                                    p.name.toLowerCase().includes(lower) ||
+                                    (p.code && p.code.toLowerCase().includes(lower)) ||
+                                    (p.client && p.client.toLowerCase().includes(lower))
+                                );
+                            });
+
+                            const cajaChica = filtered.find(p => p.name.toLowerCase().includes('caja chica') || p.type === 'petty_cash');
+                            const otherProjects = filtered.filter(p => !p.name.toLowerCase().includes('caja chica') && p.type !== 'petty_cash');
 
                             return (
                                 <>
