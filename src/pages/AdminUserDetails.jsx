@@ -281,6 +281,7 @@ export default function AdminUserDetails() {
                           <th className="px-6 py-3 font-medium text-gray-500">Recurrencia</th>
                           <th className="px-6 py-3 font-medium text-gray-500 text-right">Total Viáticos</th>
                           <th className="px-6 py-3 font-medium text-gray-500 text-right">Total Rendido</th>
+                          <th className="px-6 py-3 font-medium text-gray-500 text-right">Saldo</th>
                           <th className="px-6 py-3 font-medium text-gray-500 text-right">Estado</th>
                           <th className="px-6 py-3 font-medium text-gray-500 text-right"></th>
                       </tr>
@@ -342,6 +343,9 @@ export default function AdminUserDetails() {
                                        </td>
                                        <td className="px-6 py-4 text-right font-medium text-blue-600">
                                            {formatCurrency(row.totalExp)}
+                                       </td>
+                                       <td className={`px-6 py-4 text-right font-bold ${row.totalAlloc - row.totalExp >= 0 ? 'text-teal-600' : 'text-red-500'}`}>
+                                           {formatCurrency(row.totalAlloc - row.totalExp)}
                                        </td>
                                        <td className="px-6 py-4 text-right">
                                            {row.totalAlloc > row.totalExp ? (
