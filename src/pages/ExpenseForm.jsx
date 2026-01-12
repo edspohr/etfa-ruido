@@ -339,11 +339,7 @@ export default function ExpenseForm() {
         }
 
         toast.success(initialStatus === 'approved' ? "Gasto registrado y aprobado." : "Rendición enviada exitosamente.");
-        if (userRole === 'admin') {
-            navigate('/admin/dashboard');
-        } else {
-            navigate('/dashboard');
-        }
+        navigate('/dashboard');
 
     } catch (e) {
         console.error("Error submitting expense:", e);
