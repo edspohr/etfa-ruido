@@ -109,16 +109,9 @@ export default function AdminProjects() {
           let targetUserId = viaticoUser;
           let targetUserName = '';
 
-          // CAJA CHICA LOGIC
-          const isCajaChica = project?.type === 'petty_cash' || project?.name?.toLowerCase().includes('caja chica');
-          if (isCajaChica) {
-              targetUserId = 'user_caja_chica';
-              targetUserName = 'Fondo Caja Chica';
-          } else {
               const user = users.find(u => u.id === viaticoUser);
               if (!user) { toast.error("Usuario no encontrado"); return; }
               targetUserName = user.displayName;
-          }
 
           if (!targetUserId) return;
 
@@ -263,24 +256,22 @@ export default function AdminProjects() {
                     </div>
 
                     {/* Show Professional Select ONLY if NOT Caja Chica */}
-                    {!(projects.find(p => p.id === viaticoProject)?.type === 'petty_cash' || projects.find(p => p.id === viaticoProject)?.name?.toLowerCase().includes('caja chica')) && (
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700">Profesional</label>
-                            <select 
-                                className="mt-1 w-full p-2 border rounded"
-                                value={viaticoUser}
-                                onChange={e => setViaticoUser(e.target.value)}
-                                required={!(projects.find(p => p.id === viaticoProject)?.type === 'petty_cash')}
-                            >
-                                <option value="">Seleccionar Profesional...</option>
-                                {users.map(u => (
-                                    <option key={u.id} value={u.id}>
-                                        {u.displayName} (Saldo: {formatCurrency(u.balance || 0)})
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-                    )}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Profesional</label>
+                        <select 
+                            className="mt-1 w-full p-2 border rounded"
+                            value={viaticoUser}
+                            onChange={e => setViaticoUser(e.target.value)}
+                            required
+                        >
+                            <option value="">Seleccionar Profesional...</option>
+                            {users.map(u => (
+                                <option key={u.id} value={u.id}>
+                                    {u.displayName} (Saldo: {formatCurrency(u.balance || 0)})
+                                </option>
+                            ))}
+                        </select>
+                    </div>
 
                     <div>
                         <label className="block text-sm font-medium text-gray-700">Monto a Cargar ($)</label>

@@ -195,21 +195,29 @@ export default function AdminUserDetails() {
       try {
           // 1. Revert User Balance (Allocation adds to balance, so we subtract)
           const userRef = doc(db, "users", id);
-          await updateDoc(userRef, {
-              balance: increment(-allocation.amount)
-          });
+          
+          // Verify user exists (sanity check)
+          const userSnap = await getDoc(userRef);
+          if (userSnap.exists()) {
+             await updateDoc(userRef, {
+                balance: increment(-Number(allocation.amount))
+             });
+             // Update Local User State
+             setUser(prev => ({ ...prev, balance: (prev.balance || 0) - Number(allocation.amount) }));
+          } else {
+             console.warn("User not found, skipping balance update.");
+          }
 
           // 2. Delete Document
           await deleteDoc(doc(db, "allocations", allocation.id));
 
-          // 3. Update State
+          // 3. Update Allocations State
           setAllocations(prev => prev.filter(a => a.id !== allocation.id));
-          setUser(prev => ({ ...prev, balance: (prev.balance || 0) - allocation.amount }));
 
-          toast.success("Viático eliminado y saldo actualizado.");
+          toast.success("Viático eliminado.");
       } catch (e) {
           console.error("Error deleting allocation:", e);
-          toast.error("Error al eliminar viático.");
+          toast.error("Error al eliminar viático: " + e.message);
       }
   };
 

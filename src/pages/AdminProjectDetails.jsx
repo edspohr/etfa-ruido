@@ -79,8 +79,7 @@ export default function AdminProjectDetails() {
         if (newStatus === 'rejected') {
              const exp = expenses.find(e => e.id === expenseId);
              if (exp && !exp.isCompanyExpense) {
-                 const isCajaChica = project?.name?.toLowerCase().includes("caja chica") || project?.type === 'petty_cash';
-                 const targetUserId = isCajaChica ? 'user_caja_chica' : userId;
+                 const targetUserId = exp.userId;
                  
                  const userRef = doc(db, "users", targetUserId);
                  await updateDoc(userRef, {
@@ -132,8 +131,7 @@ export default function AdminProjectDetails() {
 
           // 1. Revert User Balance (if it was credited and not company expense)
           if (isCredited && !expense.isCompanyExpense) {
-              const isCajaChica = project?.name?.toLowerCase().includes("caja chica") || project?.type === 'petty_cash';
-              const targetUserId = isCajaChica ? 'user_caja_chica' : expense.userId;
+              const targetUserId = expense.userId;
               
               if (targetUserId) {
                   await updateDoc(doc(db, "users", targetUserId), {
@@ -169,9 +167,15 @@ export default function AdminProjectDetails() {
           // 1. Revert User Balance
           if (allocation.userId) {
               const userRef = doc(db, "users", allocation.userId);
-              await updateDoc(userRef, {
-                  balance: increment(-allocation.amount)
-              });
+              // Check if user exists before updating
+              const userSnap = await getDoc(userRef);
+              if (userSnap.exists()) {
+                   await updateDoc(userRef, {
+                      balance: increment(-Number(allocation.amount))
+                  }); 
+              } else {
+                  console.warn("User not found, skipping balance reversal for allocation deletion.");
+              }
           }
 
           // 2. Delete Document
@@ -180,10 +184,10 @@ export default function AdminProjectDetails() {
           // 3. Update State
           setAllocations(prev => prev.filter(a => a.id !== allocation.id));
           
-          toast.success("Viático eliminado y saldo actualizado.");
+          toast.success("Viático eliminado.");
       } catch(e) {
           console.error("Error deleting allocation", e);
-          toast.error("Error al eliminar viático");
+          toast.error("Error al eliminar viático: " + e.message);
       }
   };
 
