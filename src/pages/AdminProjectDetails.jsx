@@ -45,22 +45,40 @@ export default function AdminProjectDetails() {
       try {
           // 1. Handle Balance Updates
           if (oldUserId !== newUserId) {
-              // Revert Old User (Credit back the diff) -> Allocation was Negative Balance, so Revert is Positive
-              await updateDoc(doc(db, "users", oldUserId), {
-                  balance: increment(oldAmount) 
-              });
+              // Revert Old User (Credit back the diff)
+              if (oldUserId) {
+                  const oldUserRef = doc(db, "users", oldUserId);
+                  const oldUserSnap = await getDoc(oldUserRef);
+                  if (oldUserSnap.exists()) {
+                      await updateDoc(oldUserRef, {
+                          balance: increment(oldAmount) 
+                      });
+                  } else {
+                      console.warn("Old user not found, skipping reversal.");
+                  }
+              }
               
               // Charge New User
-              await updateDoc(doc(db, "users", newUserId), {
-                  balance: increment(-newAmount)
-              });
+              if (newUserId) {
+                  const newUserRef = doc(db, "users", newUserId);
+                  const newUserSnap = await getDoc(newUserRef); // Sanity check
+                  if (newUserSnap.exists()) {
+                      await updateDoc(newUserRef, {
+                          balance: increment(-newAmount)
+                      });
+                  }
+              }
           } else {
               // Same User, Diff Adjustment
-              const diff = newAmount - oldAmount; // If increased (100->150), diff is 50. We need to subtract 50 more.
-              if (diff !== 0) {
-                  await updateDoc(doc(db, "users", oldUserId), {
-                      balance: increment(-diff)
-                  });
+              const diff = newAmount - oldAmount; 
+              if (diff !== 0 && oldUserId) {
+                   const userRef = doc(db, "users", oldUserId);
+                   const userSnap = await getDoc(userRef);
+                   if (userSnap.exists()) {
+                       await updateDoc(userRef, {
+                           balance: increment(-diff)
+                       });
+                   }
               }
           }
 
