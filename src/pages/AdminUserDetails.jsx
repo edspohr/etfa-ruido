@@ -11,6 +11,7 @@ import {
   getDocs,
   updateDoc,
   increment,
+  deleteDoc,
 } from "firebase/firestore";
 import { formatCurrency } from "../utils/format";
 import {
@@ -22,7 +23,8 @@ import {
   Wallet,
   User,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Trash2
 } from "lucide-react";
 import { toast } from 'sonner';
 
@@ -142,6 +144,73 @@ export default function AdminUserDetails() {
       console.error("Error updating status:", e);
       toast.error("Error al actualizar.");
     }
+  };
+
+  const handleDeleteExpense = async (expense) => {
+      if (!confirm("ADVERTENCIA: ¿Estás seguro de eliminar este gasto definitivamente?\nSe revertirán los saldos asociados.")) return;
+
+      try {
+          // Reversal Logic
+          const isCredited = expense.status === 'pending' || expense.status === 'approved';
+          const isProjectCharged = expense.status === 'approved';
+
+          let balanceChange = 0;
+
+          // 1. Revert User Balance (if it was credited and not company expense)
+          if (isCredited && !expense.isCompanyExpense) {
+              const userRef = doc(db, "users", id);
+              await updateDoc(userRef, {
+                  balance: increment(-expense.amount)
+              });
+              balanceChange = -expense.amount;
+          }
+
+          // 2. Revert Project Total (if it was charged)
+          if (isProjectCharged && expense.projectId) {
+              await updateDoc(doc(db, "projects", expense.projectId), {
+                  expenses: increment(-expense.amount)
+              });
+          }
+
+          // 3. Delete Document
+          await deleteDoc(doc(db, "expenses", expense.id));
+          
+          setExpenses(prev => prev.filter(e => e.id !== expense.id));
+          
+          if (balanceChange !== 0) {
+              setUser(prev => ({ ...prev, balance: (prev.balance || 0) + balanceChange }));
+          }
+
+          toast.success("Gasto eliminado y saldos revertidos.");
+
+      } catch (e) {
+          console.error("Error deleting expense:", e);
+          toast.error("Error al eliminar gasto.");
+      }
+  };
+
+  const handleDeleteAllocation = async (allocation) => {
+      if (!confirm("ADVERTENCIA: ¿Estás seguro de eliminar este VIÁTICO?\nSe descontará del saldo del profesional.")) return;
+
+      try {
+          // 1. Revert User Balance (Allocation adds to balance, so we subtract)
+          const userRef = doc(db, "users", id);
+          await updateDoc(userRef, {
+              balance: increment(-allocation.amount)
+          });
+
+          // 2. Delete Document
+          await deleteDoc(doc(db, "allocations", allocation.id));
+
+          // 3. Update State
+          setAllocations(prev => prev.filter(a => a.id !== allocation.id));
+          setUser(prev => ({ ...prev, balance: (prev.balance || 0) - allocation.amount }));
+
+          toast.success("Viático eliminado y saldo actualizado.");
+      } catch (e) {
+          console.error("Error deleting allocation:", e);
+          toast.error("Error al eliminar viático.");
+      }
   };
 
   if (loading) return <Layout title="Detalles del Usuario">Cargando...</Layout>;
@@ -301,10 +370,19 @@ export default function AdminUserDetails() {
                                                                 <table className="w-full text-xs">
                                                                     <tbody>
                                                                         {projectAllocations.map(a => (
-                                                                            <tr key={a.id} className="border-b last:border-0">
-                                                                                <td className="px-3 py-2 text-gray-500">{new Date(a.date).toLocaleDateString()}</td>
-                                                                                <td className="px-3 py-2 font-medium text-right text-green-700">{formatCurrency(a.amount)}</td>
-                                                                            </tr>
+                                                                                <tr key={a.id} className="border-b last:border-0 hover:bg-gray-50 group">
+                                                                                    <td className="px-3 py-2 text-gray-500">{new Date(a.date).toLocaleDateString()}</td>
+                                                                                    <td className="px-3 py-2 font-medium text-right text-green-700">{formatCurrency(a.amount)}</td>
+                                                                                    <td className="px-3 py-2 text-right">
+                                                                                        <button 
+                                                                                            onClick={() => handleDeleteAllocation(a)}
+                                                                                            className="text-gray-300 hover:text-red-500 transition-colors p-1 opacity-0 group-hover:opacity-100"
+                                                                                            title="Eliminar Viático"
+                                                                                        >
+                                                                                            <Trash2 className="w-4 h-4" />
+                                                                                        </button>
+                                                                                    </td>
+                                                                                </tr>
                                                                         ))}
                                                                     </tbody>
                                                                 </table>
@@ -351,7 +429,11 @@ export default function AdminUserDetails() {
                                                                                         <div className="flex justify-center gap-1">
                                                                                             <button onClick={(ev) => { ev.stopPropagation(); handleUpdateStatus(e.id, 'approved', e.amount); }} className="p-1 text-green-600 hover:bg-green-100 rounded"><CheckCircle className="w-4 h-4"/></button>
                                                                                             <button onClick={(ev) => { ev.stopPropagation(); handleUpdateStatus(e.id, 'rejected', e.amount); }} className="p-1 text-red-600 hover:bg-red-100 rounded"><XCircle className="w-4 h-4"/></button>
+                                                                                            <button onClick={(ev) => { ev.stopPropagation(); handleDeleteExpense(e); }} className="p-1 text-gray-400 hover:text-red-500 rounded"><Trash2 className="w-4 h-4"/></button>
                                                                                         </div>
+                                                                                    )}
+                                                                                    {e.status !== 'pending' && (
+                                                                                        <button onClick={(ev) => { ev.stopPropagation(); handleDeleteExpense(e); }} className="p-1 text-gray-400 hover:text-red-500 rounded"><Trash2 className="w-4 h-4"/></button>
                                                                                     )}
                                                                                 </td>
                                                                             </tr>

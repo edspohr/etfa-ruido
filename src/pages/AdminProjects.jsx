@@ -23,6 +23,7 @@ export default function AdminProjects() {
   const [viaticoAmount, setViaticoAmount] = useState('');
   
   const [projectSearch, setProjectSearch] = useState('');
+  const [allocationSearch, setAllocationSearch] = useState('');
 
   const fetchData = async () => {
     try {
@@ -235,6 +236,13 @@ export default function AdminProjects() {
                 <form onSubmit={handleAssignViatico} className="space-y-4">
                     <div>
                         <label className="block text-sm font-medium text-gray-700">Proyecto</label>
+                        <input 
+                            type="text"
+                            placeholder="Buscar proyecto..."
+                            className="mt-1 w-full p-2 border rounded text-xs mb-2"
+                            value={allocationSearch}
+                            onChange={e => setAllocationSearch(e.target.value)}
+                        />
                         <select 
                             className="mt-1 w-full p-2 border rounded"
                             value={viaticoProject}
@@ -242,7 +250,11 @@ export default function AdminProjects() {
                             required
                         >
                             <option value="">Seleccionar Proyecto...</option>
-                            {projects.map(p => (
+                            {projects.filter(p => {
+                                if (!allocationSearch) return true;
+                                const term = allocationSearch.toLowerCase();
+                                return (p.name.toLowerCase().includes(term) || (p.code && p.code.toLowerCase().includes(term)));
+                            }).map(p => (
                                 <option key={p.id} value={p.id}>
                                     {formatProjectName(p)}
                                 </option>

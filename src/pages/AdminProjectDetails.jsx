@@ -2,9 +2,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { db } from '../lib/firebase';
-import { doc, getDoc, collection, query, where, getDocs, updateDoc, increment } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs, updateDoc, increment, deleteDoc } from 'firebase/firestore';
 import { formatCurrency } from '../utils/format';
-import { ArrowLeft, CheckCircle, XCircle, FileText, Calendar, User } from 'lucide-react';
+import { ArrowLeft, CheckCircle, XCircle, FileText, Calendar, User, Trash2 } from 'lucide-react';
 import RejectionModal from '../components/RejectionModal';
 import { toast } from 'sonner';
 
@@ -122,6 +122,71 @@ export default function AdminProjectDetails() {
       handleUpdateStatus(expense.id, 'rejected', expense.amount, expense.userId, reason);
   };
 
+  const handleDeleteExpense = async (expense) => {
+      if (!confirm("ADVERTENCIA: ¿Estás seguro de eliminar este gasto definitivamente?\nSe revertirán los saldos asociados.")) return;
+
+      try {
+          // Reversal Logic
+          const isCredited = expense.status === 'pending' || expense.status === 'approved';
+          const isProjectCharged = expense.status === 'approved';
+
+          // 1. Revert User Balance (if it was credited and not company expense)
+          if (isCredited && !expense.isCompanyExpense) {
+              const isCajaChica = project?.name?.toLowerCase().includes("caja chica") || project?.type === 'petty_cash';
+              const targetUserId = isCajaChica ? 'user_caja_chica' : expense.userId;
+              
+              if (targetUserId) {
+                  await updateDoc(doc(db, "users", targetUserId), {
+                      balance: increment(-expense.amount)
+                  });
+              }
+          }
+
+          // 2. Revert Project Total (if it was charged)
+          if (isProjectCharged) {
+              await updateDoc(doc(db, "projects", id), {
+                  expenses: increment(-expense.amount)
+              });
+              setProject(prev => ({ ...prev, expenses: (prev.expenses || 0) - expense.amount }));
+          }
+
+          // 3. Delete Document
+          await deleteDoc(doc(db, "expenses", expense.id));
+          
+          setExpenses(prev => prev.filter(e => e.id !== expense.id));
+          toast.success("Gasto eliminado y saldos revertidos.");
+
+      } catch (e) {
+          console.error("Error deleting expense:", e);
+          toast.error("Error al eliminar gasto.");
+      }
+  };
+
+  const handleDeleteAllocation = async (allocation) => {
+      if (!confirm("ADVERTENCIA: ¿Estás seguro de eliminar este VIÁTICO?\nSe descontará del saldo del profesional.")) return;
+
+      try {
+          // 1. Revert User Balance
+          if (allocation.userId) {
+              const userRef = doc(db, "users", allocation.userId);
+              await updateDoc(userRef, {
+                  balance: increment(-allocation.amount)
+              });
+          }
+
+          // 2. Delete Document
+          await deleteDoc(doc(db, "allocations", allocation.id));
+
+          // 3. Update State
+          setAllocations(prev => prev.filter(a => a.id !== allocation.id));
+          
+          toast.success("Viático eliminado y saldo actualizado.");
+      } catch(e) {
+          console.error("Error deleting allocation", e);
+          toast.error("Error al eliminar viático");
+      }
+  };
+
   if (loading) return <Layout title="Detalles del Proyecto">Cargando...</Layout>;
   if (!project) return <Layout title="Error">Proyecto no encontrado.</Layout>;
 
@@ -219,16 +284,25 @@ export default function AdminProjectDetails() {
                                         </span>
                                     </td>
                                     <td className="px-4 py-3">
-                                        {e.status === 'pending' && (
-                                            <div className="flex space-x-2">
-                                                <button onClick={() => handleUpdateStatus(e.id, 'approved', e.amount, e.userId)} className="text-green-600 hover:text-green-800" title="Aprobar">
-                                                    <CheckCircle className="w-5 h-5" />
-                                                </button>
-                                                <button onClick={() => handleUpdateStatus(e.id, 'rejected', e.amount, e.userId)} className="text-red-600 hover:text-red-800" title="Rechazar">
-                                                    <XCircle className="w-5 h-5" />
-                                                </button>
-                                            </div>
-                                        )}
+                                        <div className="flex items-center space-x-2">
+                                            {e.status === 'pending' && (
+                                                <>
+                                                    <button onClick={() => handleUpdateStatus(e.id, 'approved', e.amount, e.userId)} className="text-green-600 hover:text-green-800" title="Aprobar">
+                                                        <CheckCircle className="w-5 h-5" />
+                                                    </button>
+                                                    <button onClick={() => handleUpdateStatus(e.id, 'rejected', e.amount, e.userId)} className="text-red-600 hover:text-red-800" title="Rechazar">
+                                                        <XCircle className="w-5 h-5" />
+                                                    </button>
+                                                </>
+                                            )}
+                                            <button 
+                                                onClick={() => handleDeleteExpense(e)} 
+                                                className="text-gray-400 hover:text-red-500" 
+                                                title="Eliminar Definitivamente"
+                                            >
+                                                <Trash2 className="w-5 h-5" />
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                             ))}
@@ -258,6 +332,7 @@ export default function AdminProjectDetails() {
                                 <th className="px-4 py-3 font-medium text-gray-500">Fecha</th>
                                 <th className="px-4 py-3 font-medium text-gray-500">Asignado A</th>
                                 <th className="px-4 py-3 font-medium text-gray-500">Monto</th>
+                                <th className="px-4 py-3 font-medium text-gray-500 text-right">Acciones</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -271,6 +346,15 @@ export default function AdminProjectDetails() {
                                         </div>
                                     </td>
                                     <td className="px-4 py-3 font-bold text-gray-700">{formatCurrency(a.amount)}</td>
+                                    <td className="px-4 py-3 text-right">
+                                        <button 
+                                            onClick={() => handleDeleteAllocation(a)} 
+                                            className="text-gray-400 hover:text-red-500" 
+                                            title="Eliminar Viático"
+                                        >
+                                            <Trash2 className="w-5 h-5" />
+                                        </button>
+                                    </td>
                                 </tr>
                             ))}
                             {allocations.length === 0 && (

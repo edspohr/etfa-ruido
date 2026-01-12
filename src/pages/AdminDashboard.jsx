@@ -17,7 +17,7 @@ export default function AdminDashboard() {
   const navigate = useNavigate();
   const [projects, setProjects] = useState([]);
   const [pendingCount, setPendingCount] = useState(0);
-  const [cajaChicaBalance, setCajaChicaBalance] = useState(0);
+  // (caja state removed)
   const [cajaChicaSpent, setCajaChicaSpent] = useState(0);
   const [loading, setLoading] = useState(true);
   const [seeding, setSeeding] = useState(false);
@@ -38,17 +38,7 @@ export default function AdminDashboard() {
             const expensesSnap = await getDocs(collection(db, "expenses"));
             const expensesDocs = expensesSnap.docs.map(doc => doc.data());
 
-            // 4. Fetch Caja Chica Balance
-            // Try to find user 'user_caja_chica'
-            try {
-                const cajaRef = doc(db, "users", "user_caja_chica");
-                const cajaSnap = await getDoc(cajaRef);
-                if (cajaSnap.exists()) {
-                    setCajaChicaBalance(cajaSnap.data().balance || 0);
-                }
-            } catch (err) {
-                console.warn("Could not fetch user_caja_chica:", err);
-            }
+            // 4. (Caja Chica Balance Removed as requested)
 
             // 5. Aggregate Data per Project
             const expensesByProject = {};
@@ -182,15 +172,9 @@ export default function AdminDashboard() {
                     <Wallet className="w-16 h-16 text-teal-600" />
                 </div>
                 <h3 className="text-gray-500 text-sm font-bold uppercase tracking-wider mb-2">Fondo Caja Chica</h3>
-                <div className="flex justify-between items-end mb-4">
-                    <div>
-                        <p className="text-xs text-teal-500 font-bold mb-1">DISPONIBLE</p>
-                        <p className="text-3xl font-extrabold text-teal-600">{formatCurrency(cajaChicaBalance)}</p>
-                    </div>
-                    <div className="text-right">
-                        <p className="text-xs text-orange-500 font-bold mb-1">GASTADO</p>
-                        <p className="text-xl font-bold text-orange-600">{formatCurrency(cajaChicaSpent)}</p>
-                    </div>
+                <div className="flex flex-col items-center justify-center mb-4">
+                    <p className="text-xs text-orange-500 font-bold mb-1 uppercase tracking-wider">Total Gastado</p>
+                    <p className="text-4xl font-extrabold text-orange-600">{formatCurrency(cajaChicaSpent)}</p>
                 </div>
                 <button 
                     onClick={() => {
@@ -201,9 +185,9 @@ export default function AdminDashboard() {
                             navigate('/admin/balances');
                         }
                     }} 
-                    className="text-xs font-bold text-white bg-teal-600 px-3 py-1.5 rounded hover:bg-teal-700 transition"
+                    className="w-full text-xs font-bold text-white bg-slate-800 px-3 py-2 rounded hover:bg-slate-700 transition"
                 >
-                    RECARGAR / VER DETALLE
+                    VER DETALLE
                 </button>
             </div>
 
