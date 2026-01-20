@@ -119,6 +119,7 @@ export default function UserDashboard() {
 
                            // Initialize with expenses
                            expenses.forEach(e => {
+                               if (e.status === 'rejected') return; // Exclude rejected from sums
                                const pid = e.projectId || 'unknown';
                                if (!projectStats[pid]) projectStats[pid] = { totalExp: 0, totalAlloc: 0, name: e.projectName || 'Sin Proyecto' };
                                projectStats[pid].totalExp += (Number(e.amount) || 0);

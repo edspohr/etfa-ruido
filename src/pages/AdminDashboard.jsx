@@ -3,24 +3,24 @@ import { Link, useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { db } from '../lib/firebase';
 import { collection, getDocs } from 'firebase/firestore';
-import { seedDatabase } from '../lib/seedData';
+// import { seedDatabase } from '../lib/seedData';
 import { formatCurrency } from '../utils/format';
-import { useAuth } from '../context/useAuth';
+// import { useAuth } from '../context/useAuth';
 import { Database, Wallet } from 'lucide-react';
-import { toast } from 'sonner';
+// import { toast } from 'sonner';
 
 import { sortProjects } from '../utils/sort';
 import { Skeleton } from '../components/Skeleton';
 
 export default function AdminDashboard() {
-  const { currentUser } = useAuth();
+  // const { currentUser } = useAuth();
   const navigate = useNavigate();
   const [projects, setProjects] = useState([]);
   const [pendingCount, setPendingCount] = useState(0);
   // (caja state removed)
   const [cajaChicaSpent, setCajaChicaSpent] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [seeding, setSeeding] = useState(false);
+  // const [seeding, setSeeding] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
@@ -95,27 +95,8 @@ export default function AdminDashboard() {
     fetchData();
   }, []);
 
-  const handleSeed = async () => {
-      // ... (existing seed logic)
-      if (!confirm("Esto borrará/sobrescribirá datos. ¿Estás seguro?")) return;
-      
-      const pin = prompt("Ingrese la clave de seguridad para confirmar:");
-      if (pin !== "1234") {
-          toast.error("Clave incorrecta. Cancelando operación.");
-          return;
-      }
-
-      setSeeding(true);
-      try {
-          await seedDatabase(currentUser.uid);
-          toast.success("Datos cargados correctamente");
-          window.location.reload(); 
-      } catch (e) {
-          console.error(e);
-          toast.error("Error cargando datos: " + e.message);
-      }
-      setSeeding(false);
-  };
+  // Seed logic removed for safety
+  // const handleSeed = ...
 
   const totalAssigned = projects.reduce((acc, p) => acc + (p.assigned || 0), 0);
 
@@ -149,14 +130,7 @@ export default function AdminDashboard() {
   return (
     <Layout title="Dashboard General">
         <div className="flex justify-end mb-4">
-            <button 
-                onClick={handleSeed}
-                disabled={seeding}
-                className="flex items-center text-sm bg-gray-800 text-white px-3 py-2 rounded hover:bg-gray-700 disabled:opacity-50"
-            >
-                <Database className="w-4 h-4 mr-2" />
-                {seeding ? 'Procesando...' : 'Reiniciar Base de Datos (Solo Usuarios)'}
-            </button>
+            {/* Seed Button Removed for Safety */}
             <a 
                 href="/admin/users-seeder" 
                 className="ml-2 flex items-center text-sm bg-blue-600 text-white px-3 py-2 rounded hover:bg-blue-700"

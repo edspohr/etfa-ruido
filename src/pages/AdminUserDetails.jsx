@@ -559,7 +559,7 @@ export default function AdminUserDetails() {
                               <option value="">Seleccionar Proyecto...</option>
                               {projectsList.map(p => (
                                   <option key={p.id} value={p.id}>
-                                      {p.code ? `[${p.code}] ` : ''}{p.name}{p.recurrence ? ` (${p.recurrence})` : ''}
+                                      {p.code ? `[${p.code}] ` : ''}{p.recurrence ? `(${p.recurrence}) ` : ''}{p.name}
                                   </option>
                               ))}
                           </select>
@@ -575,7 +575,7 @@ export default function AdminUserDetails() {
                               <option value="">Seleccionar Proyecto...</option>
                               {projectsList.map(p => (
                                   <option key={p.id} value={p.id}>
-                                      {p.code ? `[${p.code}] ` : ''}{p.name}{p.recurrence ? ` (${p.recurrence})` : ''}
+                                      {p.code ? `[${p.code}] ` : ''}{p.recurrence ? `(${p.recurrence}) ` : ''}{p.name}
                                   </option>
                               ))}
                           </select>

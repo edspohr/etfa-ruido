@@ -256,7 +256,10 @@ export default function ExpenseForm() {
 
         // Determine Logic based on Mode
         if (userRole === 'admin') {
-            if (expenseMode === 'project') {
+            // [FIX] Caja Chica for Admin should behave as Personal Expense to credit their balance (justify funds)
+            const isCajaChica = !isSplitMode && projects.find(p => p.id === formData.projectId)?.name?.toLowerCase().includes("caja chica");
+
+            if (expenseMode === 'project' && !isCajaChica) {
                 targetUid = 'company_expense';
                 targetName = 'Gasto Empresa';
                 isProjectExpense = true;

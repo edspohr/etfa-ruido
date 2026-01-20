@@ -306,8 +306,9 @@ export default function AdminProjectDetails() {
              // Calculate Total Assigned dynamically from allocations
              const totalAllocated = allocations.reduce((acc, a) => acc + (Number(a.amount) || 0), 0);
              
-             // Calculate specific totals from expenses (Approved ones)
-             const approvedExpenses = expenses.filter(e => e.status === 'approved');
+             // Calculate specific totals from expenses (Approved + Pending)
+             // Consistent with AdminDashboard and User Balance (Pending counts as justified until rejected)
+             const approvedExpenses = expenses.filter(e => e.status === 'approved' || e.status === 'pending');
              
              const totalRenderedByUsers = approvedExpenses
                  .filter(e => !e.isCompanyExpense)
