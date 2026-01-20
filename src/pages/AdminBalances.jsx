@@ -3,28 +3,47 @@ import Layout from '../components/Layout';
 import { db } from '../lib/firebase';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { formatCurrency } from '../utils/format';
-import { Wallet, ArrowRight } from 'lucide-react';
+import { Wallet, ArrowRight, RefreshCw } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { recalculateAllUserBalances } from '../utils/fixBalances';
+import { toast } from 'sonner';
 
 export default function AdminBalances() {
   const [professionals, setProfessionals] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [repairing, setRepairing] = useState(false);
 
   useEffect(() => {
-    async function fetchPros() {
-        try {
-            const q = query(collection(db, "users"), where("role", "in", ["professional", "admin"]));
-            const snapshot = await getDocs(q);
-            const data = snapshot.docs.map(d => ({id: d.id, ...d.data()}));
-            setProfessionals(data);
-        } catch (e) {
-            console.error("Error fetching professionals:", e);
-        } finally {
-            setLoading(false);
-        }
-    }
     fetchPros();
   }, []);
+
+  async function fetchPros() {
+      try {
+          const q = query(collection(db, "users"), where("role", "in", ["professional", "admin"]));
+          const snapshot = await getDocs(q);
+          const data = snapshot.docs.map(d => ({id: d.id, ...d.data()}));
+          setProfessionals(data);
+      } catch (e) {
+          console.error("Error fetching professionals:", e);
+      } finally {
+          setLoading(false);
+      }
+  }
+
+  const handleRepairBalances = async () => {
+      if (!confirm("Esto recalculará todos los saldos basándose en el historial. ¿Continuar?")) return;
+      setRepairing(true);
+      try {
+          await recalculateAllUserBalances();
+          toast.success("Saldos recalculados exitosamente.");
+          await fetchPros(); // Refresh UI
+      } catch (e) {
+          console.error("Repair error:", e);
+          toast.error("Error al recalcular.");
+      } finally {
+          setRepairing(false);
+      }
+  };
 
   if (loading) return <Layout title="Balances de Profesionales"><p>Cargando...</p></Layout>;
 
@@ -33,9 +52,19 @@ export default function AdminBalances() {
       <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
         <div className="p-6 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
             <h3 className="font-bold text-gray-700">Estado de Cuentas Corrientes</h3>
-            <Link to="/admin/projects" className="text-sm text-blue-600 hover:text-blue-800 flex items-center">
-                Ir a Cargar Saldos <ArrowRight className="w-4 h-4 ml-1" />
-            </Link>
+            <div className="flex gap-2">
+                <button 
+                    onClick={handleRepairBalances}
+                    disabled={repairing}
+                    className="text-sm bg-orange-100 text-orange-700 px-3 py-2 rounded hover:bg-orange-200 flex items-center font-bold disabled:opacity-50"
+                >
+                    <RefreshCw className={`w-4 h-4 mr-2 ${repairing ? 'animate-spin' : ''}`} />
+                    {repairing ? 'Reparando...' : 'Recalcular Saldos (Repair)'}
+                </button>
+                <Link to="/admin/projects" className="text-sm text-blue-600 hover:text-blue-800 flex items-center px-3 py-2">
+                    Ir a Cargar Saldos <ArrowRight className="w-4 h-4 ml-1" />
+                </Link>
+            </div>
         </div>
         
         <div className="overflow-x-auto">

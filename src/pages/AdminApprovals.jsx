@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
 import { db } from '../lib/firebase';
-import { collection, query, where, getDocs, doc, updateDoc, increment, writeBatch, orderBy } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, updateDoc, increment, writeBatch, orderBy, limit } from 'firebase/firestore';
 import { formatCurrency } from '../utils/format';
 import { CheckCircle, XCircle, Download, FileText } from 'lucide-react';
 import RejectionModal from '../components/RejectionModal';
@@ -31,7 +31,13 @@ export default function AdminApprovals() {
 
           // [NEW] Fetch History (Approved/Rejected) - Limit to recent 50 or date range?
           // For now, let's fetch all non-pending to keep it simple, or maybe last 100.
-          const qHistory = query(collection(db, "expenses"), where("status", "in", ["approved", "rejected"]), orderBy("date", "desc"));
+          // [NEW] Fetch History - Limit to recent 50 to avoid performance issues
+          const qHistory = query(
+            collection(db, "expenses"), 
+            where("status", "in", ["approved", "rejected"]), 
+            orderBy("date", "desc"),
+            limit(50)
+          );
           const snapshotHistory = await getDocs(qHistory);
           const dataHistory = snapshotHistory.docs.map(d => ({id: d.id, ...d.data()}));
           setHistoryExpenses(dataHistory);

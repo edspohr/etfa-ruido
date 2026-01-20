@@ -3,7 +3,7 @@ import Layout from '../components/Layout';
 import { useAuth } from '../context/useAuth';
 import { parseReceiptImage } from '../lib/gemini';
 import { db, uploadReceiptImage } from '../lib/firebase';
-import { collection, addDoc, getDocs, query, where, doc, updateDoc, setDoc, increment } from 'firebase/firestore';
+import { collection, getDocs, query, where, doc, increment, writeBatch } from 'firebase/firestore';
 import { Upload, Loader2, Camera, X, FileText, Plus } from 'lucide-react';
 import { formatCurrency } from '../utils/format'; // Validation aid/display
 import { useNavigate } from 'react-router-dom';
@@ -169,75 +169,75 @@ export default function ExpenseForm() {
         return;
     }
 
-        if (isSplitMode) {
-            const sumSplits = splitRows.reduce((acc, row) => acc + (Number(row.amount) || 0), 0);
-            if (Math.abs(sumSplits - totalAmount) > 1) { // 1 peso tolerance
-                toast.error(`La suma de la distribución (${sumSplits}) no coincide con el total (${totalAmount}). Diferencia: ${totalAmount - sumSplits}`);
-                return;
-            }
-            if (splitRows.some(r => !r.projectId)) {
-                toast.error("Seleccione proyecto para todas las filas.");
-                return;
-            }
-        } else {
-            if (!formData.projectId) {
-                toast.error("Por favor selecciona un proyecto.");
-                return;
-            }
-        }
-        
-        if (!isSplitMode) {
-            const selectedProject = projects.find(p => p.id === formData.projectId);
-            const isCajaChica = selectedProject?.name?.toLowerCase().includes("caja chica") || selectedProject?.type === 'petty_cash';
-            
-                if (isCajaChica && userRole !== 'admin') {
-                toast.error("No tienes permisos para rendir en 'Caja Chica'.");
-                return;
-            }
-        }
-
-        // ---------------------------------------------------------
-        // VALIDATIONS
-        // ---------------------------------------------------------
-
-        // 1. Date Restriction (Max 60 days old)
-        const MAX_DAYS_OLD = 60;
-        const expenseDate = new Date(formData.date);
-        const today = new Date();
-        // Normalize to start of day for accurate day diff
-        expenseDate.setHours(0,0,0,0);
-        today.setHours(0,0,0,0);
-        
-        // Calculate difference in days
-        const diffTime = Math.abs(today - expenseDate);
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-        if (expenseDate < today && diffDays > MAX_DAYS_OLD) {
-            toast.error(`La fecha del gasto no puede tener más de ${MAX_DAYS_OLD} días de antigüedad.`);
+    if (isSplitMode) {
+        const sumSplits = splitRows.reduce((acc, row) => acc + (Number(row.amount) || 0), 0);
+        if (Math.abs(sumSplits - totalAmount) > 1) { // 1 peso tolerance
+            toast.error(`La suma de la distribución (${sumSplits}) no coincide con el total (${totalAmount}). Diferencia: ${totalAmount - sumSplits}`);
             return;
         }
-
-        // 2. Duplicity Check
-        let targetUidCheck = currentUser.uid;
-        if (userRole === 'admin' && expenseMode === 'other' && selectedUserId) {
-            targetUidCheck = selectedUserId;
+        if (splitRows.some(r => !r.projectId)) {
+            toast.error("Seleccione proyecto para todas las filas.");
+            return;
         }
+    } else {
+        if (!formData.projectId) {
+            toast.error("Por favor selecciona un proyecto.");
+            return;
+        }
+    }
+        
+    if (!isSplitMode) {
+        const selectedProject = projects.find(p => p.id === formData.projectId);
+        // RELIABLE CHECK: Use 'type' property first
+        const isCajaChica = selectedProject?.type === 'petty_cash';
+        
+        if (isCajaChica && userRole !== 'admin') {
+            toast.error("No tienes permisos para rendir en 'Caja Chica'.");
+            return;
+        }
+    }
 
-        if (!isSplitMode) {
-            const dupQuery = query(
-                collection(db, "expenses"),
-                where("userId", "==", targetUidCheck),
-                where("date", "==", formData.date),
-                where("amount", "==", totalAmount)
-            );
-            
-            const dupSnap = await getDocs(dupQuery);
-            if (!dupSnap.empty) {
-                if (!confirm("Parece que ya existe un gasto con esta fecha y monto para este usuario. ¿Estás seguro de que no es un duplicado?")) {
-                    return;
-                }
+    // ---------------------------------------------------------
+    // VALIDATIONS
+    // ---------------------------------------------------------
+
+    // 1. Date Restriction (Max 60 days old)
+    const MAX_DAYS_OLD = 60;
+    // Standardize: create date to midnight local (YYYY-MM-DD + T00...)
+    const expenseDate = new Date(formData.date + 'T00:00:00'); 
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    
+    // Calculate difference in days
+    const diffTime = Math.abs(today - expenseDate);
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    if (expenseDate < today && diffDays > MAX_DAYS_OLD) {
+        toast.error(`La fecha del gasto no puede tener más de ${MAX_DAYS_OLD} días de antigüedad.`);
+        return;
+    }
+
+    // 2. Duplicity Check
+    let targetUidCheck = currentUser.uid;
+    if (userRole === 'admin' && expenseMode === 'other' && selectedUserId) {
+        targetUidCheck = selectedUserId;
+    }
+
+    if (!isSplitMode) {
+        const dupQuery = query(
+            collection(db, "expenses"),
+            where("userId", "==", targetUidCheck),
+            where("date", "==", formData.date),
+            where("amount", "==", totalAmount)
+        );
+        
+        const dupSnap = await getDocs(dupQuery);
+        if (!dupSnap.empty) {
+            if (!confirm("Parece que ya existe un gasto con esta fecha y monto para este usuario. ¿Estás seguro de que no es un duplicado?")) {
+                return;
             }
         }
+    }
     // ---------------------------------------------------------
 
     try {
@@ -256,8 +256,7 @@ export default function ExpenseForm() {
 
         // Determine Logic based on Mode
         if (userRole === 'admin') {
-            // [FIX] Caja Chica for Admin should behave as Personal Expense to credit their balance (justify funds)
-            const isCajaChica = !isSplitMode && projects.find(p => p.id === formData.projectId)?.name?.toLowerCase().includes("caja chica");
+            const isCajaChica = !isSplitMode && projects.find(p => p.id === formData.projectId)?.type === 'petty_cash';
 
             if (expenseMode === 'project' && !isCajaChica) {
                 targetUid = 'company_expense';
@@ -276,9 +275,7 @@ export default function ExpenseForm() {
 
         const splitGroupId = isSplitMode ? crypto.randomUUID() : null;
         
-        const savePromises = [];
-
-        // Definition of items to save
+        // Define items to save
         let itemsToSave = [];
         if (isSplitMode) {
             itemsToSave = splitRows.map(row => ({
@@ -292,80 +289,50 @@ export default function ExpenseForm() {
              }];
         }
 
+        // START BATCH
+        const batch = writeBatch(db);
+
         for (const item of itemsToSave) {
             const projectObj = projects.find(p => p.id === item.projectId);
-            
-            savePromises.push((async () => {
-                await addDoc(collection(db, "expenses"), {
-                    userId: targetUid,
-                    userName: targetName,
-                    projectId: item.projectId,
-                    projectName: projectObj?.name || 'Unknown',
-                    category: formData.category,
-                    date: formData.date,
-                    merchant: formData.merchant,
-                    description: formData.description + (isSplitMode ? ' [Distribución]' : ''),
-                    amount: item.amount,
-                    imageUrl: imageUrl,
-                    status: initialStatus,
-                    createdAt: new Date().toISOString(),
-                    isCompanyExpense: isProjectExpense,
-                    splitGroupId: splitGroupId // Link them
-                });
+            const expenseRef = doc(collection(db, "expenses")); // Auto ID
 
-                // Update Project Total (Expenses) if Approved
-                if (initialStatus === 'approved') {
-                     const projectRef = doc(db, "projects", item.projectId);
-                     await updateDoc(projectRef, {
-                         expenses: increment(item.amount)
-                     });
-                }
-            })());
-        }
+            // 1. Create Expense
+            batch.set(expenseRef, {
+                userId: targetUid,
+                userName: targetName,
+                projectId: item.projectId,
+                projectName: projectObj?.name || 'Unknown',
+                category: formData.category,
+                date: formData.date,
+                merchant: formData.merchant,
+                description: formData.description + (isSplitMode ? ' [Distribución]' : ''),
+                amount: item.amount,
+                imageUrl: imageUrl,
+                status: initialStatus,
+                createdAt: new Date().toISOString(),
+                isCompanyExpense: isProjectExpense,
+                splitGroupId: splitGroupId // Link them
+            });
 
-        await Promise.all(savePromises);
+            // 2. Update Project Total (Only if approved immediately, kept for consistency)
+            if (initialStatus === 'approved') {
+                 const projectRef = doc(db, "projects", item.projectId);
+                 batch.update(projectRef, {
+                     expenses: increment(item.amount)
+                 });
+            }
 
-        // B. Update Balances SAFE
-        if (!isProjectExpense) {
-            for (const item of itemsToSave) {
-                 // const pObj = ... (Removed unused)
-                 // const isCajaChicaProject = ... (Removed unused)
-                 
-                 // FIX: If it is a personal expense (expenseMode 'me' or default), 
-                 // we ALWAYS credit the user, even if it is a Caja Chica project.
-                 // Only use 'user_caja_chica' if we really wanted to (which suggests a different mode/flow).
-                 // For now, users want credit for what they spent.
-                 
-                 let targetBalanceId = targetUid;
-                 
-                 // Historic logic was: if isCajaChica -> targetBalanceId = 'user_caja_chica'.
-                 // We change this. If I spent money for Caja Chica, I want my refund.
-                 // So we keep targetBalanceId = targetUid (currentUser).
-                 
-                 // Only if we consider 'Company Expense' on Caja Chica, do we use the virtual user? 
-                 // But 'isProjectExpense' (Company Expense) flow skips this block entirely (logic above lines 326: if (!isProjectExpense)).
-                 
-                 // So actually, we just need to STOP overriding targetUid.
-                 // But wait, do we ever want to assign to 'user_caja_chica'? 
-                 // Maybe if the Admin manually assigns an allocation TO 'user_caja_chica'. 
-                 // But here we are RENDERING an expense.
-                 
-                 // If an admin is rendering ON BEHALF of 'user_caja_chica', that would be different.
-                 // But `expenseMode` 'other' + selecting a user handles that.
-                 // So, simply REMOVING the override is the correct fix.
-                 
-                 // const targetBalanceId = isCajaChica ? 'user_caja_chica' : targetUid; // OLD
-                 // New:
-                 targetBalanceId = targetUid;
-                 
-                  const userRef = doc(db, "users", targetBalanceId);
-                  
-                  // Use setDoc with merge to ensure document exists
-                  await setDoc(userRef, {
-                      balance: increment(item.amount)
-                  }, { merge: true });
+            // 3. Update User Balance (Credit) only if personal/other expense
+            if (!isProjectExpense) {
+                const userRef = doc(db, "users", targetUid);
+                batch.set(userRef, {
+                    balance: increment(item.amount)
+                }, { merge: true });
             }
         }
+
+        await batch.commit();
+        // END BATCH
 
         toast.success(initialStatus === 'approved' ? "Gasto registrado y aprobado." : "Rendición enviada exitosamente.");
         navigate('/dashboard');

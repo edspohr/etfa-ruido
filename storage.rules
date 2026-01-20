@@ -2,8 +2,10 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
     match /receipts/{userId}/{fileName} {
-      // Allow read/write if the user matches the path or is an admin (optional check not implemented here for simplicity)
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      // Allow read to any authenticated user (so Admins can see receipts)
+      allow read: if request.auth != null;
+      // Allow write only if user matches the path
+      allow write: if request.auth != null && request.auth.uid == userId;
     }
   }
 }

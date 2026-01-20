@@ -342,8 +342,8 @@ export default function AdminProjects() {
                                 );
                             });
 
-                            const cajaChica = filtered.find(p => p.name.toLowerCase().includes('caja chica') || p.type === 'petty_cash');
-                            const otherProjects = filtered.filter(p => !p.name.toLowerCase().includes('caja chica') && p.type !== 'petty_cash');
+                            const cajaChica = filtered.find(p => p.type === 'petty_cash' || p.name.toLowerCase().includes('caja chica'));
+                            const otherProjects = filtered.filter(p => p !== cajaChica);
 
                             return (
                                 <>
