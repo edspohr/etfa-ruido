@@ -270,7 +270,7 @@ export default function AdminProjectDetails() {
               const userSnap = await getDoc(userRef);
               if (userSnap.exists()) {
                    await updateDoc(userRef, {
-                      balance: increment(-Number(allocation.amount))
+                      balance: increment(Number(allocation.amount))
                   }); 
               } else {
                   console.warn("User not found, skipping balance reversal for allocation deletion.");

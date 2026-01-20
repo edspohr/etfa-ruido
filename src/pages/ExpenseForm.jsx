@@ -160,7 +160,7 @@ export default function ExpenseForm() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!currentUser) return;
+    if (!currentUser || loading) return;
 
     // Common Validation
     const totalAmount = Number(formData.amount);

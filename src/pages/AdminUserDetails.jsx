@@ -261,7 +261,7 @@ export default function AdminUserDetails() {
           const userSnap = await getDoc(userRef);
           if (userSnap.exists()) {
              await updateDoc(userRef, {
-                balance: increment(-Number(allocation.amount))
+                balance: increment(Number(allocation.amount))
              });
              // Update Local User State
              setUser(prev => ({ ...prev, balance: (prev.balance || 0) - Number(allocation.amount) }));
