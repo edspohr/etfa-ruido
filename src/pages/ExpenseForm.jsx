@@ -325,9 +325,35 @@ export default function ExpenseForm() {
         // B. Update Balances SAFE
         if (!isProjectExpense) {
             for (const item of itemsToSave) {
-                 const pObj = projects.find(p => p.id === item.projectId);
-                 const isCajaChica = pObj?.name?.toLowerCase().includes("caja chica") || pObj?.type === 'petty_cash';
-                 const targetBalanceId = isCajaChica ? 'user_caja_chica' : targetUid;
+                 // const pObj = ... (Removed unused)
+                 // const isCajaChicaProject = ... (Removed unused)
+                 
+                 // FIX: If it is a personal expense (expenseMode 'me' or default), 
+                 // we ALWAYS credit the user, even if it is a Caja Chica project.
+                 // Only use 'user_caja_chica' if we really wanted to (which suggests a different mode/flow).
+                 // For now, users want credit for what they spent.
+                 
+                 let targetBalanceId = targetUid;
+                 
+                 // Historic logic was: if isCajaChica -> targetBalanceId = 'user_caja_chica'.
+                 // We change this. If I spent money for Caja Chica, I want my refund.
+                 // So we keep targetBalanceId = targetUid (currentUser).
+                 
+                 // Only if we consider 'Company Expense' on Caja Chica, do we use the virtual user? 
+                 // But 'isProjectExpense' (Company Expense) flow skips this block entirely (logic above lines 326: if (!isProjectExpense)).
+                 
+                 // So actually, we just need to STOP overriding targetUid.
+                 // But wait, do we ever want to assign to 'user_caja_chica'? 
+                 // Maybe if the Admin manually assigns an allocation TO 'user_caja_chica'. 
+                 // But here we are RENDERING an expense.
+                 
+                 // If an admin is rendering ON BEHALF of 'user_caja_chica', that would be different.
+                 // But `expenseMode` 'other' + selecting a user handles that.
+                 // So, simply REMOVING the override is the correct fix.
+                 
+                 // const targetBalanceId = isCajaChica ? 'user_caja_chica' : targetUid; // OLD
+                 // New:
+                 targetBalanceId = targetUid;
                  
                   const userRef = doc(db, "users", targetBalanceId);
                   

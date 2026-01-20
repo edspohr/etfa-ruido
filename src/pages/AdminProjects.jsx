@@ -13,6 +13,7 @@ export default function AdminProjects() {
   const [projects, setProjects] = useState([]);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false); // [NEW] Prevent double clicks
 
   // Form States
   const [showProjectForm, setShowProjectForm] = useState(false);
@@ -101,7 +102,9 @@ export default function AdminProjects() {
   const handleAssignViatico = async (e) => {
       e.preventDefault();
       if (!viaticoUser || !viaticoAmount || !viaticoProject) return;
+      if (submitting) return; // Prevent double submission
 
+      setSubmitting(true);
       try {
           const amount = Number(viaticoAmount);
           const project = projects.find(p => p.id === viaticoProject);
@@ -141,6 +144,8 @@ export default function AdminProjects() {
       } catch (err) {
           console.error(err);
           toast.error("Error asignando viático");
+      } finally {
+          setSubmitting(false);
       }
   };
   
@@ -207,10 +212,17 @@ export default function AdminProjects() {
                             <label className="block text-sm font-medium text-gray-700">Cliente</label>
                             <input 
                                 type="text" 
+                                list="client-suggestions" // [NEW] Link to datalist
                                 className="mt-1 w-full p-2 border rounded"
                                 value={newProject.client}
                                 onChange={e => setNewProject({...newProject, client: e.target.value})}
                             />
+                            {/* [NEW] Dynamic Client List */}
+                            <datalist id="client-suggestions">
+                                {[...new Set(projects.map(p => p.client).filter(Boolean))].map((c, i) => (
+                                    <option key={i} value={c} />
+                                ))}
+                            </datalist>
                         </div>
                         <button type="submit" className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700">
                             Guardar Proyecto
@@ -283,8 +295,12 @@ export default function AdminProjects() {
                             required 
                         />
                     </div>
-                    <button type="submit" className="w-full bg-green-600 text-white py-2 rounded hover:bg-green-700">
-                        Cargar Saldo
+                    <button 
+                        type="submit" 
+                        disabled={submitting}
+                        className={`w-full bg-green-600 text-white py-2 rounded hover:bg-green-700 ${submitting ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    >
+                        {submitting ? 'Cargando...' : 'Cargar Saldo'}
                     </button>
                 </form>
             </div>

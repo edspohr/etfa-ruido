@@ -6,10 +6,12 @@ import { formatCurrency } from '../utils/format';
 import { CheckCircle, XCircle, Download, FileText } from 'lucide-react';
 import RejectionModal from '../components/RejectionModal';
 import { toast } from 'sonner';
-import { motion } from 'framer-motion';
+import { motion as Motion } from 'framer-motion';
 
 export default function AdminApprovals() {
   const [pendingExpenses, setPendingExpenses] = useState([]);
+  const [historyExpenses, setHistoryExpenses] = useState([]); // [NEW] History
+  const [viewMode, setViewMode] = useState('pending'); // 'pending' | 'history'
   const [loading, setLoading] = useState(true);
   
   // Rejection Modal State
@@ -26,6 +28,14 @@ export default function AdminApprovals() {
           const snapshot = await getDocs(q);
           const data = snapshot.docs.map(d => ({id: d.id, ...d.data()}));
           setPendingExpenses(data);
+
+          // [NEW] Fetch History (Approved/Rejected) - Limit to recent 50 or date range?
+          // For now, let's fetch all non-pending to keep it simple, or maybe last 100.
+          const qHistory = query(collection(db, "expenses"), where("status", "in", ["approved", "rejected"]), orderBy("date", "desc"));
+          const snapshotHistory = await getDocs(qHistory);
+          const dataHistory = snapshotHistory.docs.map(d => ({id: d.id, ...d.data()}));
+          setHistoryExpenses(dataHistory);
+
       } catch (e) {
           console.error("Error fetching pending:", e);
       } finally {
@@ -162,36 +172,27 @@ export default function AdminApprovals() {
               rejectionReason: reason 
           });
 
-          // 2. Refund User (INVERTED LOGIC: Expense added funds, so Reject removes them)
-          // UPDATE: Check if it's Caja Chica project!
-          const isCajaChica = expense.projectName?.toLowerCase().includes("caja chica");
-          // Ideally check project type, but we might not have the full project object here easily without fetching.
-          // expense.projectName is a good proxy. Or fetch the project?Fetching is safer.
-          // BUT, to save reads/speed, checking name is usually 99% fine given existing logic.
-          // Let's rely on name or isCompanyExpense flag? No, isCompanyExpense has weird logic in Form.
-          // Let's fetch project to be 100% sure if we want perfection, 
-          // OR assume the `user_caja_chica` logic aligns with `projectName`.
+          // 2. Refund User (Fix: Do NOT override to 'user_caja_chica' if it was a personal submission)
+          // The expense.userId contains the ID of the balance that was credited.
+          // We simply reverse it.
           
           let targetUserId = expense.userId;
-          if (isCajaChica) {
-              targetUserId = 'user_caja_chica';
-          }
-
-          if (targetUserId) {
+          // Note: If the expense was "isCompanyExpense: true", usually userId is "company_expense".
+          // In that case, we don't refund a user balance.
+          
+          if (targetUserId && !expense.isCompanyExpense) {
               const userRef = doc(db, "users", targetUserId);
-              // Note: If expense was negative (correction), we are "rejecting" it.
-              // If user submitted -1000. Balance changed -1000.
-              // Rejecting it should +1000? 
-              // increment(-amount) works: -(-1000) = +1000. Correct.
-              // If user submitted +1000. Balance +1000. 
-              // Rejecting: -(1000) = -1000. Correct.
-              batch.update(userRef, { balance: increment(-expense.amount) });
+              // Reversing credit: If amount was +1000 (User got +1000), we do -1000.
+              // If it was a correction (-1000), we do +1000.
+              // So, decrement by expense.amount.
+              await updateDoc(userRef, { balance: increment(-expense.amount) });
           }
 
           toast.success("Gasto rechazado y saldo devuelto.");
           setRejectionModalOpen(false);
           setSelectedExpenseToReject(null);
-          setPendingExpenses(prev => prev.filter(e => e.id !== selectedExpenseToReject?.id));
+          // Refresh
+          fetchPending();
       } catch (e) {
           console.error("Error rejecting:", e);
           toast.error("Error al rechazar");
@@ -241,12 +242,28 @@ export default function AdminApprovals() {
       </div>
 
       <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
-        {pendingExpenses.length === 0 ? (
+        {/* TABS */}
+        <div className="flex border-b">
+            <button 
+                onClick={() => setViewMode('pending')}
+                className={`px-6 py-3 font-medium text-sm transition-colors ${viewMode === 'pending' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+                Pendientes ({pendingExpenses.length})
+            </button>
+            <button 
+                onClick={() => setViewMode('history')}
+                className={`px-6 py-3 font-medium text-sm transition-colors ${viewMode === 'history' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+                Historial de Revisiones ({historyExpenses.length})
+            </button>
+        </div>
+
+        {(viewMode === 'pending' ? pendingExpenses : historyExpenses).length === 0 ? (
             <div className="p-8 text-center text-gray-500">
-                <p>No hay rendiciones pendientes de revisión.</p>
+                <p>No hay registros en esta vista.</p>
             </div>
         ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
                 <table className="w-full text-left">
                     <thead>
                         <tr className="bg-gray-50 border-b">
@@ -254,12 +271,13 @@ export default function AdminApprovals() {
                             <th className="px-6 py-3 font-medium text-gray-500">Profesional</th>
                             <th className="px-6 py-3 font-medium text-gray-500">Proyecto</th>
                             <th className="px-6 py-3 font-medium text-gray-500">Monto</th>
+                            {viewMode === 'history' && <th className="px-6 py-3 font-medium text-gray-500">Estado</th>}
                             <th className="px-6 py-3 font-medium text-gray-500">Acciones</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                        {pendingExpenses.map((e, index) => (
-                            <motion.tr 
+                        {(viewMode === 'pending' ? pendingExpenses : historyExpenses).map((e, index) => (
+                            <Motion.tr 
                                 key={e.id} 
                                 initial={{ opacity: 0, y: 10 }}
                                 animate={{ opacity: 1, y: 0 }}
@@ -273,6 +291,16 @@ export default function AdminApprovals() {
                                     <span className="px-6 text-xs text-gray-400">{e.description}</span>
                                 </div>
                                 <td className="px-6 py-4 font-semibold">{formatCurrency(e.amount)}</td>
+                                {viewMode === 'history' && (
+                                    <td className="px-6 py-4">
+                                        <span className={`px-2 py-1 rounded-full text-xs font-bold ${
+                                            e.status === 'approved' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                                        }`}>
+                                            {e.status === 'approved' ? 'Aprobado' : 'Rechazado'}
+                                        </span>
+                                        {e.rejectionReason && <p className="text-xs text-red-500 mt-1 italic">"{e.rejectionReason}"</p>}
+                                    </td>
+                                )}
                                 <td className="px-6 py-4 flex space-x-2">
                                      <button 
                                         onClick={() => handleViewReceipt(e.imageUrl)}
@@ -281,22 +309,26 @@ export default function AdminApprovals() {
                                     >
                                         <FileText className="w-6 h-6" />
                                     </button>
-                                    <button 
-                                        onClick={() => handleApprove(e)}
-                                        className="text-green-600 hover:text-green-800 p-1 hover:bg-green-50 rounded"
-                                        title="Aprobar"
-                                    >
-                                        <CheckCircle className="w-6 h-6" />
-                                    </button>
-                                    <button 
-                                        onClick={() => openRejectionModal(e)}
-                                        className="text-red-500 hover:text-red-700 p-1 hover:bg-red-50 rounded"
-                                        title="Rechazar"
-                                    >
-                                        <XCircle className="w-6 h-6" />
-                                    </button>
+                                    {viewMode === 'pending' && (
+                                        <>
+                                            <button 
+                                                onClick={() => handleApprove(e)}
+                                                className="text-green-600 hover:text-green-800 p-1 hover:bg-green-50 rounded"
+                                                title="Aprobar"
+                                            >
+                                                <CheckCircle className="w-6 h-6" />
+                                            </button>
+                                            <button 
+                                                onClick={() => openRejectionModal(e)}
+                                                className="text-red-500 hover:text-red-700 p-1 hover:bg-red-50 rounded"
+                                                title="Rechazar"
+                                            >
+                                                <XCircle className="w-6 h-6" />
+                                            </button>
+                                        </>
+                                    )}
                                 </td>
-                            </motion.tr>
+                            </Motion.tr>
                         ))}
                     </tbody>
                 </table>
