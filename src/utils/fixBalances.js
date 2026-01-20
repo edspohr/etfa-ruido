@@ -180,10 +180,7 @@ export async function recalculateAllUserBalances() {
 
     for (const user of users) {
       const userExpenses = allExpenses.filter(
-        (e) =>
-          e.userId === user.id &&
-          e.status !== "rejected" &&
-          !e.isCompanyExpense,
+        (e) => e.userId === user.id && e.status !== "rejected",
       );
 
       const EXPENSE_SUM = userExpenses.reduce(
