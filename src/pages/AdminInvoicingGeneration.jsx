@@ -1,130 +1,177 @@
 import { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
-import { ArrowLeft, Save, Search, CheckCircle, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Save, Search, CheckCircle, AlertCircle, Plus, Trash2 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
-import { collection, query, where, getDocs, addDoc, writeBatch, doc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc, writeBatch, doc, serverTimestamp, orderBy } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { formatCurrency } from '../utils/format';
 import { Skeleton } from '../components/Skeleton';
 
 export default function AdminInvoicingGeneration() {
   const navigate = useNavigate();
-  const [clients, setClients] = useState([]);
+  
+  // Selection State
+  const [projects, setProjects] = useState([]);
+  const [selectedProjectId, setSelectedProjectId] = useState('');
+  const [selectedProject, setSelectedProject] = useState(null);
+  const [dateRange, setDateRange] = useState({ 
+    start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0], // First day of current month
+    end: new Date().toISOString().split('T')[0] // Today
+  });
+
+  // Invoice Data State
   const [expenses, setExpenses] = useState([]);
-  const [selectedClient, setSelectedClient] = useState('');
   const [selectedExpenses, setSelectedExpenses] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [customItems, setCustomItems] = useState([]);
+  const [glosa, setGlosa] = useState('');
+
+  // UI State
+  const [loadingProjects, setLoadingProjects] = useState(true);
+  const [loadingExpenses, setLoadingExpenses] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState(null);
 
+  // Fetch Projects on Load
   useEffect(() => {
-    async function fetchClients() {
+    async function fetchProjects() {
         try {
-            const projectsSnap = await getDocs(collection(db, "projects"));
-            const uniqueClients = new Set();
-            projectsSnap.docs.forEach(doc => {
-                const data = doc.data();
-                if (data.client) uniqueClients.add(data.client);
-            });
-            setClients(Array.from(uniqueClients).sort());
+            const q = query(collection(db, "projects"), orderBy("name"));
+            const snapshot = await getDocs(q);
+            setProjects(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
         } catch (e) {
-            console.error("Error fetching clients:", e);
+            console.error("Error fetching projects:", e);
+            setError("Error cargando proyectos.");
         } finally {
-            setLoading(false);
+            setLoadingProjects(false);
         }
     }
-    fetchClients();
+    fetchProjects();
   }, []);
 
+  // Handle Project Selection & Auto-fill Client
   useEffect(() => {
-    if (!selectedClient) {
-        setExpenses([]);
-        setSelectedExpenses([]);
-        return;
-    }
+      if (selectedProjectId) {
+          const project = projects.find(p => p.id === selectedProjectId);
+          setSelectedProject(project);
+      } else {
+          setSelectedProject(null);
+          setExpenses([]);
+          setSelectedExpenses([]);
+      }
+  }, [selectedProjectId, projects]);
 
-    async function fetchClientExpenses() {
-        setLoading(true);
+  // Fetch Expenses when Project or Dates change
+  useEffect(() => {
+    if (!selectedProjectId) return;
+
+    async function fetchExpenses() {
+        setLoadingExpenses(true);
         try {
-            // 1. Get projects for this client
-            const projectsQ = query(collection(db, "projects"), where("client", "==", selectedClient));
-            const projectsSnap = await getDocs(projectsQ);
-            const projectIds = projectsSnap.docs.map(d => d.id);
-            const projectNames = projectsSnap.docs.reduce((acc, d) => {
-                acc[d.id] = d.data().name;
-                return acc;
-            }, {});
-
-            if (projectIds.length === 0) {
-                setExpenses([]);
-                return;
-            }
-
-            // 2. Get APPROVED expenses for these projects that are NOT invoiced yet
-            // Note: Firestore 'in' query supports max 10 items. If a client has >10 projects, this breaks.
-            // Better strategy: Fetch all approved expenses and filter in memory (if dataset is small)
-            // OR iterate fetches. For now, assuming reasonable size, let's fetch all approved and filter.
+            // Fetch APPROVED expenses for this project
+            const q = query(
+                collection(db, "expenses"), 
+                where("projectId", "==", selectedProjectId),
+                where("status", "==", "approved")
+                // Date filtering is tricky in Firestore if we also filter by status/project.
+                // We will filter by date in memory for simplicity unless dataset is huge.
+            );
             
-            const expensesQ = query(collection(db, "expenses"), where("status", "==", "approved"));
-            const expensesSnap = await getDocs(expensesQ);
+            const snapshot = await getDocs(q);
             
-            const relevantExpenses = expensesSnap.docs
+            const validExpenses = snapshot.docs
                 .map(d => ({ id: d.id, ...d.data() }))
-                .filter(e => projectIds.includes(e.projectId) && !e.invoiceId); // Filter by client projects AND not invoiced
+                .filter(e => {
+                    if (e.invoiceId) return false; // Already invoiced
+                    
+                    // Date Filter
+                    if (!e.date) return false;
+                    const expenseDate = new Date(e.date.seconds * 1000);
+                    const start = new Date(dateRange.start);
+                    const end = new Date(dateRange.end);
+                    // Set end date to end of day
+                    end.setHours(23, 59, 59, 999);
+                    
+                    return expenseDate >= start && expenseDate <= end;
+                });
 
-            // Add project name to expense
-            const enrichedExpenses = relevantExpenses.map(e => ({
-                ...e,
-                projectName: projectNames[e.projectId] || 'Desconocido'
-            }));
+            setExpenses(validExpenses);
+            // Default: Select all fetched expenses? Or none? Let's select all for convenience.
+            setSelectedExpenses(validExpenses.map(e => e.id));
 
-            setExpenses(enrichedExpenses);
         } catch (e) {
             console.error("Error fetching expenses:", e);
+            setError("Error cargando gastos.");
         } finally {
-            setLoading(false);
+            setLoadingExpenses(false);
         }
     }
 
-    fetchClientExpenses();
-  }, [selectedClient]);
-
-  const toggleExpense = (expenseId) => {
-    if (selectedExpenses.includes(expenseId)) {
-        setSelectedExpenses(selectedExpenses.filter(id => id !== expenseId));
-    } else {
-        setSelectedExpenses([...selectedExpenses, expenseId]);
+    if (selectedProjectId && dateRange.start && dateRange.end) {
+        fetchExpenses();
     }
+  }, [selectedProjectId, dateRange]);
+
+
+  // Custom Items Logic
+  const addCustomItem = () => {
+      setCustomItems([...customItems, { description: '', amount: 0 }]);
   };
 
-  const selectAll = () => {
-    if (selectedExpenses.length === expenses.length) {
-        setSelectedExpenses([]);
-    } else {
-        setSelectedExpenses(expenses.map(e => e.id));
-    }
+  const removeCustomItem = (index) => {
+      const newItems = [...customItems];
+      newItems.splice(index, 1);
+      setCustomItems(newItems);
   };
 
+  const updateCustomItem = (index, field, value) => {
+      const newItems = [...customItems];
+      newItems[index][field] = value;
+      setCustomItems(newItems);
+  };
+
+
+  // Totals
+  const totalExpenses = expenses
+    .filter(e => selectedExpenses.includes(e.id))
+    .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+
+  const totalCustom = customItems.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+  
+  const totalInvoice = totalExpenses + totalCustom;
+
+
+  // Generation Action
   const handleGenerateInvoice = async () => {
-      if (selectedExpenses.length === 0) return;
+      if (!selectedProject) return;
       setGenerating(true);
       setError(null);
 
       try {
-          const totalAmount = expenses
-             .filter(e => selectedExpenses.includes(e.id))
-             .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
-
           // 1. Create Invoice Document
-          const invoiceRef = await addDoc(collection(db, "invoices"), {
-              clientId: selectedClient,
-              clientName: selectedClient,
+          const invoiceData = {
+              clientId: selectedProject.client || 'Sin Cliente',
+              projectId: selectedProject.id,
+              projectName: selectedProject.name,
+              projectRecurrence: selectedProject.recurrence || 'N/A',
+              
+              glosa: glosa,
+              dateRange: dateRange,
+              
               createdAt: serverTimestamp(),
-              status: 'draft', // or 'generated'?
-              totalAmount: totalAmount,
+              status: 'draft', // Initial status
+              paymentStatus: 'pending', // New field for reports
+              
+              totalAmount: totalInvoice,
+              totalExpenses: totalExpenses,
+              totalCustomItems: totalCustom,
+              
               expenseIds: selectedExpenses,
-              count: selectedExpenses.length
-          });
+              customItems: customItems,
+              
+              itemCount: selectedExpenses.length + customItems.length
+          };
+
+          const invoiceRef = await addDoc(collection(db, "invoices"), invoiceData);
 
           // 2. Update Expenses with invoiceId
           const batch = writeBatch(db);
@@ -136,17 +183,22 @@ export default function AdminInvoicingGeneration() {
           await batch.commit();
           
           navigate('/admin/invoicing');
+          
       } catch (e) {
           console.error("Error generating invoice:", e);
-          setError("Ocurrió un error al generar la pre-factura. Inténtalo de nuevo.");
+          setError("Ocurrió un error al generar la pre-factura.");
       } finally {
           setGenerating(false);
       }
   };
 
-  const totalSelected = expenses
-    .filter(e => selectedExpenses.includes(e.id))
-    .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+  const toggleExpense = (id) => {
+      if (selectedExpenses.includes(id)) {
+          setSelectedExpenses(selectedExpenses.filter(e => e !== id));
+      } else {
+          setSelectedExpenses([...selectedExpenses, id]);
+      }
+  };
 
   return (
     <Layout title="Generar Pre-Factura">
@@ -155,113 +207,240 @@ export default function AdminInvoicingGeneration() {
             <ArrowLeft className="w-4 h-4 mr-1" /> Volver al Dashboard
         </Link>
         <h1 className="text-2xl font-bold text-slate-800">Nueva Pre-Factura</h1>
-        <p className="text-slate-500">Selecciona un cliente y los gastos a incluir (Solo gastos Aprobados).</p>
+        <p className="text-slate-500">Configura los detalles de la facturación.</p>
       </div>
 
-      <div className="bg-white p-6 rounded-2xl shadow-soft border border-slate-100 mb-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Cliente</label>
-                <select 
-                    className="w-full p-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                    value={selectedClient}
-                    onChange={e => setSelectedClient(e.target.value)}
-                >
-                    <option value="">Seleccionar Cliente...</option>
-                    {clients.map(c => (
-                        <option key={c} value={c}>{c}</option>
-                    ))}
-                </select>
-            </div>
-            <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Fecha de Emisión</label>
-                <input 
-                    type="date" 
-                    className="w-full p-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                    defaultValue={new Date().toISOString().split('T')[0]}
-                    disabled
-                />
-            </div>
-        </div>
-      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          
+          {/* Left Column: Configuration */}
+          <div className="lg:col-span-1 space-y-6">
+              
+              {/* Project Selection */}
+              <div className="bg-white p-6 rounded-2xl shadow-soft border border-slate-100">
+                  <h3 className="font-bold text-slate-800 mb-4">1. Selección de Proyecto</h3>
+                  
+                  <div className="mb-4">
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Proyecto</label>
+                      {loadingProjects ? (
+                          <Skeleton className="h-10 w-full" />
+                      ) : (
+                          <select 
+                              className="w-full p-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
+                              value={selectedProjectId}
+                              onChange={e => setSelectedProjectId(e.target.value)}
+                          >
+                              <option value="">Seleccionar...</option>
+                              {projects.map(p => (
+                                  <option key={p.id} value={p.id}>
+                                      {p.code ? `[${p.code}] ` : ''}{p.name}
+                                  </option>
+                              ))}
+                          </select>
+                      )}
+                  </div>
 
-      {loading ? (
-           <div className="space-y-4">
-               <Skeleton className="h-12 w-full" />
-               <Skeleton className="h-12 w-full" />
-               <Skeleton className="h-12 w-full" />
-           </div>
-      ) : !selectedClient ? (
-        <div className="bg-white p-12 text-center rounded-2xl shadow-soft border border-slate-100 text-slate-400">
-            <Search className="w-12 h-12 mx-auto mb-3 opacity-20" />
-            <p>Selecciona un cliente para ver los gastos disponibles.</p>
-        </div>
-      ) : expenses.length === 0 ? (
-        <div className="bg-white p-12 text-center rounded-2xl shadow-soft border border-slate-100 text-slate-400">
-            <CheckCircle className="w-12 h-12 mx-auto mb-3 opacity-20" />
-            <p>No hay gastos pendientes de facturación para este cliente.</p>
-        </div>
-      ) : (
-        <div className="bg-white rounded-2xl shadow-soft border border-slate-100 overflow-hidden">
-            <div className="p-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
-                <div className="flex items-center gap-2">
-                    <input 
-                        type="checkbox" 
-                        checked={selectedExpenses.length === expenses.length && expenses.length > 0}
-                        onChange={selectAll}
-                        className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                    />
-                    <span className="text-sm font-semibold text-slate-600">
-                        {selectedExpenses.length} Gastos Seleccionados ({formatCurrency(totalSelected)})
-                    </span>
-                </div>
-            </div>
-            <div className="divide-y divide-slate-100">
-                {expenses.map(expense => (
-                    <div 
-                        key={expense.id} 
-                        className={`p-4 flex items-center justify-between hover:bg-slate-50 transition cursor-pointer ${selectedExpenses.includes(expense.id) ? 'bg-indigo-50/50' : ''}`}
-                        onClick={() => toggleExpense(expense.id)}
-                    >
-                        <div className="flex items-center gap-4">
-                            <input 
-                                type="checkbox"
-                                checked={selectedExpenses.includes(expense.id)}
-                                onChange={() => {}} // handled by parent div
-                                className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                            />
-                            <div>
-                                <p className="font-bold text-slate-800 text-sm">{expense.description}</p>
-                                <p className="text-xs text-slate-500">
-                                    {new Date(expense.date?.seconds * 1000).toLocaleDateString()} • {expense.projectName} • {expense.category}
-                                </p>
-                            </div>
-                        </div>
-                        <div className="font-bold text-slate-700">
-                            {formatCurrency(Number(expense.amount))}
-                        </div>
-                    </div>
-                ))}
-            </div>
-        </div>
-      )}
+                  {selectedProject && (
+                      <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 mb-4">
+                          <p className="text-xs text-slate-500 uppercase font-bold">Cliente Asociado</p>
+                          <p className="font-bold text-slate-800">{selectedProject.client || 'Sin Cliente Asignado'}</p>
+                          
+                          <p className="text-xs text-slate-500 uppercase font-bold mt-2">Recurrencia</p>
+                          <p className="font-medium text-slate-700">{selectedProject.recurrence || 'No definida'}</p>
+                      </div>
+                  )}
 
-      {error && (
-          <div className="mt-4 p-4 bg-red-100 text-red-700 rounded-xl flex items-center">
-              <AlertCircle className="w-5 h-5 mr-2" />
-              {error}
+                  <div className="grid grid-cols-2 gap-2">
+                      <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Desde</label>
+                          <input 
+                              type="date"
+                              className="w-full p-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
+                              value={dateRange.start}
+                              onChange={e => setDateRange({...dateRange, start: e.target.value})}
+                          />
+                      </div>
+                      <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Hasta</label>
+                          <input 
+                              type="date"
+                              className="w-full p-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
+                              value={dateRange.end}
+                              onChange={e => setDateRange({...dateRange, end: e.target.value})}
+                          />
+                      </div>
+                  </div>
+              </div>
+
+              {/* Glosa */}
+              <div className="bg-white p-6 rounded-2xl shadow-soft border border-slate-100">
+                  <h3 className="font-bold text-slate-800 mb-4">2. Detalles Generales</h3>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Glosa / Descripción</label>
+                  <textarea 
+                      className="w-full p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm h-24 resize-none"
+                      placeholder="Ej: Cobro mensual servicios de ingeniería..."
+                      value={glosa}
+                      onChange={e => setGlosa(e.target.value)}
+                  />
+              </div>
+
+              {/* Custom Items */}
+              <div className="bg-white p-6 rounded-2xl shadow-soft border border-slate-100">
+                  <div className="flex justify-between items-center mb-4">
+                      <h3 className="font-bold text-slate-800">3. Items Adicionales</h3>
+                      <button onClick={addCustomItem} className="text-indigo-600 hover:bg-indigo-50 p-1 rounded transition">
+                          <Plus className="w-4 h-4" />
+                      </button>
+                  </div>
+                  
+                  {customItems.length === 0 ? (
+                      <p className="text-sm text-slate-400 italic text-center py-2">No hay items adicionales</p>
+                  ) : (
+                      <div className="space-y-3">
+                          {customItems.map((item, idx) => (
+                              <div key={idx} className="flex gap-2 items-start">
+                                  <div className="flex-1 space-y-1">
+                                      <input 
+                                          type="text" 
+                                          placeholder="Descripción"
+                                          className="w-full p-1.5 border border-slate-200 rounded text-xs focus:ring-1 focus:ring-indigo-500 outline-none"
+                                          value={item.description}
+                                          onChange={e => updateCustomItem(idx, 'description', e.target.value)}
+                                      />
+                                      <input 
+                                          type="number" 
+                                          placeholder="Monto"
+                                          className="w-full p-1.5 border border-slate-200 rounded text-xs focus:ring-1 focus:ring-indigo-500 outline-none"
+                                          value={item.amount}
+                                          onChange={e => updateCustomItem(idx, 'amount', e.target.value)}
+                                      />
+                                  </div>
+                                  <button onClick={() => removeCustomItem(idx)} className="text-red-400 hover:text-red-600 p-1">
+                                      <Trash2 className="w-4 h-4" />
+                                  </button>
+                              </div>
+                          ))}
+                      </div>
+                  )}
+                  {customItems.length > 0 && (
+                       <div className="mt-4 pt-4 border-t border-slate-100 text-right">
+                           <p className="text-xs text-slate-500 uppercase font-bold">Subtotal Items</p>
+                           <p className="font-bold text-slate-800">{formatCurrency(totalCustom)}</p>
+                       </div>
+                  )}
+              </div>
+
           </div>
-      )}
-      
-      <div className="mt-8 flex justify-end">
-          <button 
-            onClick={handleGenerateInvoice}
-            disabled={selectedExpenses.length === 0 || generating}
-            className={`flex items-center bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-indigo-700 transition shadow-lg ${selectedExpenses.length === 0 || generating ? 'opacity-50 cursor-not-allowed' : ''}`}
-          >
-              <Save className="w-5 h-5 mr-2" />
-              {generating ? 'Generando...' : 'Generar Pre-Factura'}
-          </button>
+
+          {/* Right Column: Expenses & Summary */}
+          <div className="lg:col-span-2 space-y-6">
+              
+              {/* Expenses List */}
+              <div className="bg-white rounded-2xl shadow-soft border border-slate-100 overflow-hidden min-h-[400px]">
+                  <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+                      <h3 className="font-bold text-slate-800">Gastos a Incluir</h3>
+                      {expenses.length > 0 && (
+                          <span className="bg-slate-100 text-slate-600 px-2 py-1 rounded text-xs font-bold">
+                              {selectedExpenses.length} / {expenses.length}
+                          </span>
+                      )}
+                  </div>
+
+                  {loadingExpenses ? (
+                      <div className="p-6 space-y-4">
+                          <Skeleton className="h-12 w-full" />
+                          <Skeleton className="h-12 w-full" />
+                          <Skeleton className="h-12 w-full" />
+                      </div>
+                  ) : !selectedProject ? (
+                        <div className="p-12 text-center text-slate-400">
+                            <Search className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                            <p>Selecciona un proyecto para buscar gastos.</p>
+                        </div>
+                  ) : expenses.length === 0 ? (
+                        <div className="p-12 text-center text-slate-400">
+                            <CheckCircle className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                            <p>No se encontraron gastos aprobados en este rango de fechas.</p>
+                        </div>
+                  ) : (
+                      <div className="divide-y divide-slate-100">
+                          {expenses.map(expense => (
+                              <div 
+                                  key={expense.id} 
+                                  className={`p-4 flex items-center justify-between hover:bg-slate-50 transition cursor-pointer ${selectedExpenses.includes(expense.id) ? 'bg-indigo-50/50' : ''}`}
+                                  onClick={() => toggleExpense(expense.id)}
+                              >
+                                  <div className="flex items-center gap-4">
+                                      <input 
+                                          type="checkbox"
+                                          checked={selectedExpenses.includes(expense.id)}
+                                          onChange={() => {}} 
+                                          className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 pointer-events-none"
+                                      />
+                                      <div>
+                                          <p className="font-bold text-slate-800 text-sm">{expense.description}</p>
+                                          <p className="text-xs text-slate-500">
+                                              {new Date(expense.date?.seconds * 1000).toLocaleDateString()} • {expense.category}
+                                          </p>
+                                      </div>
+                                  </div>
+                                  <div className="font-bold text-slate-700">
+                                      {formatCurrency(Number(expense.amount))}
+                                  </div>
+                              </div>
+                          ))}
+                      </div>
+                  )}
+              </div>
+
+              {/* Total Summary */}
+              <div className="bg-slate-900 rounded-2xl shadow-lg p-6 text-white">
+                  <h3 className="text-lg font-bold mb-6">Resumen Pre-Factura</h3>
+                  
+                  <div className="space-y-3 mb-6 border-b border-slate-700 pb-6">
+                      <div className="flex justify-between">
+                          <span className="text-slate-400 text-sm">Gastos Seleccionados ({selectedExpenses.length})</span>
+                          <span className="font-medium">{formatCurrency(totalExpenses)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                          <span className="text-slate-400 text-sm">Items Adicionales ({customItems.length})</span>
+                          <span className="font-medium">{formatCurrency(totalCustom)}</span>
+                      </div>
+                  </div>
+
+                  <div className="flex justify-between items-end mb-8">
+                      <span className="text-xl font-bold">Total a Facturar</span>
+                      <span className="text-3xl font-extrabold text-indigo-400">{formatCurrency(totalInvoice)}</span>
+                  </div>
+
+                  {error && (
+                      <div className="mb-4 p-3 bg-red-500/20 text-red-300 rounded-lg text-sm flex items-center">
+                          <AlertCircle className="w-4 h-4 mr-2" />
+                          {error}
+                      </div>
+                  )}
+
+                  <button 
+                      onClick={handleGenerateInvoice}
+                      disabled={generating || (!selectedProject)}
+                      className={`w-full py-4 rounded-xl font-bold text-lg shadow-lg transition flex justify-center items-center ${
+                          generating || !selectedProject 
+                          ? 'bg-slate-700 text-slate-500 cursor-not-allowed' 
+                          : 'bg-indigo-600 hover:bg-indigo-500 text-white'
+                      }`}
+                  >
+                      {generating ? (
+                          <>
+                           Generando...
+                          </>
+                      ) : (
+                          <>
+                            <Save className="w-5 h-5 mr-2" /> Generar Pre-Factura
+                          </>
+                      )}
+                  </button>
+              </div>
+
+          </div>
       </div>
     </Layout>
   );

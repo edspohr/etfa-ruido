@@ -16,6 +16,8 @@ import { useAuth } from './context/useAuth';
 import AdminModuleSelector from './pages/AdminModuleSelector';
 import AdminInvoicingDashboard from './pages/AdminInvoicingDashboard';
 import AdminInvoicingGeneration from './pages/AdminInvoicingGeneration';
+import AdminInvoicingHistory from './pages/AdminInvoicingHistory';
+import AdminInvoicingReports from './pages/AdminInvoicingReports';
 
 function RootRedirect() {
   const { currentUser, userRole } = useAuth();
@@ -45,6 +47,8 @@ function App() {
         {/* Invoicing Module */}
         <Route path="/admin/invoicing" element={<ProtectedRoute requiredRole="admin"><AdminInvoicingDashboard /></ProtectedRoute>} />
         <Route path="/admin/invoicing/generate" element={<ProtectedRoute requiredRole="admin"><AdminInvoicingGeneration /></ProtectedRoute>} />
+        <Route path="/admin/invoicing/history" element={<ProtectedRoute requiredRole="admin"><AdminInvoicingHistory /></ProtectedRoute>} />
+        <Route path="/admin/invoicing/reports" element={<ProtectedRoute requiredRole="admin"><AdminInvoicingReports /></ProtectedRoute>} />
         
         {/* User Routes */}
         <Route path="/dashboard" element={<ProtectedRoute requiredRole={['professional', 'admin']}><UserDashboard /></ProtectedRoute>} />

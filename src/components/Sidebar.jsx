@@ -60,6 +60,14 @@ export default function Sidebar({ isOpen, setIsOpen }) {
                             <FileText className="w-4 h-4 mr-3" />
                             Generar
                         </Link>
+                        <Link to="/admin/invoicing/history" className={linkClass('/admin/invoicing/history')} onClick={() => setIsOpen(false)}>
+                            <FolderOpen className="w-4 h-4 mr-3" />
+                            Historial
+                        </Link>
+                        <Link to="/admin/invoicing/reports" className={linkClass('/admin/invoicing/reports')} onClick={() => setIsOpen(false)}>
+                            <PieChart className="w-4 h-4 mr-3" />
+                            Reportes
+                        </Link>
                     </>
                 ) : (
                     // Expenses Sidebar
@@ -90,15 +98,20 @@ export default function Sidebar({ isOpen, setIsOpen }) {
             </>
         )}
 
-        <p className={groupTitleClass}>Mi Espacio</p>
-        <Link to="/dashboard" className={linkClass('/dashboard')} onClick={() => setIsOpen(false)}>
-            <UserCircle className="w-4 h-4 mr-3" />
-            Mi Resumen
-        </Link>
-        <Link to="/dashboard/expenses" className={linkClass('/dashboard/expenses')} onClick={() => setIsOpen(false)}>
-            <Receipt className="w-4 h-4 mr-3" />
-            Mis Rendiciones
-        </Link>
+        {/* Only show "Mi Espacio" if NOT in Invoicing Module (to avoid confusion) */}
+        {!location.pathname.startsWith('/admin/invoicing') && (
+            <>
+                <p className={groupTitleClass}>Mi Espacio</p>
+                <Link to="/dashboard" className={linkClass('/dashboard')} onClick={() => setIsOpen(false)}>
+                    <UserCircle className="w-4 h-4 mr-3" />
+                    Mi Resumen
+                </Link>
+                <Link to="/dashboard/expenses" className={linkClass('/dashboard/expenses')} onClick={() => setIsOpen(false)}>
+                    <Receipt className="w-4 h-4 mr-3" />
+                    Mis Rendiciones
+                </Link>
+            </>
+        )}
 
         
         <div className="mt-auto pt-10">
