@@ -14,6 +14,8 @@ import ProtectedRoute from './components/ProtectedRoute';
 import { useAuth } from './context/useAuth';
 
 import AdminModuleSelector from './pages/AdminModuleSelector';
+import AdminInvoicingDashboard from './pages/AdminInvoicingDashboard';
+import AdminInvoicingGeneration from './pages/AdminInvoicingGeneration';
 
 function RootRedirect() {
   const { currentUser, userRole } = useAuth();
