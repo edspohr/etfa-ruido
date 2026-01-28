@@ -256,9 +256,9 @@ export default function ExpenseForm() {
 
         // Determine Logic based on Mode
         if (userRole === 'admin') {
-            const isCajaChica = !isSplitMode && projects.find(p => p.id === formData.projectId)?.type === 'petty_cash';
 
-            if (expenseMode === 'project' && !isCajaChica) {
+
+            if (expenseMode === 'project') {
                 targetUid = 'company_expense';
                 targetName = 'Gasto Empresa';
                 isProjectExpense = true;
