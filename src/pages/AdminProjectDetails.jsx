@@ -4,7 +4,7 @@ import Layout from '../components/Layout';
 import { db } from '../lib/firebase';
 import { doc, getDoc, collection, query, where, getDocs, updateDoc, increment, deleteDoc } from 'firebase/firestore';
 import { formatCurrency } from '../utils/format';
-import { ArrowLeft, CheckCircle, XCircle, FileText, Calendar, User, Trash2, Pencil } from 'lucide-react';
+import { ArrowLeft, CheckCircle, XCircle, FileText, Calendar, User, Trash2, Pencil, Ban } from 'lucide-react';
 import RejectionModal from '../components/RejectionModal';
 import { toast } from 'sonner';
 
@@ -394,23 +394,31 @@ export default function AdminProjectDetails() {
                                     </td>
                                     <td className="px-4 py-3">
                                         <div className="flex items-center space-x-2">
-                                            {e.status === 'pending' && (
+                                            {e.invoiceId ? (
+                                                <span className="text-gray-400 text-xs italic flex items-center gap-1" title="Gasto facturado, no se puede editar/eliminar">
+                                                    <Ban className="w-4 h-4" /> Bloqueado
+                                                </span>
+                                            ) : (
                                                 <>
-                                                    <button onClick={() => handleUpdateStatus(e.id, 'approved', e.amount, e.userId)} className="text-green-600 hover:text-green-800" title="Aprobar">
-                                                        <CheckCircle className="w-5 h-5" />
-                                                    </button>
-                                                    <button onClick={() => handleUpdateStatus(e.id, 'rejected', e.amount, e.userId)} className="text-red-600 hover:text-red-800" title="Rechazar">
-                                                        <XCircle className="w-5 h-5" />
+                                                    {e.status === 'pending' && (
+                                                        <>
+                                                            <button onClick={() => handleUpdateStatus(e.id, 'approved', e.amount, e.userId)} className="text-green-600 hover:text-green-800" title="Aprobar">
+                                                                <CheckCircle className="w-5 h-5" />
+                                                            </button>
+                                                            <button onClick={() => handleUpdateStatus(e.id, 'rejected', e.amount, e.userId)} className="text-red-600 hover:text-red-800" title="Rechazar">
+                                                                <XCircle className="w-5 h-5" />
+                                                            </button>
+                                                        </>
+                                                    )}
+                                                    <button 
+                                                        onClick={() => handleDeleteExpense(e)} 
+                                                        className="text-gray-400 hover:text-red-500" 
+                                                        title="Eliminar Definitivamente"
+                                                    >
+                                                        <Trash2 className="w-5 h-5" />
                                                     </button>
                                                 </>
                                             )}
-                                            <button 
-                                                onClick={() => handleDeleteExpense(e)} 
-                                                className="text-gray-400 hover:text-red-500" 
-                                                title="Eliminar Definitivamente"
-                                            >
-                                                <Trash2 className="w-5 h-5" />
-                                            </button>
                                         </div>
                                     </td>
                                 </tr>

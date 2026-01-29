@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
-import { collection, query, orderBy, getDocs, doc, updateDoc } from 'firebase/firestore';
+import { collection, query, orderBy, getDocs, doc, updateDoc, writeBatch, where } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { formatCurrency } from '../utils/format';
 import { Skeleton } from '../components/Skeleton';
@@ -50,12 +50,28 @@ export default function AdminInvoicingHistory() {
   }, [invoices, searchTerm, statusFilter]);
 
   async function updateStatus(id, newStatus) {
-     if (newStatus === 'annulled' && !window.confirm("¿Estás seguro de anular esta factura? Esta acción no se puede deshacer fácilmente.")) {
+     if (newStatus === 'annulled' && !window.confirm("¿Estás seguro de anular esta factura? Se liberarán los gastos asociados para ser facturados nuevamente.")) {
          return;
      }
 
      try {
-         await updateDoc(doc(db, "invoices", id), { paymentStatus: newStatus });
+         const batch = writeBatch(db);
+         const invRef = doc(db, "invoices", id);
+         
+         // 1. Update Invoice Status
+         batch.update(invRef, { paymentStatus: newStatus });
+
+         // 2. If Annulling, Release Expenses
+         if (newStatus === 'annulled') {
+             const q = query(collection(db, "expenses"), where("invoiceId", "==", id));
+             const snapshot = await getDocs(q);
+             snapshot.docs.forEach(doc => {
+                 batch.update(doc.ref, { invoiceId: null });
+             });
+         }
+
+         await batch.commit();
+
          // Update local state
          setInvoices(prev => prev.map(inv => inv.id === id ? { ...inv, paymentStatus: newStatus } : inv));
      } catch (e) {

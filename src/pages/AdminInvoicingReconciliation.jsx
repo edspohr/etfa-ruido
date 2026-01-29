@@ -99,10 +99,11 @@ export default function AdminInvoicingReconciliation() {
           if (!amount || amount <= 0) continue;
 
           cleanMovements.push({
-              id: `mov-${i}`, // Temp ID
+              id: `mov-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, // Unique ID
               date: row[dateIdx],
               description: row[descIdx] || 'Sin descripción',
               amount: amount,
+              bank: bankName,
               originalRow: row
           });
       }
@@ -186,24 +187,42 @@ export default function AdminInvoicingReconciliation() {
               
               <div className="bg-white p-6 rounded-2xl shadow-soft border border-slate-100">
                   <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
-                      <Upload className="w-5 h-5 text-indigo-600" /> Cargar Cartola
+                      <Upload className="w-5 h-5 text-indigo-600" /> Cargar Cartolas
                   </h3>
                   
-                  <div className="border-2 border-dashed border-slate-200 rounded-xl p-8 text-center hover:bg-slate-50 transition cursor-pointer relative">
-                      <input 
-                          type="file" 
-                          accept=".xlsx, .xls"
-                          onChange={handleFileUpload}
-                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                      />
-                      <FileSpreadsheet className="w-10 h-10 text-slate-400 mx-auto mb-2" />
-                      <p className="text-sm font-bold text-slate-600">
-                          {file ? file.name : 'Arrastra un archivo Excel aquí'}
-                      </p>
-                      <p className="text-xs text-slate-400 mt-1">o haz clic para seleccionar</p>
+                  <div className="space-y-4">
+                      {/* Itaú Upload */}
+                      <div className="border-2 border-dashed border-slate-200 rounded-xl p-4 text-center hover:bg-orange-50 transition cursor-pointer relative group">
+                          <input 
+                              type="file" 
+                              accept=".xlsx, .xls"
+                              onChange={(e) => handleFileUpload(e, 'Itaú')}
+                              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                              title="Cargar Cartola Itaú"
+                          />
+                          <div className="flex items-center justify-center gap-2">
+                              <FileSpreadsheet className="w-6 h-6 text-orange-500" />
+                              <span className="font-bold text-slate-600 group-hover:text-orange-600">Cargar Excel Itaú</span>
+                          </div>
+                      </div>
+
+                      {/* Santander Upload */}
+                      <div className="border-2 border-dashed border-slate-200 rounded-xl p-4 text-center hover:bg-red-50 transition cursor-pointer relative group">
+                          <input 
+                              type="file" 
+                              accept=".xlsx, .xls"
+                              onChange={(e) => handleFileUpload(e, 'Santander')}
+                              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                              title="Cargar Cartola Santander"
+                          />
+                          <div className="flex items-center justify-center gap-2">
+                              <FileSpreadsheet className="w-6 h-6 text-red-500" />
+                              <span className="font-bold text-slate-600 group-hover:text-red-600">Cargar Excel Santander</span>
+                          </div>
+                      </div>
                   </div>
                   
-                  {loading && <p className="text-center text-sm text-indigo-600 mt-2 font-medium">Procesando archivo...</p>}
+                  {loading && <p className="text-center text-sm text-indigo-600 mt-4 font-medium animate-pulse">Procesando archivo...</p>}
               </div>
 
               <div className="bg-white p-6 rounded-2xl shadow-soft border border-slate-100">
@@ -258,6 +277,9 @@ export default function AdminInvoicingReconciliation() {
                                       <p className="font-bold text-slate-800 text-sm truncate" title={match.movement.description}>
                                           {match.movement.description}
                                       </p>
+                                      <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded ${match.movement.bank === 'Itaú' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'}`}>
+                                          {match.movement.bank || 'Banco'}
+                                      </span>
                                       <p className="text-green-600 font-mono font-bold mt-1">
                                           + {formatCurrency(match.movement.amount)}
                                       </p>
