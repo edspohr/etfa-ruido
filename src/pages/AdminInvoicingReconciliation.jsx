@@ -249,7 +249,7 @@ export default function AdminInvoicingReconciliation() {
           <div className="lg:col-span-2">
               
               {matches.length > 0 ? (
-                  <div className="bg-white rounded-2xl shadow-soft border border-slate-100 overflow-hidden">
+                  <div className="bg-white rounded-2xl shadow-soft border border-slate-100 overflow-hidden mb-8">
                       <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-green-50/50">
                           <div>
                               <h3 className="font-bold text-slate-800 flex items-center gap-2">
@@ -312,21 +312,82 @@ export default function AdminInvoicingReconciliation() {
                           ))}
                       </div>
                   </div>
-              ) : (
-                  <div className="bg-white rounded-2xl shadow-soft border border-slate-100 p-12 text-center text-slate-400">
-                      {movements.length > 0 ? (
-                          <>
-                              <AlertTriangle className="w-12 h-12 mx-auto mb-3 opacity-20 text-orange-400" />
-                              <p>Se procesaron {movements.length} movimientos, pero no se encontraron coincidencias automáticas.</p>
-                          </>
-                      ) : (
-                          <>
-                              <FileSpreadsheet className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                              <p>Sube un archivo Excel para ver las coincidencias aquí.</p>
-                          </>
-                      )}
+              ) : null}
+
+              {/* Side-by-Side Detailed Lists */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  {/* Unified Movements List */}
+                  <div className="bg-white rounded-2xl shadow-soft border border-slate-100 overflow-hidden flex flex-col h-[600px]">
+                      <div className="p-4 border-b border-slate-100 bg-slate-50 sticky top-0 z-10">
+                          <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                              <FileSpreadsheet className="w-4 h-4 text-slate-500" /> Movimientos Unificados
+                          </h3>
+                          <p className="text-xs text-slate-500">Itaú y Santander (Ordenados por fecha)</p>
+                      </div>
+                      <div className="overflow-y-auto p-4 space-y-3 flex-1">
+                          {movements.length === 0 ? (
+                              <p className="text-center text-slate-400 text-sm py-10">Sube archivos para ver movimientos.</p>
+                          ) : (
+                              movements.map((mov, i) => {
+                                  // Check if this movement is already matched
+                                  const isMatched = matches.some(m => m.movement.id === mov.id);
+                                  return (
+                                      <div key={i} className={`p-3 rounded-lg border ${isMatched ? 'bg-green-50 border-green-200 opacity-60' : 'bg-white border-slate-100 hover:border-slate-300'} transition`}>
+                                          <div className="flex justify-between items-start mb-1">
+                                              <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded ${mov.bank === 'Itaú' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'}`}>
+                                                  {mov.bank || 'Banco'}
+                                              </span>
+                                              <span className="text-xs text-slate-400">{mov.date}</span>
+                                          </div>
+                                          <p className="text-sm font-medium text-slate-700 truncate mb-1" title={mov.description}>
+                                              {mov.description}
+                                          </p>
+                                          <div className="flex justify-between items-center">
+                                              <span className="text-green-600 font-bold font-mono text-sm">+ {formatCurrency(mov.amount)}</span>
+                                              {isMatched && <span className="text-[10px] font-bold text-green-600 flex items-center"><CheckCircle className="w-3 h-3 mr-1"/> Matched</span>}
+                                          </div>
+                                      </div>
+                                  );
+                              })
+                          )}
+                      </div>
                   </div>
-              )}
+
+                  {/* Pending Invoices List */}
+                  <div className="bg-white rounded-2xl shadow-soft border border-slate-100 overflow-hidden flex flex-col h-[600px]">
+                      <div className="p-4 border-b border-slate-100 bg-slate-50 sticky top-0 z-10">
+                          <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                              <CheckCircle className="w-4 h-4 text-slate-500" /> Facturas Emitidas (Por Cobrar)
+                          </h3>
+                          <p className="text-xs text-slate-500">Documentos pendientes de pago</p>
+                      </div>
+                      <div className="overflow-y-auto p-4 space-y-3 flex-1">
+                          {pendingInvoices.length === 0 ? (
+                              <p className="text-center text-slate-400 text-sm py-10">No hay facturas pendientes.</p>
+                          ) : (
+                              pendingInvoices.map((inv, i) => {
+                                  // Check if this invoice is already matched
+                                  const isMatched = matches.some(m => m.invoice.id === inv.id);
+                                  return (
+                                      <div key={i} className={`p-3 rounded-lg border ${isMatched ? 'bg-green-50 border-green-200 opacity-60' : 'bg-white border-slate-100 hover:border-slate-300'} transition`}>
+                                          <div className="flex justify-between items-start mb-1">
+                                              <span className="text-xs font-bold text-indigo-600 truncate max-w-[150px]">{inv.clientName}</span>
+                                              <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">
+                                                  {inv.createdAt?.seconds ? new Date(inv.createdAt.seconds * 1000).toLocaleDateString() : 'N/A'}
+                                              </span>
+                                          </div>
+                                          <p className="text-xs text-slate-500 truncate mb-2">{inv.projectName}</p>
+                                          <div className="flex justify-between items-center">
+                                              <span className="text-slate-800 font-bold text-sm">{formatCurrency(inv.totalAmount)}</span>
+                                              {isMatched && <span className="text-[10px] font-bold text-green-600 flex items-center"><CheckCircle className="w-3 h-3 mr-1"/> Matched</span>}
+                                          </div>
+                                      </div>
+                                  );
+                              })
+                          )}
+                      </div>
+                  </div>
+              </div>
           
           </div>
       </div>
