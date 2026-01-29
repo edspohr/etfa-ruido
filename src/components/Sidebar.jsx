@@ -64,9 +64,9 @@ export default function Sidebar({ isOpen, setIsOpen }) {
                             <FolderOpen className="w-4 h-4 mr-3" />
                             Historial
                         </Link>
-                        <Link to="/admin/invoicing/reports" className={linkClass('/admin/invoicing/reports')} onClick={() => setIsOpen(false)}>
-                            <PieChart className="w-4 h-4 mr-3" />
-                            Reportes
+                        <Link to="/admin/invoicing/reconciliation" className={linkClass('/admin/invoicing/reconciliation')} onClick={() => setIsOpen(false)}>
+                            <Wallet className="w-4 h-4 mr-3" />
+                            Cta Cte (Cartolas)
                         </Link>
                     </>
                 ) : (

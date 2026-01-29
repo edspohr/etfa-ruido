@@ -175,7 +175,7 @@ export default function AdminInvoicingReconciliation() {
   };
 
   return (
-    <Layout title="Conciliación Bancaria">
+    <Layout title="Cuenta Corriente Unificada">
       <div className="mb-6">
           <p className="text-slate-500">Sube tu cartola bancaria (Excel) para conciliar pagos automáticamente.</p>
       </div>
