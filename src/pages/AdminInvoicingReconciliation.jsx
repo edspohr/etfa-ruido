@@ -46,15 +46,20 @@ export default function AdminInvoicingReconciliation() {
               
               setMovements(prev => {
                   const combined = [...prev, ...parsedMovements];
-                  // Sort by ISO date for display if possible, or just standard sort
-                  // For now, let's rely on string comparison if formats align, or better yet, convert to timestamp for sort
+                  // Sort by ISO date for display
                   return combined.sort((a, b) => {
-                      // Parse DD/MM/YYYY
-                      const [da, ma, ya] = a.date.split('/').map(Number);
-                      const [db, mb, yb] = b.date.split('/').map(Number);
-                      const dateA = new Date(ya, ma - 1, da);
-                      const dateB = new Date(yb, mb - 1, db);
-                      return dateB - dateA; // Newest first
+                      try {
+                          // Parse DD/MM/YYYY
+                          if (!a.date || !b.date) return 0;
+                          const [da, ma, ya] = a.date.split('/').map(Number);
+                          const [db, mb, yb] = b.date.split('/').map(Number);
+                          const dateA = new Date(ya, ma - 1, da);
+                          const dateB = new Date(yb, mb - 1, db);
+                          if (isNaN(dateA.getTime()) || isNaN(dateB.getTime())) return 0;
+                          return dateB - dateA; // Newest first
+                      } catch (e) {
+                          return 0;
+                      }
                   });
               });
               
@@ -76,56 +81,66 @@ export default function AdminInvoicingReconciliation() {
 
   const parseBankData = (rows, bankName) => {
       if (!rows || rows.length < 2) {
-          console.warn("Empty or too short file");
+          alert("El archivo parece estar vacío o tener formato incorrecto.");
           return [];
       }
+
+      // Helper to clean strings
+      const cleanStr = (val) => String(val || '').toLowerCase().trim();
 
       // Helper to find column index
       const findCol = (row, keywords) => {
           if (!row) return -1;
           return row.findIndex(cell => {
-              if (!cell) return false;
-              const str = String(cell).toLowerCase().trim();
-              return keywords.some(k => str.includes(k));
+              const str = cleanStr(cell);
+              return keywords.some(k => str === k || str.includes(k));
           });
       };
 
-      // Heuristic: Try to find the header row by looking for "Fecha" or "Descripcion" or "Monto"
       let headerRowIndex = -1;
-      let descIdx = -1;
-      let amountIdx = -1;
       let dateIdx = -1;
-      let creditIdx = -1; // Specific for some banks that separate Debit/Credit
+      let descIdx = -1;
       let abonoIdx = -1;
+      let montoIdx = -1;
+      let saldoIdx = -1;
 
-      // Scan first 20 rows for headers
-      for (let i = 0; i < Math.min(rows.length, 20); i++) {
+      // 1. Scan for Header Row (up to 50 rows, common in messy bank files)
+      for (let i = 0; i < Math.min(rows.length, 50); i++) {
           const row = rows[i];
+          if (!row || row.length === 0) continue;
+
           const dIdx = findCol(row, ['fecha', 'date']);
           const descI = findCol(row, ['descrip', 'detalle', 'concepto', 'movimiento', 'glosa']);
           
-          // Amount can be tricky. Look for "Monto", "Importe", "Abono", "Credito"
-          const mIdx = findCol(row, ['monto', 'importe', 'saldo']); 
-          const cIdx = findCol(row, ['credito', 'crédito', 'haber']);
+          // Strict checks first
           const aIdx = findCol(row, ['abono']);
+          const mIdx = findCol(row, ['monto', 'importe']);
+          
+          // Debug scan
+          // console.log(`Row ${i}:`, row);
 
-          if ((dIdx !== -1 || descI !== -1) && (mIdx !== -1 || cIdx !== -1 || aIdx !== -1)) {
-              headerRowIndex = i;
-              dateIdx = dIdx;
-              descIdx = descI;
-              amountIdx = mIdx;
-              creditIdx = cIdx;
-              abonoIdx = aIdx;
-              break;
+          if (dIdx !== -1 && (descI !== -1)) {
+              // Found Date and Description, likely the header
+              // Now check if we have an Amount column
+              if (aIdx !== -1 || mIdx !== -1) {
+                  headerRowIndex = i;
+                  dateIdx = dIdx;
+                  descIdx = descI;
+                  abonoIdx = aIdx;
+                  montoIdx = mIdx;
+                  saldoIdx = findCol(row, ['saldo']);
+                  break;
+              }
           }
       }
 
-      console.log(`Found headers at row ${headerRowIndex}: Date=${dateIdx}, Desc=${descIdx}, Amount=${amountIdx}, Credit=${creditIdx}, Abono=${abonoIdx}`);
-
       if (headerRowIndex === -1) {
-          alert(`No se pudo detectar el formato del archivo de ${bankName}. Verifica que tenga columnas de Fecha, Descripción y Monto/Abono.`);
+          console.warn(`Could not find headers in ${bankName} file. Checked first 50 rows.`);
+          alert(`No se detectaron las columnas 'Fecha', 'Descripción' y 'Abono/Monto' en el archivo de ${bankName}. Por favor verifica el Excel.`);
           return [];
       }
+
+      console.log(`[${bankName}] Headers found at row ${headerRowIndex}. Date:${dateIdx}, Desc:${descIdx}, Abono:${abonoIdx}, Monto:${montoIdx}`);
 
       const cleanMovements = [];
       
@@ -133,62 +148,89 @@ export default function AdminInvoicingReconciliation() {
           const row = rows[i];
           if (!row || row.length === 0) continue;
 
-          // Determine Amount
-          let amountVal = 0;
-          
-          // Priority 1: "Abono" or "Credito" column (usually positive income)
-          if (abonoIdx !== -1 && row[abonoIdx]) {
-              amountVal = row[abonoIdx];
-          } else if (creditIdx !== -1 && row[creditIdx]) {
-              amountVal = row[creditIdx];
-          } else if (amountIdx !== -1 && row[amountIdx]) {
-              amountVal = row[amountIdx];
+          // --- 1. AMOUNT PARSING ---
+          let rawAmount = 0;
+          let isIncome = false;
+
+          // Strategy: If "Abono" column exists, use it. Usually Abono = Income, Cargo = Expense.
+          if (abonoIdx !== -1) {
+              const val = row[abonoIdx];
+              if (val) {
+                  rawAmount = val;
+                  isIncome = true; // By definition, Abono is positive for us
+              }
+          } 
+          // Fallback: If no Abono header, check "Monto"
+          else if (montoIdx !== -1) {
+             rawAmount = row[montoIdx];
+             // In "Monto" column files, usually Income is positive, Expense is negative OR there is a separate type column.
+             // For now, assume simple case: Positive = Income.
+             isIncome = true; 
           }
 
-          // Clean amount string
-          if (typeof amountVal === 'string') {
-              // Remove dots as thousand separators if present, map comma to dot if decimal
-              // Heuristic: if string contains dot and comma, assume standard format. 
-              // Simple cleanup: remove everything except numbers, dots, commas, negative sign
-               amountVal = amountVal.replace(/[^0-9.,-]/g, "");
-               // Replace comma with dot for JS parseFloat if it looks like a decimal separator
-               if (amountVal.includes(',') && !amountVal.includes('.')) {
-                   amountVal = amountVal.replace(',', '.');
-               } else if (amountVal.includes('.') && amountVal.includes(',')) {
-                   // e.g. 1.000,00 -> remove dot, replace comma
-                   amountVal = amountVal.replace(/\./g, '').replace(',', '.');
+          // Parse the number
+          let finalAmount = 0;
+          if (typeof rawAmount === 'number') {
+              finalAmount = rawAmount;
+          } else if (typeof rawAmount === 'string') {
+              // CLEANUP: Chilean format "1.000.000" or "1.000.000,00"
+              // Remove dots (thousand sep)
+              let s = rawAmount.replace(/\./g, '');
+              // Replace comma with dot (decimal)
+              s = s.replace(',', '.');
+              // Remove non-numeric (except dot and minus)
+              s = s.replace(/[^0-9.-]/g, '');
+              finalAmount = parseFloat(s);
+          }
+
+          // Filter: Must be valid number and Positive (we only reconcile Income)
+          if (!finalAmount || isNaN(finalAmount) || finalAmount <= 0) continue;
+
+          // --- 2. DATE PARSING ---
+          let rawDate = row[dateIdx];
+          let finalDate = 'S/F';
+
+          if (typeof rawDate === 'number') {
+              // Excel Serial Date
+              try {
+                  const dateObj = XLSX.SSF.parse_date_code(rawDate);
+                  // Pad with leading zeros
+                  const dd = String(dateObj.d).padStart(2, '0');
+                  const mm = String(dateObj.m).padStart(2, '0');
+                  finalDate = `${dd}/${mm}/${dateObj.y}`;
+              } catch (e) {
+                  console.warn("Date parse error", rawDate);
+                  finalDate = 'Error Fecha';
+              }
+          } else if (typeof rawDate === 'string') {
+               // Try identifying DD/MM/YYYY or DD-MM-YYYY
+               rawDate = rawDate.trim();
+               // Regex for DD/MM/YYYY
+               if (rawDate.match(/^\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4}$/)) {
+                   finalDate = rawDate.replace(/-/g, '/'); // normalize to slash
+               } else {
+                   // Try native Date parse?
+                   const d = new Date(rawDate);
+                   if (!isNaN(d.getTime())) {
+                       finalDate = d.toLocaleDateString('es-CL');
+                   }
                }
-               amountVal = parseFloat(amountVal);
-          }
-
-          // Filter: We generally only care about POSITIVE amounts (Incoming payments) for reconciliation
-          // unless it's a correction. Let's assume Abono/Credito are positive.
-          // If using a generic "Monto" column, we might get negatives.
-          if (!amountVal || isNaN(amountVal)) continue;
-
-          // Optional: Only allow positive values?
-          // For now, let's include everything > 0
-          if (amountVal <= 0) continue; 
-
-          // Date Cleanup
-          let dateVal = row[dateIdx];
-          if (typeof dateVal === 'number') {
-              // Excel serialized date
-              const dateObj = XLSX.SSF.parse_date_code(dateVal);
-              dateVal = `${dateObj.d}/${dateObj.m}/${dateObj.y}`;
           }
 
           cleanMovements.push({
               id: `mov-${bankName}-${i}-${Date.now()}`, 
-              date: dateVal || 'S/F',
+              date: finalDate, // Now strictly DD/MM/YYYY
               description: row[descIdx] || 'Sin descripción',
-              amount: amountVal,
+              amount: finalAmount,
               bank: bankName,
               originalRow: row
           });
       }
 
-      console.log(`Parsed ${cleanMovements.length} movements from ${bankName}`);
+      console.log(`[${bankName}] Parsed ${cleanMovements.length} valid incoming movements.`);
+      if (cleanMovements.length === 0) {
+          alert(`Se encontraron columnas pero no movimientos de ingreso (Abonos) válidos en ${bankName}.`);
+      }
       return cleanMovements;
   };
 
