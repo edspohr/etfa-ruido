@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
-import { Upload, FileSpreadsheet, CheckCircle, AlertTriangle, ArrowRight, Save, RefreshCw } from 'lucide-react';
+import { Upload, FileSpreadsheet, CheckCircle, AlertTriangle, ArrowRight, Save, RefreshCw, Search, X, Link as LinkIcon } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { collection, query, where, getDocs, writeBatch, doc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../lib/firebase';
@@ -13,6 +13,11 @@ export default function AdminInvoicingReconciliation() {
   const [pendingInvoices, setPendingInvoices] = useState([]);
   const [loading, setLoading] = useState(false);
   const [processing, setProcessing] = useState(false);
+  
+  // Manual Match State
+  const [manualMatchOpen, setManualMatchOpen] = useState(false);
+  const [activeMovement, setActiveMovement] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
 
   // 1. Fetch Pending Invoices
   useEffect(() => {
@@ -151,13 +156,13 @@ export default function AdminInvoicingReconciliation() {
           // --- 1. AMOUNT PARSING ---
           let rawAmount = 0;
           
-          // Strategy: If "Abono" column exists, use it. Usually Abono = Income, Cargo = Expense.
-          if (abonoIdx !== -1) {
-              const val = row[abonoIdx];
-              if (val) rawAmount = val;
+          // Strategy: Try Abono, then Monto
+          if (abonoIdx !== -1 && row[abonoIdx]) {
+              rawAmount = row[abonoIdx];
           } 
-          // Fallback: If no Abono header, check "Monto"
-          else if (montoIdx !== -1) {
+          
+          // Fallback: If no Abono value found (or Abono column missing), check Monto/Importe
+          if (!rawAmount && montoIdx !== -1 && row[montoIdx]) {
              rawAmount = row[montoIdx];
           }
 
@@ -233,7 +238,7 @@ export default function AdminInvoicingReconciliation() {
 
       console.log(`[${bankName}] Parsed ${cleanMovements.length} valid incoming movements.`);
       if (cleanMovements.length === 0) {
-          alert(`Se encontraron columnas pero no movimientos de ingreso (Abonos) válidos en ${bankName}.`);
+          console.warn(`Se encontraron columnas pero no movimientos de ingreso (Abonos) válidos en ${bankName}.`);
       }
       return cleanMovements;
   };
@@ -299,6 +304,23 @@ export default function AdminInvoicingReconciliation() {
       const newMatches = [...matches];
       newMatches.splice(index, 1);
       setMatches(newMatches);
+  };
+
+  const openManualMatch = (mov) => {
+      setActiveMovement(mov);
+      setSearchTerm('');
+      setManualMatchOpen(true);
+  };
+
+  const confirmManualMatch = (invoice) => {
+      setMatches(prev => [...prev, {
+          movement: activeMovement,
+          invoice,
+          confidence: 'manual',
+          reason: 'Conciliación Manual'
+      }]);
+      setManualMatchOpen(false);
+      setActiveMovement(null);
   };
 
   return (
@@ -477,7 +499,9 @@ export default function AdminInvoicingReconciliation() {
                                       <th className="px-4 py-3">Fecha</th>
                                       <th className="px-4 py-3">Descripción</th>
                                       <th className="px-4 py-3 text-right">Monto</th>
+                                      <th className="px-4 py-3 text-right">Monto</th>
                                       <th className="px-4 py-3 text-center">Estado</th>
+                                      <th className="px-4 py-3 text-center">Acción</th>
                                   </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-100">
@@ -506,6 +530,17 @@ export default function AdminInvoicingReconciliation() {
                                                   </td>
                                                   <td className="px-4 py-3 text-center">
                                                       {isMatched && <CheckCircle className="w-4 h-4 text-green-500 mx-auto" />}
+                                                  </td>
+                                                  <td className="px-4 py-3 text-center">
+                                                      {!isMatched && (
+                                                          <button 
+                                                              onClick={() => openManualMatch(mov)}
+                                                              className="text-indigo-600 hover:bg-indigo-50 p-1.5 rounded-full transition"
+                                                              title="Conciliar Manualmente"
+                                                          >
+                                                              <LinkIcon className="w-4 h-4" />
+                                                          </button>
+                                                      )}
                                                   </td>
                                               </tr>
                                           );
