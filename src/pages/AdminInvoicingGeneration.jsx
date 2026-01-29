@@ -14,9 +14,13 @@ export default function AdminInvoicingGeneration() {
   const [projects, setProjects] = useState([]);
   const [selectedProjectId, setSelectedProjectId] = useState('');
   const [selectedProject, setSelectedProject] = useState(null);
-  const [dateRange, setDateRange] = useState({ 
-    start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0], // First day of current month
-    end: new Date().toISOString().split('T')[0] // Today
+
+  // New Fields
+  const [documentType, setDocumentType] = useState('electronic_invoice');
+  const [references, setReferences] = useState({
+      oc: '',
+      hes: '',
+      nota_pedido: ''
   });
 
   // Invoice Data State
@@ -60,42 +64,28 @@ export default function AdminInvoicingGeneration() {
       }
   }, [selectedProjectId, projects]);
 
-  // Fetch Expenses when Project or Dates change
+  // Fetch Expenses when Project changes (No Date Filter)
   useEffect(() => {
     if (!selectedProjectId) return;
 
     async function fetchExpenses() {
         setLoadingExpenses(true);
         try {
-            // Fetch APPROVED expenses for this project
+            // Fetch APPROVED expenses for this project that are NOT invoiced
             const q = query(
                 collection(db, "expenses"), 
                 where("projectId", "==", selectedProjectId),
                 where("status", "==", "approved")
-                // Date filtering is tricky in Firestore if we also filter by status/project.
-                // We will filter by date in memory for simplicity unless dataset is huge.
             );
             
             const snapshot = await getDocs(q);
             
             const validExpenses = snapshot.docs
                 .map(d => ({ id: d.id, ...d.data() }))
-                .filter(e => {
-                    if (e.invoiceId) return false; // Already invoiced
-                    
-                    // Date Filter
-                    if (!e.date) return false;
-                    const expenseDate = new Date(e.date.seconds * 1000);
-                    const start = new Date(dateRange.start);
-                    const end = new Date(dateRange.end);
-                    // Set end date to end of day
-                    end.setHours(23, 59, 59, 999);
-                    
-                    return expenseDate >= start && expenseDate <= end;
-                });
+                .filter(e => !e.invoiceId); // Double check local filter
 
             setExpenses(validExpenses);
-            // Default: Select all fetched expenses? Or none? Let's select all for convenience.
+            // Default: Select all fetched expenses
             setSelectedExpenses(validExpenses.map(e => e.id));
 
         } catch (e) {
@@ -106,10 +96,8 @@ export default function AdminInvoicingGeneration() {
         }
     }
 
-    if (selectedProjectId && dateRange.start && dateRange.end) {
-        fetchExpenses();
-    }
-  }, [selectedProjectId, dateRange]);
+    fetchExpenses();
+  }, [selectedProjectId]);
 
 
   // Custom Items Logic
@@ -155,7 +143,8 @@ export default function AdminInvoicingGeneration() {
               projectRecurrence: selectedProject.recurrence || 'N/A',
               
               glosa: glosa,
-              dateRange: dateRange,
+              references: references,
+              documentType: documentType,
               
               createdAt: serverTimestamp(),
               status: 'draft', // Initial status
@@ -232,7 +221,7 @@ export default function AdminInvoicingGeneration() {
                               <option value="">Seleccionar...</option>
                               {projects.map(p => (
                                   <option key={p.id} value={p.id}>
-                                      {p.code ? `[${p.code}] ` : ''}{p.name}
+                                      {p.name} {p.recurrence ? `[${p.recurrence}]` : ''} 
                                   </option>
                               ))}
                           </select>
@@ -248,33 +237,48 @@ export default function AdminInvoicingGeneration() {
                           <p className="font-medium text-slate-700">{selectedProject.recurrence || 'No definida'}</p>
                       </div>
                   )}
+              </div>
 
-                  <div className="grid grid-cols-2 gap-2">
+              {/* General Details & References */}
+              <div className="bg-white p-6 rounded-2xl shadow-soft border border-slate-100">
+                  <h3 className="font-bold text-slate-800 mb-4">2. Detalles del Documento</h3>
+                  
+                  <div className="mb-4">
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Tipo de Documento</label>
+                      <select 
+                          className="w-full p-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
+                          value={documentType}
+                          onChange={e => setDocumentType(e.target.value)}
+                      >
+                          <option value="electronic_invoice">Factura Electrónica</option>
+                          <option value="exempt_invoice">Factura Exenta</option>
+                      </select>
+                  </div>
+
+                  <div className="space-y-3 mb-4">
                       <div>
-                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Desde</label>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Orden de Compra (OC)</label>
                           <input 
-                              type="date"
+                              type="text"
                               className="w-full p-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
-                              value={dateRange.start}
-                              onChange={e => setDateRange({...dateRange, start: e.target.value})}
+                              value={references.oc}
+                              onChange={e => setReferences({...references, oc: e.target.value})}
+                              placeholder="Ej: 4500012345"
                           />
                       </div>
                       <div>
-                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Hasta</label>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">HES / Nota Pedido</label>
                           <input 
-                              type="date"
+                              type="text"
                               className="w-full p-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
-                              value={dateRange.end}
-                              onChange={e => setDateRange({...dateRange, end: e.target.value})}
+                              value={references.hes}
+                              onChange={e => setReferences({...references, hes: e.target.value})}
+                              placeholder="Ej: 1000056789"
                           />
                       </div>
                   </div>
-              </div>
 
-              {/* Glosa */}
-              <div className="bg-white p-6 rounded-2xl shadow-soft border border-slate-100">
-                  <h3 className="font-bold text-slate-800 mb-4">2. Detalles Generales</h3>
-                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Glosa / Descripción</label>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Glosa / Descripción General</label>
                   <textarea 
                       className="w-full p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm h-24 resize-none"
                       placeholder="Ej: Cobro mensual servicios de ingeniería..."
@@ -359,7 +363,7 @@ export default function AdminInvoicingGeneration() {
                   ) : expenses.length === 0 ? (
                         <div className="p-12 text-center text-slate-400">
                             <CheckCircle className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                            <p>No se encontraron gastos aprobados en este rango de fechas.</p>
+                            <p>No se encontraron gastos pendientes de facturar para este proyecto.</p>
                         </div>
                   ) : (
                       <div className="divide-y divide-slate-100">

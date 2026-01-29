@@ -4,14 +4,14 @@ import { collection, query, orderBy, getDocs, doc, updateDoc } from 'firebase/fi
 import { db } from '../lib/firebase';
 import { formatCurrency } from '../utils/format';
 import { Skeleton } from '../components/Skeleton';
-import { FileText, CheckCircle, Clock, XCircle, Search, Filter } from 'lucide-react';
+import { FileText, CheckCircle, Clock, XCircle, Search, Filter, Ban } from 'lucide-react';
 
 export default function AdminInvoicingHistory() {
   const [invoices, setInvoices] = useState([]);
   const [filteredInvoices, setFilteredInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all'); // all, pending, paid
+  const [statusFilter, setStatusFilter] = useState('all'); // all, pending, paid, annulled
 
   useEffect(() => {
     fetchInvoices();
@@ -50,6 +50,10 @@ export default function AdminInvoicingHistory() {
   }, [invoices, searchTerm, statusFilter]);
 
   async function updateStatus(id, newStatus) {
+     if (newStatus === 'annulled' && !window.confirm("¿Estás seguro de anular esta factura? Esta acción no se puede deshacer fácilmente.")) {
+         return;
+     }
+
      try {
          await updateDoc(doc(db, "invoices", id), { paymentStatus: newStatus });
          // Update local state
@@ -59,6 +63,22 @@ export default function AdminInvoicingHistory() {
          alert("Error al actualizar estado");
      }
   }
+
+  const getStatusColor = (status) => {
+      switch (status) {
+          case 'paid': return 'bg-green-100 text-green-600';
+          case 'annulled': return 'bg-red-100 text-red-600';
+          default: return 'bg-orange-100 text-orange-600';
+      }
+  };
+
+  const getStatusText = (status) => {
+      switch (status) {
+          case 'paid': return 'PAGADO';
+          case 'annulled': return 'ANULADA';
+          default: return 'PENDIENTE';
+      }
+  };
 
   return (
     <Layout title="Historial de Facturación">
@@ -84,6 +104,7 @@ export default function AdminInvoicingHistory() {
                 <option value="all">Todos los Estados</option>
                 <option value="pending">Pendiente de Pago</option>
                 <option value="paid">Pagado</option>
+                <option value="annulled">Anulada</option>
             </select>
         </div>
       </div>
@@ -101,17 +122,20 @@ export default function AdminInvoicingHistory() {
          ) : (
              <div className="divide-y divide-slate-100">
                  {filteredInvoices.map(inv => (
-                     <div key={inv.id} className="p-6 hover:bg-slate-50 transition flex flex-col md:flex-row md:items-center justify-between gap-4">
+                     <div key={inv.id} className={`p-6 hover:bg-slate-50 transition flex flex-col md:flex-row md:items-center justify-between gap-4 ${inv.paymentStatus === 'annulled' ? 'opacity-60 bg-slate-50' : ''}`}>
                          
                          <div className="flex items-start gap-4">
-                             <div className={`p-3 rounded-xl ${inv.paymentStatus === 'paid' ? 'bg-green-100 text-green-600' : 'bg-orange-100 text-orange-600'}`}>
+                             <div className={`p-3 rounded-xl ${getStatusColor(inv.paymentStatus)}`}>
                                  <FileText className="w-6 h-6" />
                              </div>
                              <div>
-                                 <h4 className="font-bold text-slate-800 text-lg">{inv.clientName || 'Cliente desconocido'}</h4>
+                                 <h4 className={`font-bold text-slate-800 text-lg ${inv.paymentStatus === 'annulled' ? 'line-through text-slate-500' : ''}`}>
+                                    {inv.clientName || 'Cliente desconocido'}
+                                 </h4>
                                  <p className="text-sm text-indigo-600 font-medium mb-1">{inv.projectName}</p>
                                  <p className="text-xs text-slate-500">
                                      Emisión: {inv.createdAt?.seconds ? new Date(inv.createdAt.seconds * 1000).toLocaleDateString() : '-'}
+                                     {inv.documentType && <span className="uppercase ml-2">• {inv.documentType?.replace('_', ' ')}</span>}
                                  </p>
                                  {inv.glosa && (
                                      <p className="text-xs text-slate-500 italic mt-1 max-w-md truncate">"{inv.glosa}"</p>
@@ -121,27 +145,47 @@ export default function AdminInvoicingHistory() {
 
                          <div className="flex items-center gap-6 justify-between md:justify-end w-full md:w-auto">
                              <div className="text-right">
-                                 <p className="text-2xl font-extrabold text-slate-800">{formatCurrency(inv.totalAmount)}</p>
+                                 <p className={`text-2xl font-extrabold text-slate-800 ${inv.paymentStatus === 'annulled' ? 'line-through text-slate-400' : ''}`}>
+                                    {formatCurrency(inv.totalAmount)}
+                                 </p>
                                  <p className="text-xs text-slate-500">{inv.itemCount} items</p>
                              </div>
 
                              <div className="flex gap-2">
-                                 {inv.paymentStatus === 'paid' ? (
-                                     <button 
-                                        onClick={() => updateStatus(inv.id, 'pending')}
-                                        className="flex items-center gap-1 px-3 py-1.5 bg-green-100 text-green-700 rounded-lg text-xs font-bold hover:bg-green-200"
-                                        title="Marcar como Pendiente"
-                                     >
-                                         <CheckCircle className="w-3 h-3" /> PAGADO
-                                     </button>
-                                 ) : (
-                                     <button 
-                                        onClick={() => updateStatus(inv.id, 'paid')}
-                                        className="flex items-center gap-1 px-3 py-1.5 bg-orange-100 text-orange-700 rounded-lg text-xs font-bold hover:bg-orange-200"
-                                        title="Marcar como Pagado"
-                                     >
-                                         <Clock className="w-3 h-3" /> PENDIENTE
-                                     </button>
+                                 {inv.paymentStatus !== 'annulled' && (
+                                     <>
+                                        {inv.paymentStatus === 'paid' ? (
+                                            <button 
+                                                onClick={() => updateStatus(inv.id, 'pending')}
+                                                className="flex items-center gap-1 px-3 py-1.5 bg-green-100 text-green-700 rounded-lg text-xs font-bold hover:bg-green-200"
+                                                title="Marcar como Pendiente"
+                                            >
+                                                <CheckCircle className="w-3 h-3" /> PAGADO
+                                            </button>
+                                        ) : (
+                                            <button 
+                                                onClick={() => updateStatus(inv.id, 'paid')}
+                                                className="flex items-center gap-1 px-3 py-1.5 bg-orange-100 text-orange-700 rounded-lg text-xs font-bold hover:bg-orange-200"
+                                                title="Marcar como Pagado"
+                                            >
+                                                <Clock className="w-3 h-3" /> PENDIENTE
+                                            </button>
+                                        )}
+                                        
+                                        <button 
+                                            onClick={() => updateStatus(inv.id, 'annulled')}
+                                            className="flex items-center gap-1 px-3 py-1.5 bg-red-50 text-red-600 rounded-lg text-xs font-bold hover:bg-red-100"
+                                            title="Anular Factura"
+                                        >
+                                            <Ban className="w-3 h-3" /> ANULAR
+                                        </button>
+                                     </>
+                                 )}
+                                 
+                                 {inv.paymentStatus === 'annulled' && (
+                                     <span className="px-3 py-1.5 bg-slate-200 text-slate-500 rounded-lg text-xs font-bold">
+                                         ANULADA
+                                     </span>
                                  )}
                              </div>
                          </div>

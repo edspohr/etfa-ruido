@@ -1,0 +1,313 @@
+import { useState, useEffect } from 'react';
+import Layout from '../components/Layout';
+import { Upload, FileSpreadsheet, CheckCircle, AlertTriangle, ArrowRight, Save, RefreshCw } from 'lucide-react';
+import * as XLSX from 'xlsx';
+import { collection, query, where, getDocs, writeBatch, doc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../lib/firebase';
+import { formatCurrency } from '../utils/format';
+
+export default function AdminInvoicingReconciliation() {
+  const [file, setFile] = useState(null);
+  const [movements, setMovements] = useState([]);
+  const [matches, setMatches] = useState([]);
+  const [pendingInvoices, setPendingInvoices] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [processing, setProcessing] = useState(false);
+
+  // 1. Fetch Pending Invoices
+  useEffect(() => {
+    async function fetchPending() {
+        const q = query(collection(db, "invoices"), where("paymentStatus", "==", "pending"));
+        const snapshot = await getDocs(q);
+        setPendingInvoices(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+    }
+    fetchPending();
+  }, []);
+
+  // 2. Handle File Upload & Parsing
+  const handleFileUpload = (e) => {
+      const selectedFile = e.target.files[0];
+      if (!selectedFile) return;
+      
+      setFile(selectedFile);
+      setLoading(true);
+
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+          try {
+              const bstr = evt.target.result;
+              const workbook = XLSX.read(bstr, { type: 'binary' });
+              const wsname = workbook.SheetNames[0];
+              const ws = workbook.Sheets[wsname];
+              const data = XLSX.utils.sheet_to_json(ws, { header: 1 }); // Array of arrays
+
+              // Parsing Logic (Heuristic)
+              const parsedMovements = parseBankData(data);
+              setMovements(parsedMovements);
+              
+              // Run Matching
+              runMatching(parsedMovements, pendingInvoices);
+
+          } catch (error) {
+              console.error("Error parsing Excel:", error);
+              alert("Error al leer el archivo Excel. Asegúrate de que tenga un formato válido.");
+          } finally {
+              setLoading(false);
+          }
+      };
+      reader.readAsBinaryString(selectedFile);
+  };
+
+  const parseBankData = (rows) => {
+      // Simple heuristic: look for columns like "Abono", "Monto", "Credito" and "Descripcion", "Detalle"
+      if (rows.length < 2) return [];
+
+      // Find header row (usually first non-empty row)
+      let headerRowIndex = 0;
+      let headers = rows[0].map(h => String(h).toLowerCase());
+
+      // Map columns
+      let descIdx = headers.findIndex(h => h.includes('descrip') || h.includes('detalle') || h.includes('concepto'));
+      let amountIdx = headers.findIndex(h => h.includes('abono') || h.includes('crédito') || h.includes('credito') || h.includes('monto'));
+      let dateIdx = headers.findIndex(h => h.includes('fecha'));
+
+      // If headers not found in first row, try second
+      if (descIdx === -1 || amountIdx === -1) {
+         headers = rows[1]?.map(h => String(h).toLowerCase()) || [];
+         descIdx = headers.findIndex(h => h.includes('descrip') || h.includes('detalle') || h.includes('concepto'));
+         amountIdx = headers.findIndex(h => h.includes('abono') || h.includes('crédito') || h.includes('credito') || h.includes('monto'));
+         dateIdx = headers.findIndex(h => h.includes('fecha'));
+         headerRowIndex = 1;
+      }
+
+      const cleanMovements = [];
+      
+      for (let i = headerRowIndex + 1; i < rows.length; i++) {
+          const row = rows[i];
+          if (!row || row.length === 0) continue;
+
+          let amount = row[amountIdx];
+          
+          // Clean amount string if necessary (remove $, dots, etc)
+          if (typeof amount === 'string') {
+               amount = parseFloat(amount.replace(/[^0-9.-]+/g,""));
+          } else {
+               amount = parseFloat(amount);
+          }
+
+          // Filter only positive incoming amounts (Ingresos)
+          if (!amount || amount <= 0) continue;
+
+          cleanMovements.push({
+              id: `mov-${i}`, // Temp ID
+              date: row[dateIdx],
+              description: row[descIdx] || 'Sin descripción',
+              amount: amount,
+              originalRow: row
+          });
+      }
+
+      return cleanMovements;
+  };
+
+  const runMatching = (bankMovements, invoices) => {
+      const foundMatches = [];
+
+      bankMovements.forEach(mov => {
+          // 1. Exact Amount Match
+          const amountMatch = invoices.find(inv => Math.abs(Number(inv.totalAmount) - mov.amount) < 10); // tolerance of $10
+
+          if (amountMatch) {
+              foundMatches.push({
+                  movement: mov,
+                  invoice: amountMatch,
+                  confidence: 'high',
+                  reason: 'Monto exacto'
+              });
+          } else {
+              // 2. Try Partial Description Match (if Amount didn't match perfectly, maybe verify?)
+              // For now, let's keep it simple: Matching by Amount is strongest for simple reconciliation
+          }
+      });
+      
+      setMatches(foundMatches);
+  };
+
+  // 3. Confirm Matches
+  const handleConfirmMatches = async () => {
+      setProcessing(true);
+      try {
+          const batch = writeBatch(db);
+          
+          matches.forEach(m => {
+              const invRef = doc(db, "invoices", m.invoice.id);
+              batch.update(invRef, { 
+                  paymentStatus: 'paid',
+                  paidAt: serverTimestamp(),
+                  paymentReference: `Conciliación Auto: ${m.movement.description}`,
+                  paymentAmount: m.movement.amount
+              });
+          });
+
+          await batch.commit();
+          alert(`${matches.length} facturas conciliadas exitosamente.`);
+          setMovements([]);
+          setFile(null);
+          setMatches([]);
+          
+          // Remove reconciled invoices from pending list
+          const matchedIds = matches.map(m => m.invoice.id);
+          setPendingInvoices(prev => prev.filter(inv => !matchedIds.includes(inv.id)));
+
+      } catch (e) {
+          console.error("Error confirming matches:", e);
+          alert("Error al guardar conciliación.");
+      } finally {
+          setProcessing(false);
+      }
+  };
+
+  const removeMatch = (index) => {
+      const newMatches = [...matches];
+      newMatches.splice(index, 1);
+      setMatches(newMatches);
+  };
+
+  return (
+    <Layout title="Conciliación Bancaria">
+      <div className="mb-6">
+          <p className="text-slate-500">Sube tu cartola bancaria (Excel) para conciliar pagos automáticamente.</p>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          
+          {/* Left: Upload & Pending Data */}
+          <div className="lg:col-span-1 space-y-6">
+              
+              <div className="bg-white p-6 rounded-2xl shadow-soft border border-slate-100">
+                  <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
+                      <Upload className="w-5 h-5 text-indigo-600" /> Cargar Cartola
+                  </h3>
+                  
+                  <div className="border-2 border-dashed border-slate-200 rounded-xl p-8 text-center hover:bg-slate-50 transition cursor-pointer relative">
+                      <input 
+                          type="file" 
+                          accept=".xlsx, .xls"
+                          onChange={handleFileUpload}
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                      />
+                      <FileSpreadsheet className="w-10 h-10 text-slate-400 mx-auto mb-2" />
+                      <p className="text-sm font-bold text-slate-600">
+                          {file ? file.name : 'Arrastra un archivo Excel aquí'}
+                      </p>
+                      <p className="text-xs text-slate-400 mt-1">o haz clic para seleccionar</p>
+                  </div>
+                  
+                  {loading && <p className="text-center text-sm text-indigo-600 mt-2 font-medium">Procesando archivo...</p>}
+              </div>
+
+              <div className="bg-white p-6 rounded-2xl shadow-soft border border-slate-100">
+                  <h3 className="font-bold text-slate-800 mb-2">Resumen</h3>
+                  <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                          <span className="text-slate-500">Facturas Pendientes:</span>
+                          <span className="font-bold">{pendingInvoices.length}</span>
+                      </div>
+                      <div className="flex justify-between">
+                          <span className="text-slate-500">Movimientos Detectados:</span>
+                          <span className="font-bold">{movements.length}</span>
+                      </div>
+                      <div className="flex justify-between">
+                          <span className="text-slate-500">Coincidencias:</span>
+                          <span className="font-bold text-green-600">{matches.length}</span>
+                      </div>
+                  </div>
+              </div>
+
+          </div>
+
+          {/* Right: Reconciliation Interface */}
+          <div className="lg:col-span-2">
+              
+              {matches.length > 0 ? (
+                  <div className="bg-white rounded-2xl shadow-soft border border-slate-100 overflow-hidden">
+                      <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-green-50/50">
+                          <div>
+                              <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                                  <CheckCircle className="w-5 h-5 text-green-600" /> Conciliaciones Sugeridas
+                              </h3>
+                              <p className="text-xs text-slate-500 mt-1">Revisa y confirma los pagos detectados.</p>
+                          </div>
+                          <button 
+                              onClick={handleConfirmMatches}
+                              disabled={processing}
+                              className="bg-green-600 text-white px-4 py-2 rounded-lg font-bold text-sm hover:bg-green-700 transition flex items-center gap-2 shadow-sm"
+                          >
+                              {processing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                              Confirmar Conciliación
+                          </button>
+                      </div>
+
+                      <div className="divide-y divide-slate-100">
+                          {matches.map((match, idx) => (
+                              <div key={idx} className="p-4 flex flex-col md:flex-row items-center gap-4 hover:bg-slate-50 transition relative group">
+                                  
+                                  {/* Bank Side */}
+                                  <div className="flex-1 min-w-0">
+                                      <p className="text-xs text-slate-400 uppercase font-bold mb-1">Movimiento Banco</p>
+                                      <p className="font-bold text-slate-800 text-sm truncate" title={match.movement.description}>
+                                          {match.movement.description}
+                                      </p>
+                                      <p className="text-green-600 font-mono font-bold mt-1">
+                                          + {formatCurrency(match.movement.amount)}
+                                      </p>
+                                      <p className="text-xs text-slate-400 mt-1">{match.movement.date}</p>
+                                  </div>
+
+                                  <ArrowRight className="text-slate-300 w-5 h-5 flex-shrink-0" />
+
+                                  {/* Invoice Side */}
+                                  <div className="flex-1 min-w-0">
+                                      <p className="text-xs text-slate-400 uppercase font-bold mb-1">Factura Detectada</p>
+                                      <p className="font-bold text-slate-800 text-sm truncate">
+                                          {match.invoice.clientName}
+                                      </p>
+                                      <p className="text-indigo-600 text-xs truncate mb-1">{match.invoice.projectName}</p>
+                                      <p className="text-slate-800 font-bold">{formatCurrency(match.invoice.totalAmount)}</p>
+                                  </div>
+
+                                  <div className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition">
+                                      <button 
+                                          onClick={() => removeMatch(idx)}
+                                          className="text-red-400 hover:text-red-600 p-2 hover:bg-red-50 rounded-lg"
+                                          title="Rechazar esta coincidencia"
+                                      >
+                                          <AlertTriangle className="w-5 h-5" />
+                                      </button>
+                                  </div>
+
+                              </div>
+                          ))}
+                      </div>
+                  </div>
+              ) : (
+                  <div className="bg-white rounded-2xl shadow-soft border border-slate-100 p-12 text-center text-slate-400">
+                      {movements.length > 0 ? (
+                          <>
+                              <AlertTriangle className="w-12 h-12 mx-auto mb-3 opacity-20 text-orange-400" />
+                              <p>Se procesaron {movements.length} movimientos, pero no se encontraron coincidencias automáticas.</p>
+                          </>
+                      ) : (
+                          <>
+                              <FileSpreadsheet className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                              <p>Sube un archivo Excel para ver las coincidencias aquí.</p>
+                          </>
+                      )}
+                  </div>
+              )}
+          
+          </div>
+      </div>
+    </Layout>
+  );
+}
