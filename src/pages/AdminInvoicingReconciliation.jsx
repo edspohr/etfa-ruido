@@ -25,7 +25,7 @@ export default function AdminInvoicingReconciliation() {
   }, []);
 
   // 2. Handle File Upload & Parsing
-  const handleFileUpload = (e) => {
+  const handleFileUpload = (e, bankName) => {
       const selectedFile = e.target.files[0];
       if (!selectedFile) return;
       
@@ -41,12 +41,28 @@ export default function AdminInvoicingReconciliation() {
               const ws = workbook.Sheets[wsname];
               const data = XLSX.utils.sheet_to_json(ws, { header: 1 }); // Array of arrays
 
-              // Parsing Logic (Heuristic)
-              const parsedMovements = parseBankData(data);
-              setMovements(parsedMovements);
+              // Parsing Logic Tweak: Sort by Date
+              const parsedMovements = parseBankData(data, bankName);
               
-              // Run Matching
-              runMatching(parsedMovements, pendingInvoices);
+              setMovements(prev => {
+                  const combined = [...prev, ...parsedMovements];
+                  // Sort by ISO date for display if possible, or just standard sort
+                  // For now, let's rely on string comparison if formats align, or better yet, convert to timestamp for sort
+                  return combined.sort((a, b) => {
+                      // Parse DD/MM/YYYY
+                      const [da, ma, ya] = a.date.split('/').map(Number);
+                      const [db, mb, yb] = b.date.split('/').map(Number);
+                      const dateA = new Date(ya, ma - 1, da);
+                      const dateB = new Date(yb, mb - 1, db);
+                      return dateB - dateA; // Newest first
+                  });
+              });
+              
+              // Run Matching against ALL movements
+              // Note: We need to use the NEW combined list for matching
+              // Since setState is async, let's recalculate locally
+              const newMovements = [...movements, ...parsedMovements];
+              runMatching(newMovements, pendingInvoices);
 
           } catch (error) {
               console.error("Error parsing Excel:", error);
@@ -257,7 +273,7 @@ export default function AdminInvoicingReconciliation() {
                   
                   <div className="space-y-4">
                       {/* Itaú Upload */}
-                      <div className="border-2 border-dashed border-slate-200 rounded-xl p-4 text-center hover:bg-orange-50 transition cursor-pointer relative group">
+                      <div className={`border-2 border-dashed rounded-xl p-4 text-center transition cursor-pointer relative group ${movements.some(m => m.bank === 'Itaú') ? 'bg-orange-50 border-orange-200' : 'border-slate-200 hover:bg-orange-50'}`}>
                           <input 
                               type="file" 
                               accept=".xlsx, .xls"
@@ -266,13 +282,22 @@ export default function AdminInvoicingReconciliation() {
                               title="Cargar Cartola Itaú"
                           />
                           <div className="flex items-center justify-center gap-2">
-                              <FileSpreadsheet className="w-6 h-6 text-orange-500" />
-                              <span className="font-bold text-slate-600 group-hover:text-orange-600">Cargar Excel Itaú</span>
+                              {movements.some(m => m.bank === 'Itaú') ? (
+                                  <>
+                                      <CheckCircle className="w-6 h-6 text-orange-600" />
+                                      <span className="font-bold text-orange-700">Itaú Cargado Correctamente</span>
+                                  </>
+                              ) : (
+                                  <>
+                                      <FileSpreadsheet className="w-6 h-6 text-orange-500" />
+                                      <span className="font-bold text-slate-600 group-hover:text-orange-600">Cargar Excel Itaú</span>
+                                  </>
+                              )}
                           </div>
                       </div>
 
                       {/* Santander Upload */}
-                      <div className="border-2 border-dashed border-slate-200 rounded-xl p-4 text-center hover:bg-red-50 transition cursor-pointer relative group">
+                      <div className={`border-2 border-dashed rounded-xl p-4 text-center transition cursor-pointer relative group ${movements.some(m => m.bank === 'Santander') ? 'bg-red-50 border-red-200' : 'border-slate-200 hover:bg-red-50'}`}>
                           <input 
                               type="file" 
                               accept=".xlsx, .xls"
@@ -281,8 +306,17 @@ export default function AdminInvoicingReconciliation() {
                               title="Cargar Cartola Santander"
                           />
                           <div className="flex items-center justify-center gap-2">
-                              <FileSpreadsheet className="w-6 h-6 text-red-500" />
-                              <span className="font-bold text-slate-600 group-hover:text-red-600">Cargar Excel Santander</span>
+                              {movements.some(m => m.bank === 'Santander') ? (
+                                  <>
+                                      <CheckCircle className="w-6 h-6 text-red-600" />
+                                      <span className="font-bold text-red-700">Santander Cargado Correctamente</span>
+                                  </>
+                              ) : (
+                                  <>
+                                      <FileSpreadsheet className="w-6 h-6 text-red-500" />
+                                      <span className="font-bold text-slate-600 group-hover:text-red-600">Cargar Excel Santander</span>
+                                  </>
+                              )}
                           </div>
                       </div>
                   </div>
