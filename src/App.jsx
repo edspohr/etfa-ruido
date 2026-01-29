@@ -16,6 +16,7 @@ import { useAuth } from './context/useAuth';
 import AdminModuleSelector from './pages/AdminModuleSelector';
 import AdminInvoicingDashboard from './pages/AdminInvoicingDashboard';
 import AdminInvoicingGeneration from './pages/AdminInvoicingGeneration';
+import AdminInvoicingHistory from './pages/AdminInvoicingHistory';
 import AdminInvoicingReconciliation from './pages/AdminInvoicingReconciliation';
 
 
