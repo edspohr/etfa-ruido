@@ -114,7 +114,7 @@ export default function AdminInvoicingReconciliation() {
           
           // Strict checks first
           const aIdx = findCol(row, ['abono']);
-          const mIdx = findCol(row, ['monto', 'importe']);
+          const mIdx = findCol(row, ['monto', 'importe', 'valor']);
           
           // Debug scan
           // console.log(`Row ${i}:`, row);
@@ -150,22 +150,15 @@ export default function AdminInvoicingReconciliation() {
 
           // --- 1. AMOUNT PARSING ---
           let rawAmount = 0;
-          let isIncome = false;
-
+          
           // Strategy: If "Abono" column exists, use it. Usually Abono = Income, Cargo = Expense.
           if (abonoIdx !== -1) {
               const val = row[abonoIdx];
-              if (val) {
-                  rawAmount = val;
-                  isIncome = true; // By definition, Abono is positive for us
-              }
+              if (val) rawAmount = val;
           } 
           // Fallback: If no Abono header, check "Monto"
           else if (montoIdx !== -1) {
              rawAmount = row[montoIdx];
-             // In "Monto" column files, usually Income is positive, Expense is negative OR there is a separate type column.
-             // For now, assume simple case: Positive = Income.
-             isIncome = true; 
           }
 
           // Parse the number
@@ -173,14 +166,25 @@ export default function AdminInvoicingReconciliation() {
           if (typeof rawAmount === 'number') {
               finalAmount = rawAmount;
           } else if (typeof rawAmount === 'string') {
+              let s = rawAmount.trim();
+              
+              // Check for negative signs before cleaning
+              // Parentheses (100) or leading/trailing minus -100, 100-
+              const isNegative = s.includes('(') || s.includes('-');
+
               // CLEANUP: Chilean format "1.000.000" or "1.000.000,00"
               // Remove dots (thousand sep)
-              let s = rawAmount.replace(/\./g, '');
+              s = s.replace(/\./g, '');
               // Replace comma with dot (decimal)
               s = s.replace(',', '.');
-              // Remove non-numeric (except dot and minus)
-              s = s.replace(/[^0-9.-]/g, '');
+              // Remove non-numeric (except dot)
+              s = s.replace(/[^0-9.]/g, '');
+              
               finalAmount = parseFloat(s);
+              
+              if (isNegative) {
+                  finalAmount = -Math.abs(finalAmount);
+              }
           }
 
           // Filter: Must be valid number and Positive (we only reconcile Income)
