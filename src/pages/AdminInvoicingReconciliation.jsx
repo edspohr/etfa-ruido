@@ -82,8 +82,8 @@ export default function AdminInvoicingReconciliation() {
       let creditIdx = -1; // Specific for some banks that separate Debit/Credit
       let abonoIdx = -1;
 
-      // Scan first 10 rows for headers
-      for (let i = 0; i < Math.min(rows.length, 10); i++) {
+      // Scan first 20 rows for headers
+      for (let i = 0; i < Math.min(rows.length, 20); i++) {
           const row = rows[i];
           const dIdx = findCol(row, ['fecha', 'date']);
           const descI = findCol(row, ['descrip', 'detalle', 'concepto', 'movimiento', 'glosa']);
@@ -381,7 +381,7 @@ export default function AdminInvoicingReconciliation() {
 
               {/* Side-by-Side Detailed Lists */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  {/* Unified Movements List */}
+                  {/* Unified Movements Table */}
                   <div className="bg-white rounded-2xl shadow-soft border border-slate-100 overflow-hidden flex flex-col h-[600px]">
                       <div className="p-4 border-b border-slate-100 bg-slate-50 sticky top-0 z-10">
                           <h3 className="font-bold text-slate-800 flex items-center gap-2">
@@ -389,32 +389,50 @@ export default function AdminInvoicingReconciliation() {
                           </h3>
                           <p className="text-xs text-slate-500">Itaú y Santander (Ordenados por fecha)</p>
                       </div>
-                      <div className="overflow-y-auto p-4 space-y-3 flex-1">
-                          {movements.length === 0 ? (
-                              <p className="text-center text-slate-400 text-sm py-10">Sube archivos para ver movimientos.</p>
-                          ) : (
-                              movements.map((mov, i) => {
-                                  // Check if this movement is already matched
-                                  const isMatched = matches.some(m => m.movement.id === mov.id);
-                                  return (
-                                      <div key={i} className={`p-3 rounded-lg border ${isMatched ? 'bg-green-50 border-green-200 opacity-60' : 'bg-white border-slate-100 hover:border-slate-300'} transition`}>
-                                          <div className="flex justify-between items-start mb-1">
-                                              <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded ${mov.bank === 'Itaú' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'}`}>
-                                                  {mov.bank || 'Banco'}
-                                              </span>
-                                              <span className="text-xs text-slate-400">{mov.date}</span>
-                                          </div>
-                                          <p className="text-sm font-medium text-slate-700 truncate mb-1" title={mov.description}>
-                                              {mov.description}
-                                          </p>
-                                          <div className="flex justify-between items-center">
-                                              <span className="text-green-600 font-bold font-mono text-sm">+ {formatCurrency(mov.amount)}</span>
-                                              {isMatched && <span className="text-[10px] font-bold text-green-600 flex items-center"><CheckCircle className="w-3 h-3 mr-1"/> Matched</span>}
-                                          </div>
-                                      </div>
-                                  );
-                              })
-                          )}
+                      <div className="overflow-auto flex-1">
+                          <table className="w-full text-left text-sm whitespace-nowrap">
+                              <thead className="bg-slate-50 text-slate-500 font-medium sticky top-0">
+                                  <tr>
+                                      <th className="px-4 py-3">Banco</th>
+                                      <th className="px-4 py-3">Fecha</th>
+                                      <th className="px-4 py-3">Descripción</th>
+                                      <th className="px-4 py-3 text-right">Monto</th>
+                                      <th className="px-4 py-3 text-center">Estado</th>
+                                  </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                  {movements.length === 0 ? (
+                                      <tr>
+                                          <td colSpan="5" className="px-4 py-10 text-center text-slate-400">
+                                              Sube archivos para ver movimientos.
+                                          </td>
+                                      </tr>
+                                  ) : (
+                                      movements.map((mov, i) => {
+                                          const isMatched = matches.some(m => m.movement.id === mov.id);
+                                          return (
+                                              <tr key={i} className={`hover:bg-slate-50 transition ${isMatched ? 'bg-green-50/50' : ''}`}>
+                                                  <td className="px-4 py-3">
+                                                      <span className={`text-[10px] uppercase font-bold px-2 py-1 rounded-full ${mov.bank === 'Itaú' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'}`}>
+                                                          {mov.bank || 'Banco'}
+                                                      </span>
+                                                  </td>
+                                                  <td className="px-4 py-3 text-slate-600">{mov.date}</td>
+                                                  <td className="px-4 py-3 text-slate-700 max-w-[200px] truncate" title={mov.description}>
+                                                      {mov.description}
+                                                  </td>
+                                                  <td className="px-4 py-3 text-right font-bold text-green-600 font-mono">
+                                                      + {formatCurrency(mov.amount)}
+                                                  </td>
+                                                  <td className="px-4 py-3 text-center">
+                                                      {isMatched && <CheckCircle className="w-4 h-4 text-green-500 mx-auto" />}
+                                                  </td>
+                                              </tr>
+                                          );
+                                      })
+                                  )}
+                              </tbody>
+                          </table>
                       </div>
                   </div>
 
