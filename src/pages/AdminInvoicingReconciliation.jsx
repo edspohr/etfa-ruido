@@ -499,7 +499,6 @@ export default function AdminInvoicingReconciliation() {
                                       <th className="px-4 py-3">Fecha</th>
                                       <th className="px-4 py-3">Descripción</th>
                                       <th className="px-4 py-3 text-right">Monto</th>
-                                      <th className="px-4 py-3 text-right">Monto</th>
                                       <th className="px-4 py-3 text-center">Estado</th>
                                       <th className="px-4 py-3 text-center">Acción</th>
                                   </tr>
