@@ -57,7 +57,6 @@ export default function AdminInvoicingReconciliation() {
                           const dateB = new Date(yb, mb - 1, db);
                           if (isNaN(dateA.getTime()) || isNaN(dateB.getTime())) return 0;
                           return dateB - dateA; // Newest first
-                          return dateB - dateA; // Newest first
                       } catch (error) {
                           return 0;
                       }
@@ -123,21 +122,20 @@ export default function AdminInvoicingReconciliation() {
           const dIdx = findCol(row, ['fecha', 'date']);
           const descI = findCol(row, ['descrip', 'detalle', 'concepto', 'movimiento', 'glosa']);
           
-          // Strict checks first
-          const aIdx = findCol(row, ['abono']);
-          const mIdx = findCol(row, ['monto', 'importe', 'valor']);
+          // Extended Checks for Santander / Other Formats
+          const aIdx = findCol(row, ['abono', 'deposito', 'credit', 'crédito']);
+          const mIdx = findCol(row, ['monto', 'importe', 'valor', 'saldo']); // Saldo sometimes is the only number column if format is weird
           
           // Debug scan
-          // console.log(`Row ${i}:`, row);
+          console.log(`Row ${i} scan: Date=${dIdx}, Desc=${descI}, Abono=${aIdx}, Monto=${mIdx}`);
 
           if (dIdx !== -1 && (descI !== -1)) {
               // Found Date and Description, likely the header
-              // Now check if we have an Amount column
+              // Now check if we have ANY numeric value column
               if (aIdx !== -1 || mIdx !== -1) {
                   headerRowIndex = i;
                   dateIdx = dIdx;
                   descIdx = descI;
-                  abonoIdx = aIdx;
                   abonoIdx = aIdx;
                   montoIdx = mIdx;
                   break;
