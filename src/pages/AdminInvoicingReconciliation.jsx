@@ -169,7 +169,7 @@ export default function AdminInvoicingReconciliation() {
           // Safety: If column header explicitly says "Saldo" or "Balance", ignore it.
           if (mIdx !== -1) {
               const headerVal = cleanStr(row[mIdx]);
-              if (headerVal.includes('saldo') || headerVal.includes('balance')) {
+              if (headerVal.includes('saldo') || headerVal.includes('balance') || headerVal.includes('acumulado')) {
                   mIdx = -1;
               }
           }
@@ -191,115 +191,111 @@ export default function AdminInvoicingReconciliation() {
           }
       }
 
-      // STRATEGY B: "Pattern Match" Scan (Default for Santander, Fallback for others)
-      // For Santander, we skip header search and go straight to row scanning to avoid issues with messy headers.
-      if ((headerRowIndex === -1) || (bankName === 'Santander')) {
-          console.log(`[${bankName}] Using Strategy B (Pattern Match - Row Scan)...`);
+      // STRATEGY B: "Find Header" Scan (Specific for Santander)
+      // Santander often has headers around row 10+ with "FECHA", "MONTO", "DESCRIPCIÓN" in weird orders.
+      // We will SCAN specifically for a row that has these headers.
+      if (bankName === 'Santander') {
+          console.log(`[${bankName}] Using Strategy B (Find Header by Keywords in first 20 rows)...`);
           
-          const heuristicMovements = [];
-          
-          rows.forEach((row, rowIndex) => {
-              if (!row || row.length < 3) return;
+          let santanderHeaderRowIndex = -1;
+          let sDateIdx = -1;
+          let sMontoIdx = -1;
+          let sDescIdx = -1;
+
+          // 1. Find the Header Row
+          for (let i = 0; i < Math.min(rows.length, 25); i++) { // Scan up to 25 rows
+             const row = rows[i];
+             if (!row) continue;
+             
+             // Check if this row looks like a header (Must have FECHA and (MONTO or IMPORTE))
+             // Use exact string matching or includes?
+             const dI = findCol(row, ['fecha']);
+             const mI = findCol(row, ['monto', 'importe']);
+             const descI = findCol(row, ['descripción', 'descripcion', 'detalle', 'movimiento']);
+             
+             if (dI !== -1 && (mI !== -1 || descI !== -1)) {
+                 santanderHeaderRowIndex = i;
+                 sDateIdx = dI;
+                 sMontoIdx = mI;
+                 sDescIdx = descI;
+                 break;
+             }
+          }
+
+          if (santanderHeaderRowIndex !== -1) {
+              console.log(`[Santander] Found headers at row ${santanderHeaderRowIndex}. Date:${sDateIdx}, Monto:${sMontoIdx}`);
               
-              // 1. DETECT DATE (DD/MM/AAAA or DD-MM-AAAA) in first few columns
-              let potentialDate = null;
-              let dateColIndices = [0, 1]; 
+              const parsedSantander = [];
               
-              for (let dCol of dateColIndices) {
-                  if (row[dCol]) {
-                      const val = String(row[dCol]).trim();
-                      if (val.match(/^\d{1,2}[/-]\d{1,2}[/-]\d{2,4}$/)) {
-                          potentialDate = val.replace(/-/g, '/');
-                          break;
+              // Iterate rows AFTER header
+              for (let i = santanderHeaderRowIndex + 1; i < rows.length; i++) {
+                  const row = rows[i];
+                  if (!row || row.length === 0) continue;
+                  
+                  // Extract Amount (Monto/Importe)
+                  // Santander often provides negative for charges, positive/negative for payments?
+                  // Usually: Cargos are Negative. Abonos are Positive. 
+                  // But sometimes they are in different columns.
+                  // If we found a "Monto" column, use it.
+                  
+                  let rawAmount = 0;
+                  if (sMontoIdx !== -1 && row[sMontoIdx] !== undefined) {
+                      rawAmount = row[sMontoIdx];
+                  }
+                  
+                  // Parse
+                  let finalAmount = 0;
+                   if (typeof rawAmount === 'number') {
+                      finalAmount = rawAmount;
+                  } else if (typeof rawAmount === 'string') {
+                      let s = rawAmount.trim();
+                      const isNegative = s.includes('(') || s.includes('-');
+                      s = s.replace(/\./g, '').replace(',', '.').replace(/[^0-9.]/g, '');
+                      finalAmount = parseFloat(s);
+                      if (isNegative) finalAmount = -Math.abs(finalAmount);
+                  }
+
+                  // FILTER: Only Positive Amounts (Ingresos)
+                  if (!finalAmount || isNaN(finalAmount) || finalAmount <= 0) continue;
+
+                  // Extract Date
+                  let rawDate = sDateIdx !== -1 ? row[sDateIdx] : null;
+                  let finalDate = 'S/F';
+                  
+                  if (rawDate) {
+                      if (typeof rawDate === 'number') {
+                           try {
+                               const dateObj = XLSX.SSF.parse_date_code(rawDate);
+                               const dd = String(dateObj.d).padStart(2, '0');
+                               const mm = String(dateObj.m).padStart(2, '0');
+                               finalDate = `${dd}/${mm}/${dateObj.y}`;
+                           } catch { finalDate = 'Error Fecha'; }
+                      } else {
+                          // String: DD/MM/AAAA or DD-MM-AAAA
+                          const sDate = String(rawDate).trim();
+                          if (sDate.match(/^\d{1,2}[/-]\d{1,2}[/-]\d{2,4}$/)) {
+                              finalDate = sDate.replace(/-/g, '/');
+                          }
                       }
                   }
+
+                   // Description
+                  let desc = 'Sin descripción';
+                  if (sDescIdx !== -1 && row[sDescIdx]) {
+                      desc = String(row[sDescIdx]).trim();
+                  }
+
+                  parsedSantander.push({
+                       id: `mov-santander-${i}-${Date.now()}`,
+                       date: finalDate,
+                       description: desc,
+                       amount: finalAmount,
+                       bank: bankName,
+                       originalRow: row
+                  });
               }
               
-              if (!potentialDate) return; // Skip row if no date found
-
-              // 2. EXTRACT AMOUNTS & APPLY HEURISTICS
-              let candidateAmount = 0;
-              let candidates = [];
-
-              // Scan all columns (starting from 2 usually, but let's scan all except date)
-              row.forEach((cell, idx) => {
-                  if (dateColIndices.includes(idx)) return; // skip date col
-                  
-                  let val = 0;
-                  if (typeof cell === 'number') {
-                      val = cell;
-                  } else if (typeof cell === 'string') {
-                      // Cleanup: remove dots, replace comma with dot
-                      let s = cell.trim();
-                      s = s.replace(/\./g, '').replace(',', '.').replace(/[^0-9.-]/g, '');
-                      val = parseFloat(s);
-                  }
-
-                  // Heuristic: Only interested in Positive numbers (Abonos)
-                  if (!isNaN(val) && val > 0) {
-                      candidates.push({ val, idx });
-                  }
-              });
-
-              if (candidates.length === 0) return; // No positive numbers
-
-              // HEURISTIC: Choose the right amount
-              // If multiple candidates, we need to avoid "Saldo".
-              // Santander usually has: Cargo | Abono | Saldo
-              // So we might see 2 positive numbers: Abono and Saldo.
-              // We CANNOT rely on header names here.
-              // Logic: 
-              // 1. If only 1 candidate, take it.
-              // 2. If existing headers known (Strategy A passed but missed row?), no, we are here because headers failed or we forced B.
-              // 3. Positional: Abono is usually before Saldo? 
-              // Let's assume the "Saldo" is the cumulative total.
-              // If we have multiple, usually the actual movement is NOT the last one? Or varies?
-              // Let's look for Values that are NOT likely to be dates (already handled).
-              
-              // Refined Rule for Santander (User Request):
-              // "Descarta el que esté en una columna que históricamente corresponda a Saldo" -> We don't have history.
-              // "Toma el valor que corresponda a un Abono... Busca valores positivos que NO sean el saldo final."
-              
-              // For now, if > 1 candidate, we pick the FIRST one found? (Usually Abono comes before Saldo reading left-to-right?)
-              // OR check against Description text?
-              // Let's go with: Pick the one that seems most "transaction-like". 
-              // If multiple, taking the FIRST one is risky if Debit is positive (but Debits are usually negative or separate col).
-              // Let's take the First Candidate as the best guess for "Abono", assuming "Saldo" is to the right.
-              candidateAmount = candidates[0].val;
-
-              // 3. DESCRIPTION
-              // Join all text parts that aren't the date or the selected amount
-              const textParts = [];
-              row.forEach((cell, idx) => {
-                   if (dateColIndices.includes(idx)) return;
-                   
-                   const s = String(cell).trim();
-                   // Skip if it looks like our amount
-                   const cleanS = s.replace(/\./g, '').replace(',', '.');
-                   if (cleanS.includes(String(candidateAmount))) return;
-                   
-                   // Heuristic: Text must be length > 3 and not look like a number
-                   if (s.length > 3 && isNaN(parseFloat(cleanS))) {
-                       textParts.push(s);
-                   }
-              });
-
-              let potentialDesc = textParts.join(' ') || 'Movimiento Detectado';
-
-              heuristicMovements.push({
-                   id: `mov-${bankName}-scan-${rowIndex}-${Date.now()}`,
-                   date: potentialDate,
-                   description: potentialDesc,
-                   amount: candidateAmount,
-                   bank: bankName,
-                   originalRow: row
-              });
-          });
-          
-          if (heuristicMovements.length > 0) {
-               console.log(`[${bankName}] Strategy B found ${heuristicMovements.length} movements.`);
-               // If we forced Strategy B for Santander, return immediately
-               return heuristicMovements;
+              if (parsedSantander.length > 0) return parsedSantander;
           }
       }
 
@@ -432,8 +428,6 @@ export default function AdminInvoicingReconciliation() {
 
 
 
-
-
   // 3. Confirm Matches
   const handleConfirmMatches = async () => {
       setProcessing(true);
@@ -484,21 +478,18 @@ export default function AdminInvoicingReconciliation() {
 
   return (
     <Layout title="Cuenta Corriente Unificada" isFullWidth={true}>
-      <div className="mb-6">
-          <p className="text-slate-500">Sube tu cartola bancaria (Excel) para conciliar pagos automáticamente.</p>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="flex flex-col gap-6">
           
-          {/* Left: Upload & Pending Data */}
-          <div className="lg:col-span-1 space-y-6">
+          {/* TOP SECTION: Control Panel (Upload & Summary) */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               
-              <div className="bg-white p-6 rounded-2xl shadow-soft border border-slate-100">
+              {/* Upload Card - Takes 2 cols */}
+              <div className="md:col-span-2 bg-white p-6 rounded-2xl shadow-soft border border-slate-100">
                   <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
                       <Upload className="w-5 h-5 text-indigo-600" /> Cargar Cartolas
                   </h3>
                   
-                  <div className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {/* Itaú Upload */}
                       <div className={`border-2 border-dashed rounded-xl p-4 text-center transition cursor-pointer relative group ${movements.some(m => m.bank === 'Itaú') ? 'bg-orange-50 border-orange-200' : 'border-slate-200 hover:bg-orange-50'}`}>
                           <input 
@@ -511,13 +502,13 @@ export default function AdminInvoicingReconciliation() {
                           <div className="flex items-center justify-center gap-2">
                               {movements.some(m => m.bank === 'Itaú') ? (
                                   <>
-                                      <CheckCircle className="w-6 h-6 text-orange-600" />
-                                      <span className="font-bold text-orange-700">Itaú Cargado Correctamente</span>
+                                      <CheckCircle className="w-5 h-5 text-orange-600" />
+                                      <span className="font-bold text-orange-700 text-sm">Itaú Listo</span>
                                   </>
                               ) : (
                                   <>
-                                      <FileSpreadsheet className="w-6 h-6 text-orange-500" />
-                                      <span className="font-bold text-slate-600 group-hover:text-orange-600">Cargar Excel Itaú</span>
+                                      <FileSpreadsheet className="w-5 h-5 text-orange-500" />
+                                      <span className="font-bold text-slate-600 group-hover:text-orange-600 text-sm">Excel Itaú</span>
                                   </>
                               )}
                           </div>
@@ -535,31 +526,32 @@ export default function AdminInvoicingReconciliation() {
                           <div className="flex items-center justify-center gap-2">
                               {movements.some(m => m.bank === 'Santander') ? (
                                   <>
-                                      <CheckCircle className="w-6 h-6 text-red-600" />
-                                      <span className="font-bold text-red-700">Santander Cargado Correctamente</span>
+                                      <CheckCircle className="w-5 h-5 text-red-600" />
+                                      <span className="font-bold text-red-700 text-sm">Santander Listo</span>
                                   </>
                               ) : (
                                   <>
-                                      <FileSpreadsheet className="w-6 h-6 text-red-500" />
-                                      <span className="font-bold text-slate-600 group-hover:text-red-600">Cargar Excel Santander</span>
+                                      <FileSpreadsheet className="w-5 h-5 text-red-500" />
+                                      <span className="font-bold text-slate-600 group-hover:text-red-500 text-sm">Excel Santander</span>
                                   </>
                               )}
                           </div>
                       </div>
                   </div>
                   
-                  {loading && <p className="text-center text-sm text-indigo-600 mt-4 font-medium animate-pulse">Procesando archivo...</p>}
+                  {loading && <p className="text-center text-sm text-indigo-600 mt-2 font-medium animate-pulse">Procesando archivo...</p>}
               </div>
 
-              <div className="bg-white p-6 rounded-2xl shadow-soft border border-slate-100">
-                  <h3 className="font-bold text-slate-800 mb-2">Resumen</h3>
-                  <div className="space-y-2 text-sm">
-                      <div className="flex justify-between">
+              {/* Summary Card - Takes 1 col */}
+              <div className="md:col-span-1 bg-white p-6 rounded-2xl shadow-soft border border-slate-100 flex flex-col justify-center">
+                  <h3 className="font-bold text-slate-800 mb-3">Resumen</h3>
+                  <div className="space-y-3 text-sm">
+                      <div className="flex justify-between border-b border-slate-50 pb-2">
                           <span className="text-slate-500">Facturas Pendientes:</span>
                           <span className="font-bold">{pendingInvoices.length}</span>
                       </div>
-                      <div className="flex justify-between">
-                          <span className="text-slate-500">Movimientos Detectados:</span>
+                      <div className="flex justify-between border-b border-slate-50 pb-2">
+                          <span className="text-slate-500">Movimientos:</span>
                           <span className="font-bold">{movements.length}</span>
                       </div>
                       <div className="flex justify-between">
@@ -571,226 +563,251 @@ export default function AdminInvoicingReconciliation() {
 
           </div>
 
-          {/* Right: Reconciliation Interface */}
-          <div className="lg:col-span-2">
-              
-              {matches.length > 0 ? (
-                  <div className="bg-white rounded-2xl shadow-soft border border-slate-100 overflow-hidden mb-8">
-                      <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-green-50/50">
-                          <div>
-                              <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                                  <CheckCircle className="w-5 h-5 text-green-600" /> Conciliaciones Sugeridas
-                              </h3>
-                              <p className="text-xs text-slate-500 mt-1">Revisa y confirma los pagos detectados.</p>
+          {/* MIDDLE SECTION: Matches (Full Width) */}
+          {matches.length > 0 && (
+              <div className="bg-white rounded-2xl shadow-soft border border-slate-100 overflow-hidden">
+                  <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-green-50/50">
+                      <div>
+                          <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                              <CheckCircle className="w-5 h-5 text-green-600" /> Conciliaciones Sugeridas
+                          </h3>
+                          <p className="text-xs text-slate-500 mt-1">Revisa y confirma los pagos detectados.</p>
+                      </div>
+                      <button 
+                          onClick={handleConfirmMatches}
+                          disabled={processing}
+                          className="bg-green-600 text-white px-4 py-2 rounded-lg font-bold text-sm hover:bg-green-700 transition flex items-center gap-2 shadow-sm"
+                      >
+                          {processing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                          Confirmar Conciliación
+                      </button>
+                  </div>
+
+                  <div className="divide-y divide-slate-100">
+                      {matches.map((match, idx) => (
+                          <div key={idx} className="p-4 flex flex-col md:flex-row items-center gap-4 hover:bg-slate-50 transition relative group">
+                              
+                              {/* Bank Side */}
+                              <div className="flex-1 min-w-0">
+                                  <p className="text-xs text-slate-400 uppercase font-bold mb-1">Movimiento Banco</p>
+                                  <p className="font-bold text-slate-800 text-sm truncate" title={match.movement.description}>
+                                      {match.movement.description}
+                                  </p>
+                                  <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded ${match.movement.bank === 'Itaú' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'}`}>
+                                      {match.movement.bank || 'Banco'}
+                                  </span>
+                                  <p className="text-green-600 font-mono font-bold mt-1">
+                                      + {formatCurrency(match.movement.amount)}
+                                  </p>
+                                  <p className="text-xs text-slate-400 mt-1">{match.movement.date}</p>
+                              </div>
+
+                              <ArrowRight className="text-slate-300 w-5 h-5 flex-shrink-0" />
+
+                              {/* Invoice Side */}
+                              <div className="flex-1 min-w-0">
+                                  <p className="text-xs text-slate-400 uppercase font-bold mb-1">Factura Detectada</p>
+                                  <p className="font-bold text-slate-800 text-sm truncate">
+                                      {match.invoice.clientName}
+                                  </p>
+                                  <p className="text-indigo-600 text-xs truncate mb-1">{match.invoice.projectName}</p>
+                                  <p className="text-slate-800 font-bold">{formatCurrency(match.invoice.totalAmount)}</p>
+                              </div>
+
+                              <div className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition">
+                                  <button 
+                                      onClick={() => removeMatch(idx)}
+                                      className="text-red-400 hover:text-red-600 p-2 hover:bg-red-50 rounded-lg"
+                                      title="Rechazar esta coincidencia"
+                                  >
+                                      <AlertTriangle className="w-5 h-5" />
+                                  </button>
+                              </div>
+
                           </div>
-                          <button 
-                              onClick={handleConfirmMatches}
-                              disabled={processing}
-                              className="bg-green-600 text-white px-4 py-2 rounded-lg font-bold text-sm hover:bg-green-700 transition flex items-center gap-2 shadow-sm"
-                          >
-                              {processing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                              Confirmar Conciliación
-                          </button>
-                      </div>
-
-                      <div className="divide-y divide-slate-100">
-                          {matches.map((match, idx) => (
-                              <div key={idx} className="p-4 flex flex-col md:flex-row items-center gap-4 hover:bg-slate-50 transition relative group">
-                                  
-                                  {/* Bank Side */}
-                                  <div className="flex-1 min-w-0">
-                                      <p className="text-xs text-slate-400 uppercase font-bold mb-1">Movimiento Banco</p>
-                                      <p className="font-bold text-slate-800 text-sm truncate" title={match.movement.description}>
-                                          {match.movement.description}
-                                      </p>
-                                      <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded ${match.movement.bank === 'Itaú' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'}`}>
-                                          {match.movement.bank || 'Banco'}
-                                      </span>
-                                      <p className="text-green-600 font-mono font-bold mt-1">
-                                          + {formatCurrency(match.movement.amount)}
-                                      </p>
-                                      <p className="text-xs text-slate-400 mt-1">{match.movement.date}</p>
-                                  </div>
-
-                                  <ArrowRight className="text-slate-300 w-5 h-5 flex-shrink-0" />
-
-                                  {/* Invoice Side */}
-                                  <div className="flex-1 min-w-0">
-                                      <p className="text-xs text-slate-400 uppercase font-bold mb-1">Factura Detectada</p>
-                                      <p className="font-bold text-slate-800 text-sm truncate">
-                                          {match.invoice.clientName}
-                                      </p>
-                                      <p className="text-indigo-600 text-xs truncate mb-1">{match.invoice.projectName}</p>
-                                      <p className="text-slate-800 font-bold">{formatCurrency(match.invoice.totalAmount)}</p>
-                                  </div>
-
-                                  <div className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition">
-                                      <button 
-                                          onClick={() => removeMatch(idx)}
-                                          className="text-red-400 hover:text-red-600 p-2 hover:bg-red-50 rounded-lg"
-                                          title="Rechazar esta coincidencia"
-                                      >
-                                          <AlertTriangle className="w-5 h-5" />
-                                      </button>
-                                  </div>
-
-                              </div>
-                          ))}
-                      </div>
+                      ))}
                   </div>
-              ) : null}
+              </div>
+          )}
 
-              {/* Side-by-Side Detailed Lists */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  {/* Unified Movements Table */}
-                  <div className="bg-white rounded-2xl shadow-soft border border-slate-100 overflow-hidden flex flex-col h-[600px]">
-                      <div className="p-4 border-b border-slate-100 bg-slate-50 sticky top-0 z-10">
-                          <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                              <FileSpreadsheet className="w-4 h-4 text-slate-500" /> Movimientos Unificados
-                          </h3>
-                          <p className="text-xs text-slate-500">Itaú y Santander (Ordenados por fecha)</p>
-                      </div>
-                      <div className="overflow-auto flex-1">
-                          <table className="w-full text-left text-sm whitespace-nowrap">
-                              <thead className="bg-slate-50 text-slate-500 font-medium sticky top-0">
+          {/* BOTTOM SECTION: Data Workspaces (Side-by-Side) */}
+          {/* Use calc height to ensure it fills existing screen but allows scrolling */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 h-[calc(100vh-320px)] min-h-[600px]">
+              
+              {/* Unified Movements Table */}
+              <div className="bg-white rounded-2xl shadow-soft border border-slate-100 overflow-hidden flex flex-col h-full">
+                  <div className="p-4 border-b border-slate-100 bg-slate-50 sticky top-0 z-10">
+                      <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                          <FileSpreadsheet className="w-4 h-4 text-slate-500" /> Movimientos Unificados
+                      </h3>
+                      <p className="text-xs text-slate-500">Itaú y Santander (Ordenados por fecha)</p>
+                  </div>
+                  <div className="overflow-auto flex-1">
+                      <table className="w-full text-left text-sm whitespace-nowrap">
+                          <thead className="bg-slate-50 text-slate-500 font-medium sticky top-0 z-10">
+                              <tr>
+                                  <th className="px-4 py-3">Banco</th>
+                                  <th className="px-4 py-3">Fecha</th>
+                                  <th className="px-4 py-3">Descripción</th>
+                                  <th className="px-4 py-3 text-right">Monto</th>
+                                  <th className="px-4 py-3 text-center">Estado</th>
+                                  <th className="px-4 py-3 text-center">Acción</th>
+                              </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                              {movements.length === 0 ? (
                                   <tr>
-                                      <th className="px-4 py-3">Banco</th>
-                                      <th className="px-4 py-3">Fecha</th>
-                                      <th className="px-4 py-3">Descripción</th>
-                                      <th className="px-4 py-3 text-right">Monto</th>
-                                      <th className="px-4 py-3 text-center">Estado</th>
-                                      <th className="px-4 py-3 text-center">Acción</th>
+                                      <td colSpan="6" className="px-4 py-10 text-center text-slate-400">
+                                          Sube archivos para ver movimientos.
+                                      </td>
                                   </tr>
-                              </thead>
-                              <tbody className="divide-y divide-slate-100">
-                                  {movements.length === 0 ? (
-                                      <tr>
-                                          <td colSpan="5" className="px-4 py-10 text-center text-slate-400">
-                                              Sube archivos para ver movimientos.
-                                          </td>
-                                      </tr>
-                                  ) : (
-                                      movements.map((mov, i) => {
-                                          const isMatched = matches.some(m => m.movement.id === mov.id);
-                                          return (
-                                              <tr key={i} className={`hover:bg-slate-50 transition ${isMatched ? 'bg-green-50/50' : ''}`}>
-                                                  <td className="px-4 py-3">
-                                                      <span className={`text-[10px] uppercase font-bold px-2 py-1 rounded-full ${mov.bank === 'Itaú' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'}`}>
-                                                          {mov.bank || 'Banco'}
-                                                      </span>
-                                                  </td>
-                                                  <td className="px-4 py-3 text-slate-600">{mov.date}</td>
-                                                  <td className="px-4 py-3 text-slate-700 max-w-[200px] truncate" title={mov.description}>
-                                                      {mov.description}
-                                                  </td>
-                                                  <td className="px-4 py-3 text-right font-bold text-green-600 font-mono">
-                                                      + {formatCurrency(mov.amount)}
-                                                  </td>
-                                                  <td className="px-4 py-3 text-center">
-                                                      {isMatched && <CheckCircle className="w-4 h-4 text-green-500 mx-auto" />}
-                                                  </td>
-                                                  <td className="px-4 py-3 text-center">
-                                                      {isMatched && <CheckCircle className="w-4 h-4 text-green-500 mx-auto" />}
-                                                  </td>
-                                                  <td className="px-4 py-3 text-center">
-                                                      {!isMatched && (
-                                                          <button 
-                                                            onClick={() => startManualMatch(mov)}
-                                                            className="text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50 p-1.5 rounded-full transition"
-                                                            title="Enlazar Manualmente"
-                                                          >
-                                                            <Link className="w-4 h-4" />
-                                                          </button>
-                                                      )}
-                                                  </td>
-                                              </tr>
-                                          );
-                                      })
-                                  )}
-                              </tbody>
-                          </table>
-                      </div>
+                              ) : (
+                                  movements.map((mov, i) => {
+                                      const isMatched = matches.some(m => m.movement.id === mov.id);
+                                      return (
+                                          <tr key={i} className={`transition ${
+                                              // Visual States
+                                              manualMatchOpen && activeMovement && activeMovement.id === mov.id
+                                                ? 'bg-indigo-50 border-l-4 border-indigo-600 shadow-inner' // Active Selection
+                                                : manualMatchOpen
+                                                    ? 'opacity-40 grayscale' // Faded when selecting
+                                                    : isMatched 
+                                                        ? 'bg-green-50/50' // Matched
+                                                        : 'hover:bg-slate-50' // Default hover
+                                          }`}>
+                                              <td className="px-4 py-3">
+                                                  <span className={`text-[10px] uppercase font-bold px-2 py-1 rounded-full ${mov.bank === 'Itaú' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'}`}>
+                                                      {mov.bank || 'Banco'}
+                                                  </span>
+                                              </td>
+                                              <td className="px-4 py-3 text-slate-600">{mov.date}</td>
+                                              <td className="px-4 py-3 text-slate-700 max-w-[200px] truncate" title={mov.description}>
+                                                  {mov.description}
+                                              </td>
+                                              <td className="px-4 py-3 text-right font-bold text-green-600 font-mono">
+                                                  + {formatCurrency(mov.amount)}
+                                              </td>
+                                              <td className="px-4 py-3 text-center">
+                                                  {isMatched && <CheckCircle className="w-4 h-4 text-green-500 mx-auto" />}
+                                              </td>
+                                              <td className="px-4 py-3 text-center">
+                                                  {!isMatched && (
+                                                      <button 
+                                                        onClick={() => startManualMatch(mov)}
+                                                        className="text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50 p-1.5 rounded-full transition"
+                                                        title="Enlazar Manualmente"
+                                                      >
+                                                        <Link className="w-4 h-4" />
+                                                      </button>
+                                                  )}
+                                              </td>
+                                          </tr>
+                                      );
+                                  })
+                              )}
+                          </tbody>
+                      </table>
                   </div>
+              </div>
 
-                  {/* Pending Invoices List */}
-                  <div className="bg-white rounded-2xl shadow-soft border border-slate-100 overflow-hidden flex flex-col h-[600px]">
-                      <div className="p-4 border-b border-slate-100 bg-slate-50 sticky top-0 z-10">
-                          <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                              <CheckCircle className="w-4 h-4 text-slate-500" /> Facturas Emitidas (Por Cobrar)
-                          </h3>
-                          <p className="text-xs text-slate-500">Documentos pendientes de pago</p>
-                      </div>
-                      <div className="overflow-y-auto p-4 space-y-3 flex-1">
-                          {manualMatchOpen && activeMovement && (
-                              <div className="bg-gradient-to-r from-indigo-600 to-indigo-700 text-white p-4 rounded-xl shadow-lg border border-indigo-400/30 sticky top-0 z-20 mb-4 animate-in fade-in slide-in-from-top-2">
-                                  <div className="flex justify-between items-start">
-                                      <div>
-                                          <p className="text-[10px] uppercase font-bold tracking-wider opacity-80 mb-1">Seleccionando Factura Para:</p>
-                                          <p className="font-bold text-sm truncate max-w-[180px] text-white">{activeMovement.description}</p>
-                                          <p className="font-mono text-xl font-bold mt-1">+ {formatCurrency(activeMovement.amount)}</p>
-                                      </div>
-                                      <button 
-                                        onClick={cancelManualMatch}
-                                        className="bg-white/20 hover:bg-white/30 text-white p-1.5 rounded-lg transition backdrop-blur-sm"
-                                        title="Cancelar selección"
-                                      >
-                                          <X className="w-5 h-5" />
-                                      </button>
+              {/* Pending Invoices List */}
+              <div className="bg-white rounded-2xl shadow-soft border border-slate-100 overflow-hidden flex flex-col h-full">
+                  <div className="p-4 border-b border-slate-100 bg-slate-50 sticky top-0 z-10">
+                      <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                          <CheckCircle className="w-4 h-4 text-slate-500" /> Facturas Emitidas (Por Cobrar)
+                      </h3>
+                      <p className="text-xs text-slate-500">Documentos pendientes de pago</p>
+                  </div>
+                  <div className="overflow-y-auto p-4 space-y-3 flex-1 relative">
+                      {manualMatchOpen && activeMovement && (
+                          <div className="bg-gradient-to-r from-indigo-600 to-indigo-700 text-white p-4 rounded-xl shadow-lg border border-indigo-400/30 sticky top-0 z-20 mb-4 animate-in fade-in slide-in-from-top-2">
+                              <div className="flex justify-between items-start">
+                                  <div>
+                                      <p className="text-[10px] uppercase font-bold tracking-wider opacity-80 mb-1">Seleccionando Factura Para:</p>
+                                      <p className="font-bold text-sm truncate max-w-[180px] text-white">{activeMovement.description}</p>
+                                      <p className="font-mono text-xl font-bold mt-1">+ {formatCurrency(activeMovement.amount)}</p>
                                   </div>
+                                  <button 
+                                    onClick={cancelManualMatch}
+                                    className="bg-white/20 hover:bg-white/30 text-white p-1.5 rounded-lg transition backdrop-blur-sm"
+                                    title="Cancelar selección"
+                                  >
+                                      <X className="w-5 h-5" />
+                                  </button>
                               </div>
-                          )}
+                          </div>
+                      )}
 
-                          {pendingInvoices.length === 0 ? (
-                              <p className="text-center text-slate-400 text-sm py-10">No hay facturas pendientes.</p>
-                          ) : (
-                              [...pendingInvoices]
-                              .sort((a,b) => {
-                                  if (!manualMatchOpen || !activeMovement) return 0;
+                      {pendingInvoices.length === 0 ? (
+                          <p className="text-center text-slate-400 text-sm py-10">No hay facturas pendientes.</p>
+                      ) : (
+                          [...pendingInvoices]
+                          .sort((a,b) => {
+                              // SMART SORT: If selecting, put closest amount match first
+                              if (manualMatchOpen && activeMovement) {
                                   const diffA = Math.abs(Number(a.totalAmount) - activeMovement.amount);
                                   const diffB = Math.abs(Number(b.totalAmount) - activeMovement.amount);
                                   return diffA - diffB;
-                              })
-                              .map((inv, i) => {
-                                  // Check if this invoice is already matched
-                                  const isMatched = matches.some(m => m.invoice.id === inv.id);
-                                  
-                                  // Styling for Manual Match Mode
-                                  // If manual mode: highlight good matches, fade others
-                                  const isGoodCandidate = manualMatchOpen && activeMovement && Math.abs(Number(inv.totalAmount) - activeMovement.amount) < 1000;
-                                  const wrapperClass = manualMatchOpen
-                                    ? `p-3 rounded-lg border cursor-pointer transition ${
-                                        isGoodCandidate 
-                                            ? 'bg-indigo-50 border-indigo-500 shadow-md scale-[1.02]' 
-                                            : 'bg-white border-slate-100 opacity-50 hover:opacity-100'
-                                    }`
-                                    : `p-3 rounded-lg border cursor-pointer hover:shadow-md transition ${isMatched ? 'bg-green-50 border-green-200 opacity-60' : 'bg-white border-slate-100 hover:border-slate-300'}`;
+                              }
+                              return 0; // Default order
+                          })
+                          .map((inv, i) => {
+                              // Check if this invoice is already matched
+                              const isMatched = matches.some(m => m.invoice.id === inv.id);
+                              
+                              // Visual Logic for Manual Match Mode
+                              const isExactMatchCandidate = manualMatchOpen && activeMovement && Math.abs(Number(inv.totalAmount) - activeMovement.amount) < 100;
+                              
+                              // Determine Class
+                              let containerClass = "p-3 rounded-lg border transition duration-200 relative ";
+                              
+                              if (manualMatchOpen) {
+                                  containerClass += "cursor-pointer hover:ring-2 hover:ring-indigo-500 hover:shadow-md ";
+                                  if (isExactMatchCandidate) {
+                                      containerClass += "bg-indigo-50 border-indigo-500 shadow-md ring-1 ring-indigo-200 ";
+                                  } else {
+                                      containerClass += "bg-white border-slate-200 opacity-90 ";
+                                  }
+                              } else {
+                                  // Normal Mode
+                                  if (isMatched) {
+                                      containerClass += "bg-green-50 border-green-200 opacity-60 cursor-default ";
+                                  } else {
+                                      containerClass += "bg-white border-slate-100 hover:border-slate-300 hover:shadow-sm cursor-pointer ";
+                                  }
+                              }
 
-                                  return (
-                                      <div 
-                                          key={i} 
-                                          className={wrapperClass}
-                                          onClick={() => manualMatchOpen ? confirmManualMatch(inv) : openInvoiceDetail(inv)}
-                                      >
-                                          <div className="flex justify-between items-start mb-1">
-                                              <span className="text-xs font-bold text-indigo-600 truncate max-w-[150px]">{inv.clientName}</span>
-                                              <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">
-                                                  {inv.createdAt?.seconds ? new Date(inv.createdAt.seconds * 1000).toLocaleDateString() : 'N/A'}
-                                              </span>
-                                          </div>
-                                          <p className="text-xs text-slate-500 truncate mb-2">{inv.projectName}</p>
-                                          <div className="flex justify-between items-center">
-                                              <span className="text-slate-800 font-bold text-sm">{formatCurrency(inv.totalAmount)}</span>
-                                              {isMatched && <span className="text-[10px] font-bold text-green-600 flex items-center"><CheckCircle className="w-3 h-3 mr-1"/> Matched</span>}
-                                          </div>
+                              return (
+                                  <div 
+                                      key={i} 
+                                      className={containerClass}
+                                      onClick={() => manualMatchOpen ? confirmManualMatch(inv) : openInvoiceDetail(inv)}
+                                  >
+                                      {/* Logic to show 'Recomendado' Badge if detected */}
+                                      {isExactMatchCandidate && (
+                                          <span className="absolute -top-2 -right-2 bg-indigo-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm animate-bounce">
+                                              Coincidencia
+                                          </span>
+                                      )}
+                                      <div className="flex justify-between items-start mb-1">
+                                          <span className="text-xs font-bold text-indigo-600 truncate max-w-[150px]">{inv.clientName}</span>
+                                          <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">
+                                              {inv.createdAt?.seconds ? new Date(inv.createdAt.seconds * 1000).toLocaleDateString() : 'N/A'}
+                                          </span>
                                       </div>
-                                  );
-                              })
-                          )}
-                      </div>
+                                      <p className="text-xs text-slate-500 truncate mb-2">{inv.projectName}</p>
+                                      <div className="flex justify-between items-center">
+                                          <span className="text-slate-800 font-bold text-sm">{formatCurrency(inv.totalAmount)}</span>
+                                          {isMatched && <span className="text-[10px] font-bold text-green-600 flex items-center"><CheckCircle className="w-3 h-3 mr-1"/> Matched</span>}
+                                      </div>
+                                  </div>
+                              );
+                          })
+                      )}
                   </div>
               </div>
-          
           </div>
+      
       </div>
 
       <InvoiceDetailModal 

@@ -5,6 +5,7 @@ import { db } from '../lib/firebase';
 import { formatCurrency } from '../utils/format';
 import { Skeleton } from '../components/Skeleton';
 import { FileText, CheckCircle, Clock, XCircle, Search, Filter, Ban } from 'lucide-react';
+import InvoiceDetailModal from '../components/InvoiceDetailModal';
 
 export default function AdminInvoicingHistory() {
   const [invoices, setInvoices] = useState([]);
@@ -12,6 +13,15 @@ export default function AdminInvoicingHistory() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all'); // all, pending, paid, void
+
+  // Modal State
+  const [selectedInvoice, setSelectedInvoice] = useState(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  const openInvoiceDetail = (inv) => {
+      setSelectedInvoice(inv);
+      setIsModalOpen(true);
+  };
 
   useEffect(() => {
     fetchInvoices();
@@ -137,7 +147,11 @@ export default function AdminInvoicingHistory() {
          ) : (
              <div className="divide-y divide-slate-100">
                  {filteredInvoices.map(inv => (
-                     <div key={inv.id} className={`p-6 hover:bg-slate-50 transition flex flex-col md:flex-row md:items-center justify-between gap-4 ${inv.paymentStatus === 'void' ? 'opacity-60 bg-slate-50' : ''}`}>
+                     <div 
+                        key={inv.id} 
+                        onClick={() => openInvoiceDetail(inv)}
+                        className={`p-6 hover:bg-slate-50 transition flex flex-col md:flex-row md:items-center justify-between gap-4 cursor-pointer ${inv.paymentStatus === 'void' ? 'opacity-60 bg-slate-50' : ''}`}
+                     >
                          
                          <div className="flex items-start gap-4">
                              <div className={`p-3 rounded-xl ${getStatusColor(inv.paymentStatus)}`}>
@@ -171,7 +185,7 @@ export default function AdminInvoicingHistory() {
                                      <>
                                         {inv.paymentStatus === 'paid' ? (
                                             <button 
-                                                onClick={() => updateStatus(inv.id, 'pending')}
+                                                onClick={(e) => { e.stopPropagation(); updateStatus(inv.id, 'pending'); }}
                                                 className="flex items-center gap-1 px-3 py-1.5 bg-green-100 text-green-700 rounded-lg text-xs font-bold hover:bg-green-200"
                                                 title="Marcar como Pendiente"
                                             >
@@ -179,7 +193,7 @@ export default function AdminInvoicingHistory() {
                                             </button>
                                         ) : (
                                             <button 
-                                                onClick={() => updateStatus(inv.id, 'paid')}
+                                                onClick={(e) => { e.stopPropagation(); updateStatus(inv.id, 'paid'); }}
                                                 className="flex items-center gap-1 px-3 py-1.5 bg-orange-100 text-orange-700 rounded-lg text-xs font-bold hover:bg-orange-200"
                                                 title="Marcar como Pagado"
                                             >
@@ -188,7 +202,7 @@ export default function AdminInvoicingHistory() {
                                         )}
                                         
                                         <button 
-                                            onClick={() => updateStatus(inv.id, 'void')}
+                                            onClick={(e) => { e.stopPropagation(); updateStatus(inv.id, 'void'); }}
                                             className="flex items-center gap-1 px-3 py-1.5 bg-red-50 text-red-600 rounded-lg text-xs font-bold hover:bg-red-100"
                                             title="Anular Factura"
                                         >
@@ -210,6 +224,14 @@ export default function AdminInvoicingHistory() {
              </div>
          )}
       </div>
+
+
+      <InvoiceDetailModal 
+        isOpen={isModalOpen} 
+        onClose={() => setIsModalOpen(false)} 
+        invoice={selectedInvoice}
+        onUpdate={fetchInvoices}
+      />
     </Layout>
   );
 }
