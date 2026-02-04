@@ -138,7 +138,7 @@ export default function AdminInvoicingReconciliation() {
           const mIdx = findCol(row, ['monto', 'importe', 'valor', 'saldo']); // Saldo sometimes is the only number column if format is weird
           
           // Debug scan
-          console.log(`Row ${i} scan: Date=${dIdx}, Desc=${descI}, Abono=${aIdx}, Monto=${mIdx}`);
+          // console.log(`Row ${i} scan: Date=${dIdx}, Desc=${descI}, Abono=${aIdx}, Monto=${mIdx}`);
 
           if (dIdx !== -1 && (descI !== -1)) {
               // Found Date and Description, likely the header
@@ -151,6 +151,100 @@ export default function AdminInvoicingReconciliation() {
                   montoIdx = mIdx;
                   break;
               }
+          }
+      }
+
+      // STRATEGY B: "Pattern Match" Scan if Header Search Failed
+      if (headerRowIndex === -1 && bankName === 'Santander') {
+          console.log("Strategy A (Headers) failed. Trying Strategy B (Pattern Match)...");
+          // Heuristic: Iterate rows, try to find a row that "looks like a movement"
+          // Pattern: Date (Col 0 or 1 usually) + Description + Amount
+          
+          const heuristicMovements = [];
+          
+          rows.forEach((row, rowIndex) => {
+              if (!row || row.length < 3) return;
+              
+              // 1. Try to find a date
+              // Look at first few columns
+              let potentialDate = null;
+              let dateColIndices = [0, 1]; // usually date is early
+              
+              for (let dCol of dateColIndices) {
+                  if (row[dCol]) {
+                      const val = String(row[dCol]).trim();
+                      // DD/MM/YYYY regex
+                      if (val.match(/^\d{1,2}[/-]\d{1,2}[/-]\d{2,4}$/)) {
+                          potentialDate = val.replace(/-/g, '/');
+                          break;
+                      }
+                      // DD-MM-YYYY
+                  }
+              }
+              
+              if (!potentialDate) return; // No date, skip row
+
+              // 2. Try to find an Amount (Positive Number) - usually last columns
+              // Scan backwards? Or just scan all others?
+              let potentialAmount = 0;
+              
+              // Iterate all other columns to find a number
+              for (let c = 0; c < row.length; c++) {
+                  if (dateColIndices.includes(c)) continue; // skip date col
+                  
+                  const cell = row[c];
+                  // If string, try to parse
+                  if (typeof cell === 'string') {
+                      let s = cell.trim();
+                      // Basic cleanup for Chilean money
+                      s = s.replace(/\./g, '').replace(',', '.').replace(/[^0-9.-]/g, '');
+                      const num = parseFloat(s);
+                      if (!isNaN(num) && num > 0) {
+                          // Found a positive number. 
+                          // Heuristic: Is it seemingly an amount? (greater than 100?)
+                           if (num > 0) potentialAmount = num;
+                           // keep scanning? usually "Saldo" is last, "Abono" is previous.
+                           // If we find multiple numbers... this is tricky.
+                           // Let's assume the largest positive number might be it? Or check logic.
+                           // Santander: Cargo | Abono | Saldo. Abono is middle.
+                      }
+                  } else if (typeof cell === 'number') {
+                      if (cell > 0) potentialAmount = cell;
+                  }
+              }
+              
+              if (potentialAmount <= 0) return; // No valid amount found
+
+              // 3. Description is whatever is left that is long string?
+              let potentialDesc = 'Movimiento Detectado';
+              // Find a string col that is NOT date and NOT amount-like
+              // Simple hack: Just join any other text columns?
+              const textParts = [];
+              row.forEach((cell, idx) => {
+                   if (dateColIndices.includes(idx)) return;
+                   const s = String(cell).trim();
+                   // If it contains the date or amount, skip
+                   if (s.includes(String(potentialAmount))) return; 
+                   if (s.length > 5 && isNaN(parseFloat(s.replace(/\./g, '').replace(',', '.')))) {
+                       textParts.push(s);
+                   }
+              });
+              
+              if (textParts.length > 0) potentialDesc = textParts.join(' ');
+              
+              heuristicMovements.push({
+                   id: `mov-${bankName}-B-${rowIndex}-${Date.now()}`,
+                   date: potentialDate,
+                   description: potentialDesc,
+                   amount: potentialAmount,
+                   bank: bankName,
+                   originalRow: row
+              });
+          });
+          
+          if (heuristicMovements.length > 0) {
+               console.log(`Strategy B found ${heuristicMovements.length} movements.`);
+               return heuristicMovements;
           }
       }
 
@@ -334,7 +428,7 @@ export default function AdminInvoicingReconciliation() {
 
 
   return (
-    <Layout title="Cuenta Corriente Unificada">
+    <Layout title="Cuenta Corriente Unificada" isFullWidth={true}>
       <div className="mb-6">
           <p className="text-slate-500">Sube tu cartola bancaria (Excel) para conciliar pagos automáticamente.</p>
       </div>

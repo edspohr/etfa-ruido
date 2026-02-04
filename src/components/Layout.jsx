@@ -8,7 +8,7 @@ import ForcePasswordChange from './ForcePasswordChange';
 import PageTransition from './PageTransition';
 import { useLocation } from 'react-router-dom';
 
-export default function Layout({ children, title }) {
+export default function Layout({ children, title, isFullWidth = false }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { currentUser } = useAuth();
   const [mustChangePass, setMustChangePass] = useState(false);
@@ -50,7 +50,7 @@ export default function Layout({ children, title }) {
         </header>
 
         <main className="flex-1 overflow-x-hidden overflow-y-auto bg-slate-50 p-6 md:p-8">
-            <div className="max-w-7xl mx-auto">
+            <div className={isFullWidth ? "w-full px-2" : "max-w-7xl mx-auto"}>
                 <PageTransition key={location.pathname}>
                     {children}
                 </PageTransition>
