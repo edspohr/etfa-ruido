@@ -281,11 +281,9 @@ export default function AdminInvoicingReconciliation() {
       setMatches(foundMatches);
   };
 
-  };
 
-  const removeMatch = (index) => {
-      setMatches(prev => prev.filter((_, i) => i !== index));
-  };
+
+
 
   // 3. Confirm Matches
   const handleConfirmMatches = async () => {
@@ -601,6 +599,7 @@ export default function AdminInvoicingReconciliation() {
           
           </div>
       </div>
+
       <InvoiceDetailModal 
         isOpen={isModalOpen} 
         onClose={() => setIsModalOpen(false)} 

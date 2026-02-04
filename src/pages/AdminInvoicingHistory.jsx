@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
-import { collection, query, orderBy, getDocs, doc, updateDoc, writeBatch, where } from 'firebase/firestore';
+import { collection, query, orderBy, getDocs, doc, writeBatch, where } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { formatCurrency } from '../utils/format';
 import { Skeleton } from '../components/Skeleton';
@@ -11,7 +11,7 @@ export default function AdminInvoicingHistory() {
   const [filteredInvoices, setFilteredInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all'); // all, pending, paid, annulled
+  const [statusFilter, setStatusFilter] = useState('all'); // all, pending, paid, void
 
   useEffect(() => {
     fetchInvoices();
@@ -43,14 +43,16 @@ export default function AdminInvoicingHistory() {
     }
 
     if (statusFilter !== 'all') {
-      res = res.filter(inv => inv.paymentStatus === statusFilter);
+       // Filter by status (void is special case, it might be stored as paymentStatus='void' or just status='void')
+       // My logic sets paymentStatus='void', so this works.
+       res = res.filter(inv => inv.paymentStatus === statusFilter);
     }
 
     setFilteredInvoices(res);
   }, [invoices, searchTerm, statusFilter]);
 
   async function updateStatus(id, newStatus) {
-     if (newStatus === 'annulled' && !window.confirm("¿Estás seguro de anular esta factura? Se liberarán los gastos asociados para ser facturados nuevamente.")) {
+     if (newStatus === 'void' && !window.confirm("¿Estás seguro de anular esta factura? Se liberarán los gastos asociados para ser facturados nuevamente.")) {
          return;
      }
 
@@ -58,21 +60,26 @@ export default function AdminInvoicingHistory() {
          const batch = writeBatch(db);
          const invRef = doc(db, "invoices", id);
          
-         // 1. Update Invoice Status
-         batch.update(invRef, { paymentStatus: newStatus });
+         const updatePayload = { paymentStatus: newStatus };
+         if (newStatus === 'void') {
+             updatePayload.status = 'void';
+         }
+         
+         batch.update(invRef, updatePayload);
 
-         // 2. If Annulling, Release Expenses
-         if (newStatus === 'annulled') {
+         // 2. If Voiding, Release Expenses
+         if (newStatus === 'void') {
              const q = query(collection(db, "expenses"), where("invoiceId", "==", id));
              const snapshot = await getDocs(q);
              snapshot.docs.forEach(doc => {
-                 batch.update(doc.ref, { invoiceId: null });
+                 batch.update(doc.ref, { invoiceId: null, invoiceStatus: 'approved' });
              });
          }
 
          await batch.commit();
 
-         // Update local state
+         // Update local state is tricky because we might need to remove expense filtering? 
+         // For history view, we just update the status tag.
          setInvoices(prev => prev.map(inv => inv.id === id ? { ...inv, paymentStatus: newStatus } : inv));
      } catch (e) {
          console.error("Error updating status:", e);
@@ -83,16 +90,8 @@ export default function AdminInvoicingHistory() {
   const getStatusColor = (status) => {
       switch (status) {
           case 'paid': return 'bg-green-100 text-green-600';
-          case 'annulled': return 'bg-red-100 text-red-600';
+          case 'void': return 'bg-red-100 text-red-600';
           default: return 'bg-orange-100 text-orange-600';
-      }
-  };
-
-  const getStatusText = (status) => {
-      switch (status) {
-          case 'paid': return 'PAGADO';
-          case 'annulled': return 'ANULADA';
-          default: return 'PENDIENTE';
       }
   };
 
@@ -120,7 +119,7 @@ export default function AdminInvoicingHistory() {
                 <option value="all">Todos los Estados</option>
                 <option value="pending">Pendiente de Pago</option>
                 <option value="paid">Pagado</option>
-                <option value="annulled">Anulada</option>
+                <option value="void">Anulada</option>
             </select>
         </div>
       </div>
@@ -138,14 +137,14 @@ export default function AdminInvoicingHistory() {
          ) : (
              <div className="divide-y divide-slate-100">
                  {filteredInvoices.map(inv => (
-                     <div key={inv.id} className={`p-6 hover:bg-slate-50 transition flex flex-col md:flex-row md:items-center justify-between gap-4 ${inv.paymentStatus === 'annulled' ? 'opacity-60 bg-slate-50' : ''}`}>
+                     <div key={inv.id} className={`p-6 hover:bg-slate-50 transition flex flex-col md:flex-row md:items-center justify-between gap-4 ${inv.paymentStatus === 'void' ? 'opacity-60 bg-slate-50' : ''}`}>
                          
                          <div className="flex items-start gap-4">
                              <div className={`p-3 rounded-xl ${getStatusColor(inv.paymentStatus)}`}>
                                  <FileText className="w-6 h-6" />
                              </div>
                              <div>
-                                 <h4 className={`font-bold text-slate-800 text-lg ${inv.paymentStatus === 'annulled' ? 'line-through text-slate-500' : ''}`}>
+                                 <h4 className={`font-bold text-slate-800 text-lg ${inv.paymentStatus === 'void' ? 'line-through text-slate-500' : ''}`}>
                                     {inv.clientName || 'Cliente desconocido'}
                                  </h4>
                                  <p className="text-sm text-indigo-600 font-medium mb-1">{inv.projectName}</p>
@@ -161,14 +160,14 @@ export default function AdminInvoicingHistory() {
 
                          <div className="flex items-center gap-6 justify-between md:justify-end w-full md:w-auto">
                              <div className="text-right">
-                                 <p className={`text-2xl font-extrabold text-slate-800 ${inv.paymentStatus === 'annulled' ? 'line-through text-slate-400' : ''}`}>
+                                 <p className={`text-2xl font-extrabold text-slate-800 ${inv.paymentStatus === 'void' ? 'line-through text-slate-400' : ''}`}>
                                     {formatCurrency(inv.totalAmount)}
                                  </p>
                                  <p className="text-xs text-slate-500">{inv.itemCount} items</p>
                              </div>
 
                              <div className="flex gap-2">
-                                 {inv.paymentStatus !== 'annulled' && (
+                                 {inv.paymentStatus !== 'void' && (
                                      <>
                                         {inv.paymentStatus === 'paid' ? (
                                             <button 
@@ -189,7 +188,7 @@ export default function AdminInvoicingHistory() {
                                         )}
                                         
                                         <button 
-                                            onClick={() => updateStatus(inv.id, 'annulled')}
+                                            onClick={() => updateStatus(inv.id, 'void')}
                                             className="flex items-center gap-1 px-3 py-1.5 bg-red-50 text-red-600 rounded-lg text-xs font-bold hover:bg-red-100"
                                             title="Anular Factura"
                                         >
@@ -198,7 +197,7 @@ export default function AdminInvoicingHistory() {
                                      </>
                                  )}
                                  
-                                 {inv.paymentStatus === 'annulled' && (
+                                 {inv.paymentStatus === 'void' && (
                                      <span className="px-3 py-1.5 bg-slate-200 text-slate-500 rounded-lg text-xs font-bold">
                                          ANULADA
                                      </span>
