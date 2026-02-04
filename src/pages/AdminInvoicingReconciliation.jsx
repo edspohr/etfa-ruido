@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
-import { Upload, FileSpreadsheet, CheckCircle, AlertTriangle, ArrowRight, Save, RefreshCw, Search, X } from 'lucide-react';
+import { Upload, FileSpreadsheet, CheckCircle, AlertTriangle, ArrowRight, Save, RefreshCw, Search, X, Link } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { collection, query, where, getDocs, writeBatch, doc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../lib/firebase';
@@ -17,6 +17,34 @@ export default function AdminInvoicingReconciliation() {
   // Modal State
   const [selectedInvoice, setSelectedInvoice] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+
+  // Manual Match State
+  const [manualMatchOpen, setManualMatchOpen] = useState(false);
+  const [activeMovement, setActiveMovement] = useState(null);
+
+  const startManualMatch = (mov) => {
+      setActiveMovement(mov);
+      setManualMatchOpen(true);
+  };
+
+  const cancelManualMatch = () => {
+      setActiveMovement(null);
+      setManualMatchOpen(false);
+  };
+
+  const confirmManualMatch = (invoice) => {
+      if (!activeMovement) return;
+      
+      const newMatch = {
+          movement: activeMovement,
+          invoice: invoice,
+          confidence: 'manual',
+          reason: 'Selección Manual'
+      };
+
+      setMatches(prev => [...prev, newMatch]);
+      cancelManualMatch();
+  };
 
   // 1. Fetch Pending Invoices
   const fetchPending = async () => {
@@ -135,7 +163,16 @@ export default function AdminInvoicingReconciliation() {
           
           // Extended Checks for Santander / Other Formats
           const aIdx = findCol(row, ['abono', 'deposito', 'credit', 'crédito']);
-          const mIdx = findCol(row, ['monto', 'importe', 'valor', 'saldo']); // Saldo sometimes is the only number column if format is weird
+          // FIX: Removed 'saldo' from keywords to avoid capturing balance. Added safety check below.
+          let mIdx = findCol(row, ['monto', 'importe', 'valor']); 
+          
+          // Safety: If column header explicitly says "Saldo" or "Balance", ignore it.
+          if (mIdx !== -1) {
+              const headerVal = cleanStr(row[mIdx]);
+              if (headerVal.includes('saldo') || headerVal.includes('balance')) {
+                  mIdx = -1;
+              }
+          }
           
           // Debug scan
           // console.log(`Row ${i} scan: Date=${dIdx}, Desc=${descI}, Abono=${aIdx}, Monto=${mIdx}`);
@@ -154,96 +191,114 @@ export default function AdminInvoicingReconciliation() {
           }
       }
 
-      // STRATEGY B: "Pattern Match" Scan if Header Search Failed
-      if (headerRowIndex === -1 && bankName === 'Santander') {
-          console.log("Strategy A (Headers) failed. Trying Strategy B (Pattern Match)...");
-          // Heuristic: Iterate rows, try to find a row that "looks like a movement"
-          // Pattern: Date (Col 0 or 1 usually) + Description + Amount
+      // STRATEGY B: "Pattern Match" Scan (Default for Santander, Fallback for others)
+      // For Santander, we skip header search and go straight to row scanning to avoid issues with messy headers.
+      if ((headerRowIndex === -1) || (bankName === 'Santander')) {
+          console.log(`[${bankName}] Using Strategy B (Pattern Match - Row Scan)...`);
           
           const heuristicMovements = [];
           
           rows.forEach((row, rowIndex) => {
               if (!row || row.length < 3) return;
               
-              // 1. Try to find a date
-              // Look at first few columns
+              // 1. DETECT DATE (DD/MM/AAAA or DD-MM-AAAA) in first few columns
               let potentialDate = null;
-              let dateColIndices = [0, 1]; // usually date is early
+              let dateColIndices = [0, 1]; 
               
               for (let dCol of dateColIndices) {
                   if (row[dCol]) {
                       const val = String(row[dCol]).trim();
-                      // DD/MM/YYYY regex
                       if (val.match(/^\d{1,2}[/-]\d{1,2}[/-]\d{2,4}$/)) {
                           potentialDate = val.replace(/-/g, '/');
                           break;
                       }
-                      // DD-MM-YYYY
                   }
               }
               
-              if (!potentialDate) return; // No date, skip row
+              if (!potentialDate) return; // Skip row if no date found
 
-              // 2. Try to find an Amount (Positive Number) - usually last columns
-              // Scan backwards? Or just scan all others?
-              let potentialAmount = 0;
-              
-              // Iterate all other columns to find a number
-              for (let c = 0; c < row.length; c++) {
-                  if (dateColIndices.includes(c)) continue; // skip date col
+              // 2. EXTRACT AMOUNTS & APPLY HEURISTICS
+              let candidateAmount = 0;
+              let candidates = [];
+
+              // Scan all columns (starting from 2 usually, but let's scan all except date)
+              row.forEach((cell, idx) => {
+                  if (dateColIndices.includes(idx)) return; // skip date col
                   
-                  const cell = row[c];
-                  // If string, try to parse
-                  if (typeof cell === 'string') {
+                  let val = 0;
+                  if (typeof cell === 'number') {
+                      val = cell;
+                  } else if (typeof cell === 'string') {
+                      // Cleanup: remove dots, replace comma with dot
                       let s = cell.trim();
-                      // Basic cleanup for Chilean money
                       s = s.replace(/\./g, '').replace(',', '.').replace(/[^0-9.-]/g, '');
-                      const num = parseFloat(s);
-                      if (!isNaN(num) && num > 0) {
-                          // Found a positive number. 
-                          // Heuristic: Is it seemingly an amount? (greater than 100?)
-                           if (num > 0) potentialAmount = num;
-                           // keep scanning? usually "Saldo" is last, "Abono" is previous.
-                           // If we find multiple numbers... this is tricky.
-                           // Let's assume the largest positive number might be it? Or check logic.
-                           // Santander: Cargo | Abono | Saldo. Abono is middle.
-                      }
-                  } else if (typeof cell === 'number') {
-                      if (cell > 0) potentialAmount = cell;
+                      val = parseFloat(s);
                   }
-              }
-              
-              if (potentialAmount <= 0) return; // No valid amount found
 
-              // 3. Description is whatever is left that is long string?
-              let potentialDesc = 'Movimiento Detectado';
-              // Find a string col that is NOT date and NOT amount-like
-              // Simple hack: Just join any other text columns?
+                  // Heuristic: Only interested in Positive numbers (Abonos)
+                  if (!isNaN(val) && val > 0) {
+                      candidates.push({ val, idx });
+                  }
+              });
+
+              if (candidates.length === 0) return; // No positive numbers
+
+              // HEURISTIC: Choose the right amount
+              // If multiple candidates, we need to avoid "Saldo".
+              // Santander usually has: Cargo | Abono | Saldo
+              // So we might see 2 positive numbers: Abono and Saldo.
+              // We CANNOT rely on header names here.
+              // Logic: 
+              // 1. If only 1 candidate, take it.
+              // 2. If existing headers known (Strategy A passed but missed row?), no, we are here because headers failed or we forced B.
+              // 3. Positional: Abono is usually before Saldo? 
+              // Let's assume the "Saldo" is the cumulative total.
+              // If we have multiple, usually the actual movement is NOT the last one? Or varies?
+              // Let's look for Values that are NOT likely to be dates (already handled).
+              
+              // Refined Rule for Santander (User Request):
+              // "Descarta el que esté en una columna que históricamente corresponda a Saldo" -> We don't have history.
+              // "Toma el valor que corresponda a un Abono... Busca valores positivos que NO sean el saldo final."
+              
+              // For now, if > 1 candidate, we pick the FIRST one found? (Usually Abono comes before Saldo reading left-to-right?)
+              // OR check against Description text?
+              // Let's go with: Pick the one that seems most "transaction-like". 
+              // If multiple, taking the FIRST one is risky if Debit is positive (but Debits are usually negative or separate col).
+              // Let's take the First Candidate as the best guess for "Abono", assuming "Saldo" is to the right.
+              candidateAmount = candidates[0].val;
+
+              // 3. DESCRIPTION
+              // Join all text parts that aren't the date or the selected amount
               const textParts = [];
               row.forEach((cell, idx) => {
                    if (dateColIndices.includes(idx)) return;
+                   
                    const s = String(cell).trim();
-                   // If it contains the date or amount, skip
-                   if (s.includes(String(potentialAmount))) return; 
-                   if (s.length > 5 && isNaN(parseFloat(s.replace(/\./g, '').replace(',', '.')))) {
+                   // Skip if it looks like our amount
+                   const cleanS = s.replace(/\./g, '').replace(',', '.');
+                   if (cleanS.includes(String(candidateAmount))) return;
+                   
+                   // Heuristic: Text must be length > 3 and not look like a number
+                   if (s.length > 3 && isNaN(parseFloat(cleanS))) {
                        textParts.push(s);
                    }
               });
-              
-              if (textParts.length > 0) potentialDesc = textParts.join(' ');
-              
+
+              let potentialDesc = textParts.join(' ') || 'Movimiento Detectado';
+
               heuristicMovements.push({
-                   id: `mov-${bankName}-B-${rowIndex}-${Date.now()}`,
+                   id: `mov-${bankName}-scan-${rowIndex}-${Date.now()}`,
                    date: potentialDate,
                    description: potentialDesc,
-                   amount: potentialAmount,
+                   amount: candidateAmount,
                    bank: bankName,
                    originalRow: row
               });
           });
           
           if (heuristicMovements.length > 0) {
-               console.log(`Strategy B found ${heuristicMovements.length} movements.`);
+               console.log(`[${bankName}] Strategy B found ${heuristicMovements.length} movements.`);
+               // If we forced Strategy B for Santander, return immediately
                return heuristicMovements;
           }
       }
@@ -639,7 +694,13 @@ export default function AdminInvoicingReconciliation() {
                                                   </td>
                                                   <td className="px-4 py-3 text-center">
                                                       {!isMatched && (
-                                                          <span className="text-slate-300">-</span>
+                                                          <button 
+                                                            onClick={() => startManualMatch(mov)}
+                                                            className="text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50 p-1.5 rounded-full transition"
+                                                            title="Enlazar Manualmente"
+                                                          >
+                                                            <Link className="w-4 h-4" />
+                                                          </button>
                                                       )}
                                                   </td>
                                               </tr>
@@ -660,17 +721,55 @@ export default function AdminInvoicingReconciliation() {
                           <p className="text-xs text-slate-500">Documentos pendientes de pago</p>
                       </div>
                       <div className="overflow-y-auto p-4 space-y-3 flex-1">
+                          {manualMatchOpen && activeMovement && (
+                              <div className="bg-gradient-to-r from-indigo-600 to-indigo-700 text-white p-4 rounded-xl shadow-lg border border-indigo-400/30 sticky top-0 z-20 mb-4 animate-in fade-in slide-in-from-top-2">
+                                  <div className="flex justify-between items-start">
+                                      <div>
+                                          <p className="text-[10px] uppercase font-bold tracking-wider opacity-80 mb-1">Seleccionando Factura Para:</p>
+                                          <p className="font-bold text-sm truncate max-w-[180px] text-white">{activeMovement.description}</p>
+                                          <p className="font-mono text-xl font-bold mt-1">+ {formatCurrency(activeMovement.amount)}</p>
+                                      </div>
+                                      <button 
+                                        onClick={cancelManualMatch}
+                                        className="bg-white/20 hover:bg-white/30 text-white p-1.5 rounded-lg transition backdrop-blur-sm"
+                                        title="Cancelar selección"
+                                      >
+                                          <X className="w-5 h-5" />
+                                      </button>
+                                  </div>
+                              </div>
+                          )}
+
                           {pendingInvoices.length === 0 ? (
                               <p className="text-center text-slate-400 text-sm py-10">No hay facturas pendientes.</p>
                           ) : (
-                              pendingInvoices.map((inv, i) => {
+                              [...pendingInvoices]
+                              .sort((a,b) => {
+                                  if (!manualMatchOpen || !activeMovement) return 0;
+                                  const diffA = Math.abs(Number(a.totalAmount) - activeMovement.amount);
+                                  const diffB = Math.abs(Number(b.totalAmount) - activeMovement.amount);
+                                  return diffA - diffB;
+                              })
+                              .map((inv, i) => {
                                   // Check if this invoice is already matched
                                   const isMatched = matches.some(m => m.invoice.id === inv.id);
+                                  
+                                  // Styling for Manual Match Mode
+                                  // If manual mode: highlight good matches, fade others
+                                  const isGoodCandidate = manualMatchOpen && activeMovement && Math.abs(Number(inv.totalAmount) - activeMovement.amount) < 1000;
+                                  const wrapperClass = manualMatchOpen
+                                    ? `p-3 rounded-lg border cursor-pointer transition ${
+                                        isGoodCandidate 
+                                            ? 'bg-indigo-50 border-indigo-500 shadow-md scale-[1.02]' 
+                                            : 'bg-white border-slate-100 opacity-50 hover:opacity-100'
+                                    }`
+                                    : `p-3 rounded-lg border cursor-pointer hover:shadow-md transition ${isMatched ? 'bg-green-50 border-green-200 opacity-60' : 'bg-white border-slate-100 hover:border-slate-300'}`;
+
                                   return (
                                       <div 
                                           key={i} 
-                                          className={`p-3 rounded-lg border cursor-pointer hover:shadow-md ${isMatched ? 'bg-green-50 border-green-200 opacity-60' : 'bg-white border-slate-100 hover:border-slate-300'} transition`}
-                                          onClick={() => openInvoiceDetail(inv)}
+                                          className={wrapperClass}
+                                          onClick={() => manualMatchOpen ? confirmManualMatch(inv) : openInvoiceDetail(inv)}
                                       >
                                           <div className="flex justify-between items-start mb-1">
                                               <span className="text-xs font-bold text-indigo-600 truncate max-w-[150px]">{inv.clientName}</span>
