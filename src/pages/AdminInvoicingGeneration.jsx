@@ -22,6 +22,7 @@ export default function AdminInvoicingGeneration() {
       hes: '',
       nota_pedido: ''
   });
+  const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split('T')[0]); // Default Today
 
   // Invoice Data State
   const [expenses, setExpenses] = useState([]);
@@ -128,6 +129,23 @@ export default function AdminInvoicingGeneration() {
   const totalInvoice = totalExpenses + totalCustom;
 
 
+  // Helper: Format Dates Safely
+  const formatDate = (dateVal) => {
+      if (!dateVal) return 'Sin Fecha';
+      // Firestore Timestamp
+      if (dateVal.seconds) return new Date(dateVal.seconds * 1000).toLocaleDateString('es-CL');
+      // String YYYY-MM-DD
+      if (typeof dateVal === 'string') {
+           // Basic check for YYYY-MM-DD
+           if (dateVal.match(/^\d{4}-\d{2}-\d{2}$/)) {
+               const [y, m, d] = dateVal.split('-').map(Number);
+               return new Date(y, m-1, d).toLocaleDateString('es-CL');
+           }
+           return dateVal; // Return as is if format unknown but string
+      }
+      return 'Fecha Inválida';
+  };
+
   // Generation Action
   const handleGenerateInvoice = async () => {
       if (!selectedProject) return;
@@ -145,9 +163,10 @@ export default function AdminInvoicingGeneration() {
               
               glosa: glosa,
               references: references,
-              documentType: documentType,
+              documentType: documentType || 'electronic_invoice',
               
-              createdAt: serverTimestamp(),
+              // Use selected date (noon to avoid TZ shifts) or server default
+              createdAt: invoiceDate ? new Date(invoiceDate + 'T12:00:00') : serverTimestamp(),
               status: 'draft', // Initial status
               paymentStatus: 'pending', // New field for reports
               
@@ -256,6 +275,16 @@ export default function AdminInvoicingGeneration() {
                           <option value="credit_note">Nota de Crédito</option>
                           <option value="debit_note">Nota de Débito</option>
                       </select>
+                  </div>
+
+                  <div className="mb-4">
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Fecha de Emisión</label>
+                      <input 
+                          type="date"
+                          className="w-full p-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
+                          value={invoiceDate}
+                          onChange={e => setInvoiceDate(e.target.value)}
+                      />
                   </div>
 
                   <div className="space-y-3 mb-4">
@@ -386,7 +415,7 @@ export default function AdminInvoicingGeneration() {
                                       <div>
                                           <p className="font-bold text-slate-800 text-sm">{expense.description}</p>
                                           <p className="text-xs text-slate-500">
-                                              {(expense.date && expense.date.seconds) ? new Date(expense.date.seconds * 1000).toLocaleDateString() : 'Sin Fecha'} • {expense.category || 'Sin Categoría'}
+                                              {formatDate(expense.date)} • {expense.category || 'Sin Categoría'}
                                           </p>
                                       </div>
                                   </div>
