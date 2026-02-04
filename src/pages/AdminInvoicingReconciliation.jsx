@@ -316,7 +316,7 @@ export default function AdminInvoicingReconciliation() {
                   const dd = String(dateObj.d).padStart(2, '0');
                   const mm = String(dateObj.m).padStart(2, '0');
                   finalDate = `${dd}/${mm}/${dateObj.y}`;
-              } catch (error) {
+              } catch {
                   console.warn("Date parse error", rawDate);
                   finalDate = 'Error Fecha';
               }
