@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import Layout from '../components/Layout';
 import { db } from '../lib/firebase';
-import { collection, getDocs, doc, updateDoc, setDoc, deleteDoc, query, where, writeBatch } from 'firebase/firestore';
+import { collection, getDocs, doc, setDoc, deleteDoc, query, where, writeBatch } from 'firebase/firestore';
 
 // 1. Re-initialize a SECONDARY app instance to avoid logging out the current admin
 // We use the same config from environment variables
@@ -66,10 +66,30 @@ export default function AdminUserSeeder() {
                 addLog(`Creando cuenta para: ${user.email}...`);
                 
                 // 1. Create User
-                const credential = await createUserWithEmailAndPassword(secondaryAuth, user.email, "gastos2026");
-                const authUser = credential.user;
+                let authUser;
+                try {
+                    const credential = await createUserWithEmailAndPassword(secondaryAuth, user.email, "gastos2026");
+                    authUser = credential.user;
+                } catch (createError) {
+                    if (createError.code === 'auth/email-already-in-use') {
+                        addLog(`⚠ YA EXISTE: ${user.email}. Intentando recuperar acceso...`);
+                        try {
+                            const credential = await signInWithEmailAndPassword(secondaryAuth, user.email, "gastos2026");
+                            authUser = credential.user;
+                            addLog(`✅ RECUPERADO: UID ${authUser.uid}`);
+                        } catch (loginError) {
+                            addLog(`❌ ERROR RECUPERACIÓN: No se pudo acceder a ${user.email}. ¿Contraseña cambiada?`);
+                            console.error(loginError);
+                            continue; // Skip this user
+                        }
+                    } else {
+                        throw createError;
+                    }
+                }
 
-                // 2. Update Profile (Display Name)
+                if (!authUser) continue;
+
+                // 2. Update Profile (Display Name) - Only if new or we want to enforce sync
                 if (user.displayName) {
                     await updateProfile(authUser, { displayName: user.displayName });
                 }
@@ -78,44 +98,41 @@ export default function AdminUserSeeder() {
                 const realUid = authUser.uid;
                 const userRef = doc(db, "users", user.id); // Old Doc Ref
 
-                addLog(`Migrando Doc ID de ${user.id} a ${realUid}...`);
-                
-                // Write New Doc
-                const newDocRef = doc(db, "users", realUid);
-                // Be careful not to overwrite if it exists? (Maybe they already logged in?)
-                // Just overwrite or merge.
-                await updateDoc(newDocRef, { ...user, uid: realUid }).catch(async () => {
-                     // If update fails (doc doesn't exist), use set
-                     await setDoc(newDocRef, { ...user, uid: realUid });
-                });
-
-                // Delete Old Doc
                 if (user.id !== realUid) {
+                     addLog(`Migrando Doc ID de ${user.id} a ${realUid}...`);
+                
+                    // Write New Doc
+                    const newDocRef = doc(db, "users", realUid);
+                    
+                    // Check if target exists to avoid accidental overwrite of good data with bad data?
+                    // Actually, we want to sync the Firestore "user profile" (roles, balance) to this UID.
+                    
+                    await setDoc(newDocRef, { ...user, uid: realUid }, { merge: true });
+
+                    // Delete Old Doc (Only if IDs differ)
                     await deleteDoc(userRef);
-                }
 
-                // 4. Migrate References (Expenses, Allocations)
-                const batchOps = writeBatch(db);
-                
-                const allocQ = query(collection(db, "allocations"), where("userId", "==", user.id));
-                const allocSnap = await getDocs(allocQ);
-                allocSnap.docs.forEach(d => batchOps.update(d.ref, { userId: realUid }));
+                    // 4. Migrate References (Expenses, Allocations)
+                    const batchOps = writeBatch(db);
+                    
+                    const allocQ = query(collection(db, "allocations"), where("userId", "==", user.id));
+                    const allocSnap = await getDocs(allocQ);
+                    allocSnap.docs.forEach(d => batchOps.update(d.ref, { userId: realUid }));
 
-                const expQ = query(collection(db, "expenses"), where("userId", "==", user.id));
-                const expSnap = await getDocs(expQ);
-                expSnap.docs.forEach(d => batchOps.update(d.ref, { userId: realUid }));
+                    const expQ = query(collection(db, "expenses"), where("userId", "==", user.id));
+                    const expSnap = await getDocs(expQ);
+                    expSnap.docs.forEach(d => batchOps.update(d.ref, { userId: realUid }));
 
-                await batchOps.commit();
-                
-                addLog(`✅ ÉXITO: ${user.email} creado y migrado.`);
-                
-            } catch (authError) {
-                if (authError.code === 'auth/email-already-in-use') {
-                    addLog(`⚠ YA EXISTE: ${user.email} (Auth). No se modificó.`);
+                    await batchOps.commit();
+                    
+                    addLog(`✅ ÉXITO: ${user.email} migrado a UID ${realUid}.`);
                 } else {
-                    addLog(`❌ ERROR: ${user.email} - ${authError.message}`);
-                    console.error(authError);
+                    addLog(`ℹ OK: ${user.email} ya tiene el UID correcto.`);
                 }
+                
+            } catch (error) {
+                 addLog(`❌ ERROR FATAL: ${user.email} - ${error.message}`);
+                 console.error(error);
             }
         }
         

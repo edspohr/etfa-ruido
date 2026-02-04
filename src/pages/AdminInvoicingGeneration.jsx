@@ -138,6 +138,7 @@ export default function AdminInvoicingGeneration() {
           // 1. Create Invoice Document
           const invoiceData = {
               clientId: selectedProject.client || 'Sin Cliente',
+              clientName: selectedProject.client || 'Sin Cliente', // FIXED: Add Explicit Client Name for Display
               projectId: selectedProject.id,
               projectName: selectedProject.name,
               projectRecurrence: selectedProject.recurrence || 'N/A',

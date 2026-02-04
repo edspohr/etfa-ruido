@@ -1,23 +1,17 @@
 import { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
-import { Upload, FileSpreadsheet, CheckCircle, AlertTriangle, ArrowRight, Save, RefreshCw, Search, X, Link as LinkIcon } from 'lucide-react';
+import { Upload, FileSpreadsheet, CheckCircle, AlertTriangle, ArrowRight, Save, RefreshCw, Search, X } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { collection, query, where, getDocs, writeBatch, doc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { formatCurrency } from '../utils/format';
 
 export default function AdminInvoicingReconciliation() {
-  const [file, setFile] = useState(null);
   const [movements, setMovements] = useState([]);
   const [matches, setMatches] = useState([]);
   const [pendingInvoices, setPendingInvoices] = useState([]);
   const [loading, setLoading] = useState(false);
   const [processing, setProcessing] = useState(false);
-  
-  // Manual Match State
-  const [manualMatchOpen, setManualMatchOpen] = useState(false);
-  const [activeMovement, setActiveMovement] = useState(null);
-  const [searchTerm, setSearchTerm] = useState('');
 
   // 1. Fetch Pending Invoices
   useEffect(() => {
@@ -34,10 +28,11 @@ export default function AdminInvoicingReconciliation() {
       const selectedFile = e.target.files[0];
       if (!selectedFile) return;
       
-      setFile(selectedFile);
+
       setLoading(true);
 
       const reader = new FileReader();
+      
       reader.onload = (evt) => {
           try {
               const bstr = evt.target.result;
@@ -62,15 +57,14 @@ export default function AdminInvoicingReconciliation() {
                           const dateB = new Date(yb, mb - 1, db);
                           if (isNaN(dateA.getTime()) || isNaN(dateB.getTime())) return 0;
                           return dateB - dateA; // Newest first
-                      } catch (e) {
+                          return dateB - dateA; // Newest first
+                      } catch (error) {
                           return 0;
                       }
                   });
               });
               
               // Run Matching against ALL movements
-              // Note: We need to use the NEW combined list for matching
-              // Since setState is async, let's recalculate locally
               const newMovements = [...movements, ...parsedMovements];
               runMatching(newMovements, pendingInvoices);
 
@@ -81,7 +75,19 @@ export default function AdminInvoicingReconciliation() {
               setLoading(false);
           }
       };
-      reader.readAsBinaryString(selectedFile);
+
+      reader.onerror = () => {
+          console.error("FileReader error");
+          alert("Error al leer el archivo.");
+          setLoading(false);
+      };
+
+      try {
+          reader.readAsBinaryString(selectedFile);
+      } catch (error) {
+          console.error("Error initiating read:", error);
+          setLoading(false);
+      }
   };
 
   const parseBankData = (rows, bankName) => {
@@ -132,8 +138,8 @@ export default function AdminInvoicingReconciliation() {
                   dateIdx = dIdx;
                   descIdx = descI;
                   abonoIdx = aIdx;
+                  abonoIdx = aIdx;
                   montoIdx = mIdx;
-                  saldoIdx = findCol(row, ['saldo']);
                   break;
               }
           }
@@ -207,7 +213,8 @@ export default function AdminInvoicingReconciliation() {
                   const dd = String(dateObj.d).padStart(2, '0');
                   const mm = String(dateObj.m).padStart(2, '0');
                   finalDate = `${dd}/${mm}/${dateObj.y}`;
-              } catch (e) {
+                  finalDate = `${dd}/${mm}/${dateObj.y}`;
+              } catch (error) {
                   console.warn("Date parse error", rawDate);
                   finalDate = 'Error Fecha';
               }
@@ -215,7 +222,7 @@ export default function AdminInvoicingReconciliation() {
                // Try identifying DD/MM/YYYY or DD-MM-YYYY
                rawDate = rawDate.trim();
                // Regex for DD/MM/YYYY
-               if (rawDate.match(/^\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4}$/)) {
+               if (rawDate.match(/^\d{1,2}[/-]\d{1,2}[/-]\d{2,4}$/)) {
                    finalDate = rawDate.replace(/-/g, '/'); // normalize to slash
                } else {
                    // Try native Date parse?
@@ -285,7 +292,6 @@ export default function AdminInvoicingReconciliation() {
           await batch.commit();
           alert(`${matches.length} facturas conciliadas exitosamente.`);
           setMovements([]);
-          setFile(null);
           setMatches([]);
           
           // Remove reconciled invoices from pending list
@@ -306,22 +312,7 @@ export default function AdminInvoicingReconciliation() {
       setMatches(newMatches);
   };
 
-  const openManualMatch = (mov) => {
-      setActiveMovement(mov);
-      setSearchTerm('');
-      setManualMatchOpen(true);
-  };
 
-  const confirmManualMatch = (invoice) => {
-      setMatches(prev => [...prev, {
-          movement: activeMovement,
-          invoice,
-          confidence: 'manual',
-          reason: 'Conciliación Manual'
-      }]);
-      setManualMatchOpen(false);
-      setActiveMovement(null);
-  };
 
   return (
     <Layout title="Cuenta Corriente Unificada">
@@ -531,14 +522,11 @@ export default function AdminInvoicingReconciliation() {
                                                       {isMatched && <CheckCircle className="w-4 h-4 text-green-500 mx-auto" />}
                                                   </td>
                                                   <td className="px-4 py-3 text-center">
+                                                      {isMatched && <CheckCircle className="w-4 h-4 text-green-500 mx-auto" />}
+                                                  </td>
+                                                  <td className="px-4 py-3 text-center">
                                                       {!isMatched && (
-                                                          <button 
-                                                              onClick={() => openManualMatch(mov)}
-                                                              className="text-indigo-600 hover:bg-indigo-50 p-1.5 rounded-full transition"
-                                                              title="Conciliar Manualmente"
-                                                          >
-                                                              <LinkIcon className="w-4 h-4" />
-                                                          </button>
+                                                          <span className="text-slate-300">-</span>
                                                       )}
                                                   </td>
                                               </tr>
