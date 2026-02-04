@@ -138,9 +138,9 @@ export default function AdminInvoicingGeneration() {
           // 1. Create Invoice Document
           const invoiceData = {
               clientId: selectedProject.client || 'Sin Cliente',
-              clientName: selectedProject.client || 'Sin Cliente', // FIXED: Add Explicit Client Name for Display
+              clientName: selectedProject.client || 'Sin Cliente', 
               projectId: selectedProject.id,
-              projectName: selectedProject.name,
+              projectName: selectedProject.name || 'Sin Nombre',
               projectRecurrence: selectedProject.recurrence || 'N/A',
               
               glosa: glosa,
@@ -253,6 +253,8 @@ export default function AdminInvoicingGeneration() {
                       >
                           <option value="electronic_invoice">Factura Electrónica</option>
                           <option value="exempt_invoice">Factura Exenta</option>
+                          <option value="credit_note">Nota de Crédito</option>
+                          <option value="debit_note">Nota de Débito</option>
                       </select>
                   </div>
 
@@ -384,7 +386,7 @@ export default function AdminInvoicingGeneration() {
                                       <div>
                                           <p className="font-bold text-slate-800 text-sm">{expense.description}</p>
                                           <p className="text-xs text-slate-500">
-                                              {new Date(expense.date?.seconds * 1000).toLocaleDateString()} • {expense.category}
+                                              {(expense.date && expense.date.seconds) ? new Date(expense.date.seconds * 1000).toLocaleDateString() : 'Sin Fecha'} • {expense.category || 'Sin Categoría'}
                                           </p>
                                       </div>
                                   </div>
