@@ -6,27 +6,43 @@ import { collection, query, orderBy, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { formatCurrency } from '../utils/format';
 import { Skeleton } from '../components/Skeleton';
+import InvoiceDetailModal from '../components/InvoiceDetailModal';
 
 export default function AdminInvoicingDashboard() {
   const [invoices, setInvoices] = useState([]);
+
   const [loading, setLoading] = useState(true);
+  
+  // Modal State
+  const [selectedInvoice, setSelectedInvoice] = useState(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  const fetchInvoices = async () => {
+       try {
+           // Order by createdAt desc
+           const q = query(collection(db, "invoices"), orderBy("createdAt", "desc"));
+           const querySnap = await getDocs(q);
+           // Filter VOID locally (or add compound index)
+           const docs = querySnap.docs
+             .map(doc => ({ id: doc.id, ...doc.data() }))
+             .filter(doc => doc.status !== 'void');
+             
+           setInvoices(docs);
+       } catch (e) {
+           console.error("Error fetching invoices:", e);
+       } finally {
+           setLoading(false);
+       }
+  };
 
   useEffect(() => {
-     async function fetchInvoices() {
-         try {
-             // Order by createdAt desc
-             const q = query(collection(db, "invoices"), orderBy("createdAt", "desc"));
-             const querySnap = await getDocs(q);
-             const docs = querySnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-             setInvoices(docs);
-         } catch (e) {
-             console.error("Error fetching invoices:", e);
-         } finally {
-             setLoading(false);
-         }
-     }
      fetchInvoices();
   }, []);
+
+  const openInvoiceDetail = (inv) => {
+      setSelectedInvoice(inv);
+      setIsModalOpen(true);
+  };
 
   // Calculate Metrics
   const metrics = invoices.reduce((acc, inv) => {
@@ -195,7 +211,11 @@ export default function AdminInvoicingDashboard() {
         ) : (
             <div className="divide-y divide-slate-100">
                 {invoices.map(invoice => (
-                    <div key={invoice.id} className="p-6 flex items-center justify-between hover:bg-slate-50 transition">
+                    <div 
+                        key={invoice.id} 
+                        className="p-6 flex items-center justify-between hover:bg-slate-50 transition cursor-pointer"
+                        onClick={() => openInvoiceDetail(invoice)}
+                    >
                         <div className="flex items-center gap-4">
                             <div className="bg-indigo-100 p-2 rounded-lg text-indigo-600">
                                 <FileText className="w-6 h-6" />
@@ -222,6 +242,14 @@ export default function AdminInvoicingDashboard() {
             </div>
         )}
       </div>
+
+
+      <InvoiceDetailModal 
+        isOpen={isModalOpen} 
+        onClose={() => setIsModalOpen(false)} 
+        invoice={selectedInvoice}
+        onUpdate={fetchInvoices}
+      />
     </Layout>
   );
 }

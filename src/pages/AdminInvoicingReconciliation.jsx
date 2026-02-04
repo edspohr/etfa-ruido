@@ -5,6 +5,7 @@ import * as XLSX from 'xlsx';
 import { collection, query, where, getDocs, writeBatch, doc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { formatCurrency } from '../utils/format';
+import InvoiceDetailModal from '../components/InvoiceDetailModal';
 
 export default function AdminInvoicingReconciliation() {
   const [movements, setMovements] = useState([]);
@@ -12,16 +13,26 @@ export default function AdminInvoicingReconciliation() {
   const [pendingInvoices, setPendingInvoices] = useState([]);
   const [loading, setLoading] = useState(false);
   const [processing, setProcessing] = useState(false);
+  
+  // Modal State
+  const [selectedInvoice, setSelectedInvoice] = useState(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   // 1. Fetch Pending Invoices
+  const fetchPending = async () => {
+      const q = query(collection(db, "invoices"), where("paymentStatus", "==", "pending"));
+      const snapshot = await getDocs(q);
+      setPendingInvoices(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+  };
+
   useEffect(() => {
-    async function fetchPending() {
-        const q = query(collection(db, "invoices"), where("paymentStatus", "==", "pending"));
-        const snapshot = await getDocs(q);
-        setPendingInvoices(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
-    }
     fetchPending();
   }, []);
+
+  const openInvoiceDetail = (inv) => {
+      setSelectedInvoice(inv);
+      setIsModalOpen(true);
+  };
 
   // 2. Handle File Upload & Parsing
   const handleFileUpload = (e, bankName) => {
@@ -35,8 +46,8 @@ export default function AdminInvoicingReconciliation() {
       
       reader.onload = (evt) => {
           try {
-              const bstr = evt.target.result;
-              const workbook = XLSX.read(bstr, { type: 'binary' });
+              const arrayBuffer = evt.target.result;
+              const workbook = XLSX.read(arrayBuffer, { type: 'array' }); // Use 'array' for robustness
               const wsname = workbook.SheetNames[0];
               const ws = workbook.Sheets[wsname];
               const data = XLSX.utils.sheet_to_json(ws, { header: 1 }); // Array of arrays
@@ -57,7 +68,7 @@ export default function AdminInvoicingReconciliation() {
                           const dateB = new Date(yb, mb - 1, db);
                           if (isNaN(dateA.getTime()) || isNaN(dateB.getTime())) return 0;
                           return dateB - dateA; // Newest first
-                      } catch (error) {
+                      } catch {
                           return 0;
                       }
                   });
@@ -82,7 +93,7 @@ export default function AdminInvoicingReconciliation() {
       };
 
       try {
-          reader.readAsBinaryString(selectedFile);
+          reader.readAsArrayBuffer(selectedFile); // Changed to ArrayBuffer for .xlsx support
       } catch (error) {
           console.error("Error initiating read:", error);
           setLoading(false);
@@ -112,7 +123,7 @@ export default function AdminInvoicingReconciliation() {
       let descIdx = -1;
       let abonoIdx = -1;
       let montoIdx = -1;
-      let saldoIdx = -1;
+
 
       // 1. Scan for Header Row (up to 50 rows, common in messy bank files)
       for (let i = 0; i < Math.min(rows.length, 50); i++) {
@@ -211,7 +222,6 @@ export default function AdminInvoicingReconciliation() {
                   const dd = String(dateObj.d).padStart(2, '0');
                   const mm = String(dateObj.m).padStart(2, '0');
                   finalDate = `${dd}/${mm}/${dateObj.y}`;
-                  finalDate = `${dd}/${mm}/${dateObj.y}`;
               } catch (error) {
                   console.warn("Date parse error", rawDate);
                   finalDate = 'Error Fecha';
@@ -283,7 +293,14 @@ export default function AdminInvoicingReconciliation() {
                   paymentStatus: 'paid',
                   paidAt: serverTimestamp(),
                   paymentReference: `Conciliación Auto: ${m.movement.description}`,
-                  paymentAmount: m.movement.amount
+                  paymentAmount: m.movement.amount,
+                  paymentMetadata: {
+                      bank: m.movement.bank,
+                      transactionDate: m.movement.date,
+                      transactionDescription: m.movement.description,
+                      originalRow: m.movement.originalRow,
+                      reconciledAt: new Date().toISOString()
+                  }
               });
           });
 
@@ -552,7 +569,11 @@ export default function AdminInvoicingReconciliation() {
                                   // Check if this invoice is already matched
                                   const isMatched = matches.some(m => m.invoice.id === inv.id);
                                   return (
-                                      <div key={i} className={`p-3 rounded-lg border ${isMatched ? 'bg-green-50 border-green-200 opacity-60' : 'bg-white border-slate-100 hover:border-slate-300'} transition`}>
+                                      <div 
+                                          key={i} 
+                                          className={`p-3 rounded-lg border cursor-pointer hover:shadow-md ${isMatched ? 'bg-green-50 border-green-200 opacity-60' : 'bg-white border-slate-100 hover:border-slate-300'} transition`}
+                                          onClick={() => openInvoiceDetail(inv)}
+                                      >
                                           <div className="flex justify-between items-start mb-1">
                                               <span className="text-xs font-bold text-indigo-600 truncate max-w-[150px]">{inv.clientName}</span>
                                               <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">
@@ -574,6 +595,12 @@ export default function AdminInvoicingReconciliation() {
           
           </div>
       </div>
+      <InvoiceDetailModal 
+        isOpen={isModalOpen} 
+        onClose={() => setIsModalOpen(false)} 
+        invoice={selectedInvoice}
+        onUpdate={fetchPending}
+      />
     </Layout>
   );
 }
