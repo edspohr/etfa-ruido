@@ -341,6 +341,16 @@ export default function AdminKanbanBoard() {
       }
   };
 
+  if (loading) {
+      return (
+          <Layout title="Tablero de Facturación" isFullWidth={true}>
+              <div className="flex h-[calc(100vh-100px)] items-center justify-center">
+                  <div className="w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
+              </div>
+          </Layout>
+      );
+  }
+
   return (
     <Layout title="Tablero de Facturación" isFullWidth={true}>
         
