@@ -15,7 +15,8 @@ import { useAuth } from './context/useAuth';
 
 import AdminModuleSelector from './pages/AdminModuleSelector';
 import AdminInvoicingDashboard from './pages/AdminInvoicingDashboard';
-import AdminInvoicingGeneration from './pages/AdminInvoicingGeneration';
+import AdminKanbanBoard from './pages/AdminKanbanBoard';
+// import AdminInvoicingGeneration from './pages/AdminInvoicingGeneration';
 import AdminInvoicingHistory from './pages/AdminInvoicingHistory';
 import AdminInvoicingReconciliation from './pages/AdminInvoicingReconciliation';
 
@@ -36,8 +37,11 @@ function App() {
         {/* Admin Routes */}
         <Route path="/admin/select-module" element={<ProtectedRoute requiredRole="admin"><AdminModuleSelector /></ProtectedRoute>} />
         
+        {/* Main Admin Dashboard (Kanban) */}
+        <Route path="/admin" element={<ProtectedRoute requiredRole="admin"><AdminKanbanBoard /></ProtectedRoute>} />
+        
         {/* Expenses Module */}
-        <Route path="/admin" element={<ProtectedRoute requiredRole="admin"><AdminDashboard /></ProtectedRoute>} />
+        <Route path="/admin/expenses" element={<ProtectedRoute requiredRole="admin"><AdminDashboard /></ProtectedRoute>} />
         <Route path="/admin/projects" element={<ProtectedRoute requiredRole="admin"><AdminProjects /></ProtectedRoute>} />
         <Route path="/admin/projects/:id" element={<ProtectedRoute requiredRole="admin"><AdminProjectDetails /></ProtectedRoute>} />
         <Route path="/admin/users/:id" element={<ProtectedRoute requiredRole="admin"><AdminUserDetails /></ProtectedRoute>} />
@@ -47,7 +51,7 @@ function App() {
 
         {/* Invoicing Module */}
         <Route path="/admin/invoicing" element={<ProtectedRoute requiredRole="admin"><AdminInvoicingDashboard /></ProtectedRoute>} />
-        <Route path="/admin/invoicing/generate" element={<ProtectedRoute requiredRole="admin"><AdminInvoicingGeneration /></ProtectedRoute>} />
+        {/* <Route path="/admin/invoicing/generate" element={<ProtectedRoute requiredRole="admin"><AdminInvoicingGeneration /></ProtectedRoute>} /> */} 
         <Route path="/admin/invoicing/history" element={<ProtectedRoute requiredRole="admin"><AdminInvoicingHistory /></ProtectedRoute>} />
         <Route path="/admin/invoicing/reconciliation" element={<ProtectedRoute requiredRole="admin"><AdminInvoicingReconciliation /></ProtectedRoute>} />
         

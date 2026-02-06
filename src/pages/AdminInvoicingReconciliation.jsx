@@ -449,6 +449,15 @@ export default function AdminInvoicingReconciliation() {
                       reconciledAt: new Date().toISOString()
                   }
               });
+
+              // [NEW] Update Project Billing Status to 'paid'
+              if (m.invoice.projectId) {
+                  const projRef = doc(db, "projects", m.invoice.projectId);
+                  batch.update(projRef, {
+                      billingStatus: 'paid',
+                      lastPaymentDate: serverTimestamp()
+                  });
+              }
           });
 
           await batch.commit();
