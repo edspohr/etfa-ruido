@@ -1,16 +1,79 @@
-# React + Vite
+# Sistema de Gestión Financiera - ETFA Ruido
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Este repositorio contiene la aplicación de administración para la gestión de proyectos, facturación y rendición de gastos.
 
-Currently, two official plugins are available:
+## 🏗 Arquitectura de Base de Datos (Firestore)
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+La aplicación utiliza Firebase Firestore como base de datos NoSQL. Las colecciones principales son:
 
-## React Compiler
+### 1. `projects` (Proyectos)
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Almacena la información de los casos o proyectos activos.
 
-## Expanding the ESLint configuration
+- **Campos Clave**:
+  - `name`: Nombre del proyecto.
+  - `client`: Cliente asociado.
+  - `code`: Código único del proyecto (ej: `PRJ-001`). _Generado vía migración._
+  - `recurrence`: Frecuencia de facturación (ej: `Único`, `Mensual`).
+  - `billingStatus`: Estado en el flujo Kanban (`pending`, `report_issued`, `invoiced`, `paid`).
+  - `lastBillingUpdate`: Timestamp del último cambio de estado.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+### 2. `expenses` (Gastos)
+
+Rendiciones de gastos asociadas a proyectos o costos internos.
+
+- **Relación**: Vinculado a `projects` mediante `projectId`.
+
+### 3. `invoices` (Facturas)
+
+Facturas emitidas o recibidas.
+
+- **Uso**: Procesadas mediante el módulo de carga masiva.
+
+---
+
+## 🚀 Módulos del Sistema
+
+### 1. Tablero Kanban de Facturación (`/admin`)
+
+Interfaz visual para gestionar el ciclo de vida de cobro de los proyectos.
+
+- **Flujo**:
+  1.  **Por Facturar** (`pending`): Proyectos activos pendientes de gestión. Muestra alerta roja si llevan >7 días sin movimiento.
+  2.  **Informe Emitido** (`report_issued`): Se ha generado el informe técnico para el cliente.
+  3.  **Facturado** (`invoiced`): La factura ha sido emitida.
+  4.  **Pagado** (`paid`): El cliente ha pagado la factura.
+- **Funcionalidades**:
+  - **Drag & Drop**: Arrastrar tarjetas para cambiar el estado.
+  - **Detalle Modal**: Resumen financiero en tiempo real (Total Rendido vs Gastos Pendientes), enlace al detalle del proyecto y acciones rápidas.
+
+### 2. Carga Masiva de Facturas
+
+Herramienta para procesar múltiples facturas PDF simultáneamente.
+
+- **Tecnología**: Usa `pdfjs-dist` para leer texto de PDFs en el navegador.
+- **Lógica**: Busca patrones "Código de Proyecto" (ej: `PRJ-\d+`) dentro del PDF para asociar automáticamente la factura al proyecto correspondiente.
+
+### 3. Conciliación Bancaria
+
+Módulo para cruzar movimientos bancarios (Cartola Santander) con gastos y facturas registradas.
+
+---
+
+## 🛠 Scripts y Mantenimiento
+
+### Migración de Datos (`scripts/migrate_projects.js`)
+
+Script de Node.js diseñado para actualizar proyectos legacy.
+
+- **Función**:
+  - Genera códigos secuenciales (`PRJ-XXX`) para proyectos antiguos que no tenían.
+  - Asigna recurrencia por defecto (`Único`).
+  - Inicializa `billingStatus` en `pending`.
+- **Ejecución**: Requiere credenciales de `firebase-admin` (Service Account).
+
+## 💻 Stack Tecnológico
+
+- **Frontend**: React + Vite + TailwindCSS.
+- **Backend/DB**: Firebase (Firestore, Hosting, Auth).
+- **Librerías Clave**: `@hello-pangea/dnd` (Kanban), `pdfjs-dist` (PDF Parsing), `lucide-react` / `react-icons` (Iconografía).
