@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import { collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp, getDocs } from 'firebase/firestore';
+import { Link } from 'react-router-dom';
 import { db } from '../lib/firebase';
 import Layout from '../components/Layout';
 import InvoiceBulkUploader from '../components/InvoiceBulkUploader';
 import { 
   FaFileContract, FaCheckCircle, FaMoneyBillWave, FaClock, 
-  FaSearch, FaCloudUploadAlt, FaTimes, FaExternalLinkAlt, FaFileInvoiceDollar
+  FaSearch, FaCloudUploadAlt, FaTimes, FaExternalLinkAlt, FaFileInvoiceDollar,
+  FaExclamationCircle, FaChartPie
 } from 'react-icons/fa';
 import { toast } from 'sonner';
 
@@ -18,9 +20,24 @@ const COLUMNS = [
   { id: 'paid', title: 'Pagado', color: 'bg-green-50', icon: FaMoneyBillWave }
 ];
 
+const formatCurrency = (amount) => {
+    return new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' }).format(amount);
+};
+
 // --- SUB-COMPONENTS ---
 
 const KanbanCard = ({ project, index, onClick }) => {
+    // Inactivity Check: 7 days
+    const isInactive = () => {
+        if (!project.lastBillingUpdate) return false;
+        // Handle Firestore Timestamp or Date object
+        const lastUpdate = project.lastBillingUpdate.toDate ? project.lastBillingUpdate.toDate() : new Date(project.lastBillingUpdate);
+        const diffDays = (new Date() - lastUpdate) / (1000 * 60 * 60 * 24);
+        return diffDays > 7;
+    };
+
+    const showInactivityAlert = isInactive();
+
     return (
         <Draggable draggableId={project.id} index={index}>
             {(provided, snapshot) => (
@@ -31,10 +48,18 @@ const KanbanCard = ({ project, index, onClick }) => {
                     onClick={() => onClick(project)}
                     className={`
                         bg-white p-3 rounded-lg shadow-sm border border-slate-200 mb-2 cursor-pointer 
-                        hover:shadow-md hover:border-indigo-300 transition-all group
+                        hover:shadow-md hover:border-indigo-300 transition-all group relative
                         ${snapshot.isDragging ? 'shadow-lg rotate-2 ring-2 ring-indigo-400 z-50' : ''}
                     `}
                 >
+                    {/* Inactivity Badge */ }
+                    {showInactivityAlert && (
+                        <div className="absolute -top-2 -right-2 bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full border border-red-200 shadow-sm flex items-center gap-1 z-10">
+                             <FaExclamationCircle className="w-3 h-3" />
+                             <span className="text-[9px] font-bold whitespace-nowrap">7+ d sin mov.</span>
+                        </div>
+                    )}
+
                     {/* Header: Code & Recurrence */}
                     <div className="flex justify-between items-start mb-1.5">
                         <div className="flex items-center gap-1.5">
@@ -60,6 +85,8 @@ const KanbanCard = ({ project, index, onClick }) => {
                     <p className="text-[10px] text-slate-500 truncate font-medium">
                         {project.client || 'Cliente Sin Nombre'}
                     </p>
+
+                    {/* Optional: Budget progress could go here */}
                 </div>
             )}
         </Draggable>
@@ -67,6 +94,41 @@ const KanbanCard = ({ project, index, onClick }) => {
 };
 
 const ProjectDetailModal = ({ project, isOpen, onClose }) => {
+    const [financials, setFinancials] = useState({ totalRendido: 0, pendingCount: 0, loading: true });
+
+    useEffect(() => {
+        if (!isOpen || !project) return;
+        
+        const fetchDeepDetails = async () => {
+            setFinancials(prev => ({ ...prev, loading: true }));
+            try {
+                // Fetch Expenses for this project
+                const q = query(collection(db, "expenses"), where("projectId", "==", project.id));
+                const snapshot = await getDocs(q);
+                
+                let total = 0;
+                let pending = 0;
+
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    if (data.status !== 'rejected') {
+                        total += Number(data.amount || 0);
+                    }
+                    if (data.status === 'pending') {
+                        pending++;
+                    }
+                });
+
+                setFinancials({ totalRendido: total, pendingCount: pending, loading: false });
+            } catch (err) {
+                console.error("Error loading financials:", err);
+                setFinancials({ totalRendido: 0, pendingCount: 0, loading: false });
+            }
+        };
+
+        fetchDeepDetails();
+    }, [isOpen, project]);
+
     if (!isOpen || !project) return null;
 
     const handleAction = async () => {
@@ -95,58 +157,92 @@ const ProjectDetailModal = ({ project, isOpen, onClose }) => {
                     </button>
                 </div>
                 
-                <div className="p-6 space-y-4">
-                    <div>
-                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Proyecto</label>
-                        <p className="font-bold text-slate-800 text-lg leading-tight mt-1">{project.name}</p>
+                <div className="p-6 space-y-6">
+                    {/* Financial Summary Section */}
+                    <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
+                        <h4 className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">
+                            <FaChartPie className="text-indigo-500" /> Resumen Financiero
+                        </h4>
+                        
+                        {financials.loading ? (
+                             <div className="animate-pulse flex space-x-4">
+                                <div className="h-4 bg-slate-200 rounded w-1/2"></div>
+                             </div>
+                        ) : (
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <p className="text-[10px] font-semibold text-slate-400">Total Rendido</p>
+                                    <p className="text-lg font-bold text-slate-800">{formatCurrency(financials.totalRendido)}</p>
+                                </div>
+                                <div>
+                                    <p className="text-[10px] font-semibold text-slate-400">Gastos Pendientes</p>
+                                    <p className={`text-lg font-bold ${financials.pendingCount > 0 ? 'text-amber-600' : 'text-slate-600'}`}>
+                                        {financials.pendingCount}
+                                    </p>
+                                </div>
+                            </div>
+                        )}
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    {/* Project Basic Info */}
+                    <div className="space-y-4">
                         <div>
-                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Código</label>
-                            <p className="font-mono text-sm font-semibold text-indigo-600 mt-1 bg-indigo-50 inline-block px-2 py-1 rounded">
-                                {project.code || 'N/A'}
-                            </p>
+                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Proyecto</label>
+                            <p className="font-bold text-slate-800 text-lg leading-tight mt-1">{project.name}</p>
                         </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Código</label>
+                                <p className="font-mono text-sm font-semibold text-indigo-600 mt-1 bg-indigo-50 inline-block px-2 py-1 rounded">
+                                    {project.code || 'N/A'}
+                                </p>
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Recurrencia</label>
+                                <p className="text-sm font-medium text-slate-700 mt-1">{project.recurrence || 'Único'}</p>
+                            </div>
+                        </div>
+
                         <div>
-                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Recurrencia</label>
-                            <p className="text-sm font-medium text-slate-700 mt-1">{project.recurrence || 'Único'}</p>
+                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Cliente</label>
+                            <p className="text-sm font-medium text-slate-700 mt-1">{project.client}</p>
                         </div>
-                    </div>
 
-                    <div>
-                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Cliente</label>
-                        <p className="text-sm font-medium text-slate-700 mt-1">{project.client}</p>
-                    </div>
-
-                    <div>
-                         <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Estado Actual</label>
-                         <div className="mt-1">
-                            <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                                project.billingStatus === 'paid' ? 'bg-green-100 text-green-700' :
-                                project.billingStatus === 'invoiced' ? 'bg-blue-100 text-blue-700' :
-                                project.billingStatus === 'report_issued' ? 'bg-indigo-100 text-indigo-700' :
-                                'bg-slate-100 text-slate-700'
-                            }`}>
-                                {COLUMNS.find(c => c.id === project.billingStatus)?.title || project.billingStatus}
-                            </span>
-                         </div>
+                        <div>
+                             <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Estado Actual</label>
+                             <div className="mt-1">
+                                <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                                    project.billingStatus === 'paid' ? 'bg-green-100 text-green-700' :
+                                    project.billingStatus === 'invoiced' ? 'bg-blue-100 text-blue-700' :
+                                    project.billingStatus === 'report_issued' ? 'bg-indigo-100 text-indigo-700' :
+                                    'bg-slate-100 text-slate-700'
+                                }`}>
+                                    {COLUMNS.find(c => c.id === project.billingStatus)?.title || project.billingStatus}
+                                </span>
+                             </div>
+                        </div>
                     </div>
                 </div>
 
-                <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
+                <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-between items-center gap-3">
+                     {/* Full Details Link */}
+                    <Link 
+                        to={`/admin/projects/${project.id}`} 
+                        className="text-indigo-600 hover:text-indigo-800 text-sm font-bold flex items-center gap-1 hover:underline"
+                    >
+                        Ver Detalle Completo <FaExternalLinkAlt className="w-3 h-3" />
+                    </Link>
+
                     {/* Action Button: Only visible if 'pending' */}
                     {project.billingStatus === 'pending' && (
                         <button 
                             onClick={handleAction}
                             className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-bold text-sm shadow-md transition flex items-center gap-2"
                         >
-                            <FaFileContract /> Emitir Informe
+                            <FaFileContract /> Informe Emitido
                         </button>
                     )}
-                 
-                    {/* Link to Project (Optional) */}
-                    {/* <Link to={`/admin/projects/${project.id}`} ... /> */}
                 </div>
             </div>
         </div>
