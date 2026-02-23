@@ -4,8 +4,9 @@ import Layout from '../components/Layout';
 import { db } from '../lib/firebase';
 import { doc, getDoc, collection, query, where, getDocs, updateDoc, increment, deleteDoc } from 'firebase/firestore';
 import { formatCurrency } from '../utils/format';
-import { ArrowLeft, CheckCircle, XCircle, FileText, Calendar, User, Trash2, Pencil, Ban } from 'lucide-react';
+import { ArrowLeft, CheckCircle, XCircle, FileText, Calendar, User, Trash2, Pencil, Ban, MessageSquare } from 'lucide-react';
 import RejectionModal from '../components/RejectionModal';
+import ProjectBitacora from '../components/ProjectBitacora';
 import { toast } from 'sonner';
 
 export default function AdminProjectDetails() {
@@ -15,6 +16,7 @@ export default function AdminProjectDetails() {
   const [allocations, setAllocations] = useState([]);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [bitacoraOpen, setBitacoraOpen] = useState(false);
 
   // Rejection Modal
   const [rejectionModalOpen, setRejectionModalOpen] = useState(false);
@@ -295,10 +297,18 @@ export default function AdminProjectDetails() {
 
   return (
     <Layout title={`Acciones: ${project.code ? `[${project.code}] ` : ''}${project.recurrence ? `(${project.recurrence}) ` : ''}${project.name}`}>
-        <div className="mb-6">
-            <Link to="/admin/projects" className="text-blue-600 hover:text-blue-800 flex items-center">
-                <ArrowLeft className="w-4 h-4 mr-2" /> Volver a Proyectos
+        <div className="mb-6 flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-100">
+            <Link to="/admin/projects" className="text-blue-600 hover:text-blue-800 flex items-center font-medium bg-blue-50 px-4 py-2 rounded-lg transition-colors">
+                <ArrowLeft className="w-4 h-4 mr-2" /> Volver
             </Link>
+            
+            <button 
+                onClick={() => setBitacoraOpen(true)}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-lg flex items-center gap-2 font-semibold shadow-sm transition-colors hover:shadow-md"
+            >
+                <MessageSquare className="w-5 h-5" />
+                Abrir Bitácora
+            </button>
         </div>
 
         {/* Summary Cards */}
@@ -498,6 +508,13 @@ export default function AdminProjectDetails() {
           onClose={() => setRejectionModalOpen(false)}
           onConfirm={handleConfirmRejection}
           expense={selectedExpenseToReject}
+        />
+
+        {/* Project Bitacora */}
+        <ProjectBitacora 
+            projectId={project.id}
+            isOpen={bitacoraOpen}
+            onClose={() => setBitacoraOpen(false)}
         />
 
         {/* Edit Allocation Modal */}

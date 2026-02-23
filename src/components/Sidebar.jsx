@@ -2,7 +2,8 @@ import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/useAuth';
 import { 
   PieChart, LayoutDashboard, FolderOpen, CheckCircle, 
-  FileText, UserCircle, Receipt, LogOut, Wallet 
+  FileText, UserCircle, Receipt, LogOut, Wallet, ClipboardList, BarChart3, 
+  Activity, Grid, FilePlus
 } from 'lucide-react';
 
 export default function Sidebar({ isOpen, setIsOpen }) {
@@ -45,28 +46,63 @@ export default function Sidebar({ isOpen, setIsOpen }) {
       <nav className="space-y-1">
         {userRole === 'admin' && (
             <>
+                <div className="px-4 mb-6">
+                    <Link 
+                        to="/admin/select-module" 
+                        className="flex items-center justify-center w-full py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl border border-slate-700 transition-all text-xs font-bold group"
+                        onClick={() => setIsOpen(false)}
+                    >
+                        <Grid className="w-4 h-4 mr-2 group-hover:rotate-90 transition-transform duration-300" />
+                        Cambiar de Módulo
+                    </Link>
+                </div>
+
                 <div className="px-4 mb-2">
                     <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Módulos</p>
-                    <div className="flex gap-2">
-                        <Link 
-                            to="/admin" 
-                            className={`flex-1 py-2 text-center text-xs font-bold rounded-lg transition border ${
-                                !location.pathname.startsWith('/admin/expenses') && !location.pathname.startsWith('/admin/approvals') && !location.pathname.startsWith('/admin/projects') && !location.pathname.startsWith('/admin/balances') && !location.pathname.startsWith('/dashboard')
-                                ? 'bg-indigo-600 text-white border-indigo-600' 
-                                : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
-                            }`}
-                        >
-                            Facturación
-                        </Link>
+                    <div className="grid grid-cols-2 gap-1.5">
                         <Link 
                             to="/admin/expenses" 
-                            className={`flex-1 py-2 text-center text-xs font-bold rounded-lg transition border ${
+                            className={`py-1.5 px-1 flex flex-col items-center justify-center text-center rounded-lg transition border ${
                                 location.pathname.startsWith('/admin/expenses') || location.pathname.startsWith('/admin/approvals') || location.pathname.startsWith('/admin/projects') || location.pathname.startsWith('/admin/balances')
-                                ? 'bg-indigo-600 text-white border-indigo-600' 
-                                : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
+                                ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' 
+                                : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white hover:bg-slate-700'
                             }`}
                         >
-                            Gastos
+                            <Receipt className="w-4 h-4 mb-0.5"/>
+                            <span className="text-[9px] font-bold leading-none">Rendición</span>
+                        </Link>
+                        <Link 
+                            to="/admin/reports" 
+                            className={`py-1.5 px-1 flex flex-col items-center justify-center text-center rounded-lg transition border ${
+                                location.pathname.startsWith('/admin/reports')
+                                ? 'bg-teal-600 text-white border-teal-600 shadow-sm' 
+                                : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white hover:bg-slate-700'
+                            }`}
+                        >
+                            <ClipboardList className="w-4 h-4 mb-0.5"/>
+                            <span className="text-[9px] font-bold leading-none">Informes</span>
+                        </Link>
+                        <Link 
+                            to="/admin" 
+                            className={`py-1.5 px-1 flex flex-col items-center justify-center text-center rounded-lg transition border ${
+                                !location.pathname.startsWith('/admin/expenses') && !location.pathname.startsWith('/admin/approvals') && !location.pathname.startsWith('/admin/projects') && !location.pathname.startsWith('/admin/balances') && !location.pathname.startsWith('/admin/reports') && !location.pathname.startsWith('/dashboard') && !location.pathname.startsWith('/admin/analytics')
+                                ? 'bg-indigo-500 text-white border-indigo-500 shadow-sm' 
+                                : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white hover:bg-slate-700'
+                            }`}
+                        >
+                            <FileText className="w-4 h-4 mb-0.5"/>
+                            <span className="text-[9px] font-bold leading-none">Facturas</span>
+                        </Link>
+                        <Link 
+                            to="/admin/analytics" 
+                            className={`py-1.5 px-1 flex flex-col items-center justify-center text-center rounded-lg transition border ${
+                                location.pathname.startsWith('/admin/analytics')
+                                ? 'bg-violet-600 text-white border-violet-600 shadow-sm' 
+                                : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white hover:bg-slate-700'
+                            }`}
+                        >
+                            <BarChart3 className="w-4 h-4 mb-0.5"/>
+                            <span className="text-[9px] font-bold leading-none">Analítica</span>
                         </Link>
                     </div>
                 </div>
@@ -76,7 +112,7 @@ export default function Sidebar({ isOpen, setIsOpen }) {
                     // --- EXPENSES MODULE MENU ---
                     <>
                         <div className="px-4 mt-6 mb-2">
-                             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Gestión Gastos</p>
+                             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Gestión Rendiciones</p>
                         </div>
                         
                         <Link to="/admin/expenses" className={linkClass('/admin/expenses')} onClick={() => setIsOpen(false)}>
@@ -93,10 +129,32 @@ export default function Sidebar({ isOpen, setIsOpen }) {
                         </Link>
                         <Link to="/admin/balances" className={linkClass('/admin/balances')} onClick={() => setIsOpen(false)}>
                             <Wallet className="w-4 h-4 mr-3" />
-                            Finanzas
+                            Saldos (Viáticos)
                         </Link>
                     </>
-                ) : (
+                ) : location.pathname.startsWith('/admin/reports') ? (
+                    // --- REPORTS MODULE MENU ---
+                    <>
+                         <div className="px-4 mt-6 mb-2">
+                             <p className="text-[10px] font-bold text-teal-400 uppercase tracking-widest">Informes Terreno</p>
+                        </div>
+                        <Link to="/admin/reports" className={linkClass('/admin/reports')} onClick={() => setIsOpen(false)}>
+                            <ClipboardList className="w-4 h-4 mr-3" />
+                            Bandeja Informes
+                        </Link>
+                    </>
+                ) : location.pathname.startsWith('/admin/analytics') ? (
+                    // --- ANALYTICS MODULE MENU ---
+                    <>
+                        <div className="px-4 mt-6 mb-2">
+                             <p className="text-[10px] font-bold text-violet-400 uppercase tracking-widest">Inteligencia</p>
+                        </div>
+                        <Link to="/admin/analytics" className={linkClass('/admin/analytics')} onClick={() => setIsOpen(false)}>
+                            <Activity className="w-4 h-4 mr-3" />
+                            Dashboard BI
+                        </Link>
+                    </>
+                ) : (location.pathname === '/admin' || location.pathname.startsWith('/admin/invoicing')) ? (
                     // --- BILLING MODULE MENU (Default /admin) ---
                     <>
                          <div className="px-4 mt-6 mb-2">
@@ -106,27 +164,25 @@ export default function Sidebar({ isOpen, setIsOpen }) {
                             <LayoutDashboard className="w-4 h-4 mr-3" />
                             Tablero Kanban
                         </Link>
+                        <Link to="/admin/invoicing/generate" className={linkClass('/admin/invoicing/generate')} onClick={() => setIsOpen(false)}>
+                            <FilePlus className="w-4 h-4 mr-3" />
+                            Pre-Factura
+                        </Link>
                         <Link to="/admin/invoicing/reconciliation" className={linkClass('/admin/invoicing/reconciliation')} onClick={() => setIsOpen(false)}>
                             <Wallet className="w-4 h-4 mr-3" />
-                            Conciliación (Ciclo)
+                            Conciliación
                         </Link>
                         <Link to="/admin/invoicing/history" className={linkClass('/admin/invoicing/history')} onClick={() => setIsOpen(false)}>
                             <FolderOpen className="w-4 h-4 mr-3" />
                             Historial
                         </Link>
-                        {/* 
-                        <Link to="/admin/invoicing/generate" className={linkClass('/admin/invoicing/generate')} onClick={() => setIsOpen(false)}>
-                            <FileText className="w-4 h-4 mr-3" />
-                            Manual (Legacy)
-                        </Link> 
-                        */}
                     </>
-                )}
+                ) : null}
             </>
         )}
 
-        {/* Only show "Mi Espacio" if NOT in Invoicing Module (to avoid confusion) */}
-        {!location.pathname.startsWith('/admin/invoicing') && (
+        {/* User Space available everywhere except Invoicing */}
+        {!location.pathname.startsWith('/admin/invoicing') && !location.pathname.startsWith('/admin/reports') && (
             <>
                 <p className={groupTitleClass}>Mi Espacio</p>
                 <Link to="/dashboard" className={linkClass('/dashboard')} onClick={() => setIsOpen(false)}>
@@ -136,6 +192,10 @@ export default function Sidebar({ isOpen, setIsOpen }) {
                 <Link to="/dashboard/expenses" className={linkClass('/dashboard/expenses')} onClick={() => setIsOpen(false)}>
                     <Receipt className="w-4 h-4 mr-3" />
                     Mis Rendiciones
+                </Link>
+                <Link to="/dashboard/reports" className={linkClass('/dashboard/reports')} onClick={() => setIsOpen(false)}>
+                    <ClipboardList className="w-4 h-4 mr-3" />
+                    Mis Mediciones
                 </Link>
             </>
         )}

@@ -4,8 +4,9 @@ import { useAuth } from '../context/useAuth';
 import { db } from '../lib/firebase';
 import { doc, getDoc, collection, getDocs, query, where } from 'firebase/firestore';
 import { formatCurrency } from '../utils/format';
-import { PlusCircle, Wallet, FileText, ChevronDown, ChevronUp, AlertCircle } from 'lucide-react';
+import { PlusCircle, Wallet, FileText, ChevronDown, ChevronUp, MessageSquare } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import ProjectBitacora from '../components/ProjectBitacora';
 
 export default function UserDashboard() {
   const { currentUser } = useAuth();
@@ -15,10 +16,20 @@ export default function UserDashboard() {
   const [projectsList, setProjectsList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandedProject, setExpandedProject] = useState(null);
+  
+  // Bitacora Modal State
+  const [bitacoraOpen, setBitacoraOpen] = useState(false);
+  const [selectedProjectId, setSelectedProjectId] = useState(null);
 
   const toggleProject = (pid) => {
       if (expandedProject === pid) setExpandedProject(null);
       else setExpandedProject(pid);
+  };
+
+  const openBitacora = (e, projectId) => {
+      e.stopPropagation(); // Evitar que el acordeón se expanda
+      setSelectedProjectId(projectId);
+      setBitacoraOpen(true);
   };
 
   useEffect(() => {
@@ -181,8 +192,15 @@ export default function UserDashboard() {
                                                 <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full">-</span>
                                            )}
                                        </td>
-                                       <td className="px-6 py-4 text-right text-gray-400">
-                                            {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                                       <td className="px-6 py-4 text-right flex items-center justify-end gap-3 text-gray-400">
+                                            <button 
+                                                onClick={(e) => openBitacora(e, row.id)}
+                                                className="text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50 p-2 rounded-full transition-colors flex items-center gap-1"
+                                                title="Ver comentarios del proyecto"
+                                            >
+                                                <MessageSquare className="w-5 h-5 pointer-events-none" />
+                                            </button>
+                                            {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
                                        </td>
                                    </tr>
                                    {isExpanded && (
@@ -262,6 +280,18 @@ export default function UserDashboard() {
                </table>
             </div>
         </div>
+
+        {/* Modal de Bitácora */}
+        {selectedProjectId && (
+            <ProjectBitacora 
+                projectId={selectedProjectId}
+                isOpen={bitacoraOpen}
+                onClose={() => {
+                    setBitacoraOpen(false);
+                    setSelectedProjectId(null);
+                }}
+            />
+        )}
     </Layout>
   );
 }

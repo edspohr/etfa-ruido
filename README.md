@@ -1,62 +1,69 @@
-# Sistema de Gestión Financiera - ETFA Ruido
+# Sistema de Gestión Financiera y Operativa - ETFA Ruido
 
-Este repositorio contiene la aplicación de administración para la gestión de proyectos, facturación y rendición de gastos.
+Este repositorio contiene la aplicación core para la administración, gestión de proyectos, facturación, y operaciones técnicas de terreno de ETFA Ruido.
 
-## 🏗 Arquitectura de Base de Datos (Firestore)
+## 🚀 Arquitectura y Módulos del Sistema
 
-La aplicación utiliza Firebase Firestore como base de datos NoSQL. Las colecciones principales son:
+La plataforma está diseñada con una interfaz **Premium (Glassmorphism, gradientes avanzados)** centrada en la productividad y la claridad visual. Se divide en los siguientes módulos principales:
 
-### 1. `projects` (Proyectos)
+### 1. Rendición de Gastos (`/admin/expenses` | `/dashboard`)
 
-Almacena la información de los casos o proyectos activos.
+Gestión completa de fondos, viáticos y rendiciones de cuentas.
 
-- **Campos Clave**:
-  - `name`: Nombre del proyecto.
-  - `client`: Cliente asociado.
-  - `code`: Código único del proyecto (ej: `PRJ-001`). _Generado vía migración._
-  - `recurrence`: Frecuencia de facturación (ej: `Único`, `Mensual`).
-  - `billingStatus`: Estado en el flujo Kanban (`pending`, `report_issued`, `invoiced`, `paid`).
-  - `lastBillingUpdate`: Timestamp del último cambio de estado.
+- **Administradores**: Asignan saldo a los Profesionales (o a "Caja Chica"), aprueban/rechazan comprobantes, y auditan balances.
+- **Profesionales**: Rinden sus gastos subiendo boletas fotográficas (con lectura OCR mediante IA) e indicando a qué proyecto corresponde.
 
-### 2. `expenses` (Gastos)
+### 2. Informes Terreno (`/admin/reports` | `/dashboard`)
 
-Rendiciones de gastos asociadas a proyectos o costos internos.
+Registro y revisión de las mediciones de ruido acústico en faenas.
 
-- **Relación**: Vinculado a `projects` mediante `projectId`.
+- **Profesionales**: Reportan sus hallazgos en terreno (fecha, equipos utilizados, Leq evaluado).
+- **Administradores**: Revisan los informes entrantes. Al "Aprobar", el proyecto asociado avanza automáticamente en el embudo de Facturación.
 
-### 3. `invoices` (Facturas)
+### 3. Facturación (Tablero Kanban) (`/admin/invoicing`)
 
-Facturas emitidas o recibidas.
+Interfaz visual Kanban para gestionar el ciclo de vida de cobro:
 
-- **Uso**: Procesadas mediante el módulo de carga masiva.
+1. **Por Facturar** (`pending`): En espera de mediciones o hitos técnicos.
+2. **Informe Emitido** (`report_issued`): Listo para pre-facturar. Se llegó a este punto mediante aprobación de la medición en terreno.
+3. **Facturado** (`invoiced`): Pre-factura emitida y procesada.
+4. **Pagado** (`paid`): Conciliada con ingresos bancarios.
+
+### 4. Bitácora de Proyectos (Auditoría)
+
+Registro cronológico e inmutable anidado a cada proyecto.
+
+- **Administradores**: Visibilidad total (`Ver Bitácora`) sobre cambios de estado en Kanban, asignaciones de saldo, rendiciones enviadas, y comentarios.
+- **Profesionales**: Tienen visibilidad selectiva para dejar y leer comentarios/consultas sobre sus proyectos asignados directly en su Dashboard.
+
+### 5. Analítica _(Próximamente)_
+
+Módulo reservado para paneles financieros y métricas de rendimiento por proyecto.
 
 ---
 
-## 🚀 Módulos del Sistema
+## 🏗 Arquitectura de Base de Datos (Firestore)
 
-### 1. Tablero Kanban de Facturación (`/admin`)
+Utilizamos Firebase Firestore (NoSQL). Estructura clave:
 
-Interfaz visual para gestionar el ciclo de vida de cobro de los proyectos.
+- **`projects/{projectId}`**: Modelos de proyectos (cliente, recurrencia, etc.).
+  - **Subcolección `logs`**: Historial de la Bitácora (`type`, `content`, `userName`, `timestamp`).
+- **`expenses/{expenseId}`**: Rendiciones de dinero con respaldo AI.
+- **`users/{userId}`**: Perfiles de Profesionales/Administradores y su saldo ('cuenta corriente').
+- **`allocations/{allocationId}`**: Historial de inyecciones de saldo a profesionales (asignaciones).
+- **`invoices/{invoiceId}`**: Facturas procesadas y pendientes de conciliación.
 
-- **Flujo**:
-  1.  **Por Facturar** (`pending`): Proyectos activos pendientes de gestión. Muestra alerta roja si llevan >7 días sin movimiento.
-  2.  **Informe Emitido** (`report_issued`): Se ha generado el informe técnico para el cliente.
-  3.  **Facturado** (`invoiced`): La factura ha sido emitida.
-  4.  **Pagado** (`paid`): El cliente ha pagado la factura.
-- **Funcionalidades**:
-  - **Drag & Drop**: Arrastrar tarjetas para cambiar el estado.
-  - **Detalle Modal**: Resumen financiero en tiempo real (Total Rendido vs Gastos Pendientes), enlace al detalle del proyecto y acciones rápidas.
+---
 
-### 2. Carga Masiva de Facturas
+## 💻 Stack Tecnológico
 
-Herramienta para procesar múltiples facturas PDF simultáneamente.
-
-- **Tecnología**: Usa `pdfjs-dist` para leer texto de PDFs en el navegador.
-- **Lógica**: Busca patrones "Código de Proyecto" (ej: `PRJ-\d+`) dentro del PDF para asociar automáticamente la factura al proyecto correspondiente.
-
-### 3. Conciliación Bancaria
-
-Módulo para cruzar movimientos bancarios (Cartola Santander) con gastos y facturas registradas.
+- **Frontend**: React.js + Vite
+- **Estilos**: TailwindCSS (con utilidades avanzadas de Backdrop Blur y Gradientes).
+- **Backend Enrutado / DB**: Firebase (Firestore, Auth, Hosting).
+- **Librerías Destacadas**:
+  - `@hello-pangea/dnd`: Drag & Drop fluído para el Kanban.
+  - `pdfjs-dist`: Lectura local de facturas PDF en el navegador.
+  - `lucide-react`: Iconografía estilizada de la interfaz.
 
 ---
 
@@ -64,16 +71,8 @@ Módulo para cruzar movimientos bancarios (Cartola Santander) con gastos y factu
 
 ### Migración de Datos (`scripts/migrate_projects.js`)
 
-Script de Node.js diseñado para actualizar proyectos legacy.
+Script en Node.js para actualizar la base de datos de manera programática:
 
-- **Función**:
-  - Genera códigos secuenciales (`PRJ-XXX`) para proyectos antiguos que no tenían.
-  - Asigna recurrencia por defecto (`Único`).
-  - Inicializa `billingStatus` en `pending`.
-- **Ejecución**: Requiere credenciales de `firebase-admin` (Service Account).
-
-## 💻 Stack Tecnológico
-
-- **Frontend**: React + Vite + TailwindCSS.
-- **Backend/DB**: Firebase (Firestore, Hosting, Auth).
-- **Librerías Clave**: `@hello-pangea/dnd` (Kanban), `pdfjs-dist` (PDF Parsing), `lucide-react` / `react-icons` (Iconografía).
+- Genera códigos secuenciales (`PRJ-XXX`) para proyectos antiguos.
+- Útil al agregar nuevas propiedades (`status`, `billingStatus`) a toda una colección.
+- _Requiere cuenta de servicio (Service Account) con credenciales de Firebase Admin._

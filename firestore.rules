@@ -17,6 +17,11 @@ service cloud.firestore {
     match /projects/{projectId} {
       allow read: if request.auth != null;
       allow write: if request.auth != null; // Relaxed for Demo/Fix
+      
+      // PROJECT LOGS (Bitácora)
+      match /logs/{logId} {
+        allow read, write: if request.auth != null;
+      }
     }
     
     // EXPENSES: Allow All Auth (Verification)
@@ -31,6 +36,11 @@ service cloud.firestore {
 
     // INVOICES: Allow All Auth (Fixing the reported error)
     match /invoices/{invoiceId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // REPORTS: Allow All Auth
+    match /reports/{reportId} {
       allow read, write: if request.auth != null;
     }
   }

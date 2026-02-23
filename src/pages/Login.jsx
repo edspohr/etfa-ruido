@@ -4,18 +4,22 @@ import { useNavigate } from 'react-router-dom';
 import { LogIn } from 'lucide-react';
 
 export default function Login() {
-  const { login, resetPassword, currentUser } = useAuth();
+  const { login, resetPassword, currentUser, userRole } = useAuth();
   const navigate = useNavigate();
   const [error, setError] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-  // Fix: Navigate only when currentUser is set to avoid race conditions
+  // Fix: Navigate only when currentUser and userRole are loaded
   useEffect(() => {
-    if (currentUser) {
-       navigate('/dashboard');
+    if (currentUser && userRole) {
+       if (userRole === 'admin') {
+         navigate('/admin/select-module');
+       } else {
+         navigate('/dashboard');
+       }
     }
-  }, [currentUser, navigate]);
+  }, [currentUser, userRole, navigate]);
 
   /* 
    * Google Login removed by request. 

@@ -3,7 +3,7 @@ import Layout from '../components/Layout';
 import { useAuth } from '../context/useAuth';
 import { parseReceiptImage } from '../lib/gemini';
 import { db, uploadReceiptImage } from '../lib/firebase';
-import { collection, getDocs, query, where, doc, increment, writeBatch } from 'firebase/firestore';
+import { collection, getDocs, query, where, doc, increment, writeBatch, serverTimestamp } from 'firebase/firestore';
 import { Upload, Loader2, Camera, X, FileText, Plus } from 'lucide-react';
 import { formatCurrency } from '../utils/format'; // Validation aid/display
 import { useNavigate } from 'react-router-dom';
@@ -329,6 +329,16 @@ export default function ExpenseForm() {
                     balance: increment(item.amount)
                 }, { merge: true });
             }
+
+            // 4. Register in Bitacora (Logs)
+            const logRef = doc(collection(db, "projects", item.projectId, "logs"));
+            batch.set(logRef, {
+                type: 'expense_added',
+                content: `Gasto rendido por ${formatCurrency(item.amount)} en concepto de ${formData.category}`,
+                userName: targetName,
+                userRole: userRole,
+                timestamp: serverTimestamp()
+            });
         }
 
         await batch.commit();

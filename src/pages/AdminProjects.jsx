@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { db } from '../lib/firebase';
-import { collection, getDocs, addDoc, query, where, doc, updateDoc, increment } from 'firebase/firestore';
+import { collection, getDocs, addDoc, query, where, doc, updateDoc, increment, serverTimestamp } from 'firebase/firestore';
 import { formatCurrency } from '../utils/format';
 import { Plus, DollarSign, Trash2 } from 'lucide-react';
 
@@ -59,7 +59,7 @@ export default function AdminProjects() {
     if (!newProject.name) return;
 
     try {
-        await addDoc(collection(db, "projects"), {
+        const projectRef = await addDoc(collection(db, "projects"), {
             name: newProject.name,
             code: newProject.code || '',
             recurrence: newProject.recurrence || '',
@@ -68,6 +68,16 @@ export default function AdminProjects() {
             status: 'active',
             createdAt: new Date().toISOString()
         });
+
+        // Register in Bitacora
+        await addDoc(collection(db, "projects", projectRef.id, "logs"), {
+            type: 'status_change',
+            content: `Proyecto creado: ${newProject.name}`,
+            userName: 'Admin',
+            userRole: 'admin',
+            timestamp: serverTimestamp()
+        });
+
         toast.success("Proyecto creado exitosamente");
         setNewProject({ name: '', client: '', code: '', recurrence: '' });
         setShowProjectForm(false);
@@ -91,6 +101,16 @@ export default function AdminProjects() {
           await updateDoc(doc(db, "projects", projectId), {
               status: 'deleted'
           });
+
+          // Register in Bitacora
+          await addDoc(collection(db, "projects", projectId, "logs"), {
+              type: 'status_change',
+              content: `Proyecto marcado como ELIMINADO`,
+              userName: 'Admin',
+              userRole: 'admin',
+              timestamp: serverTimestamp()
+          });
+
           alert("Proyecto eliminado.");
           fetchData();
       } catch (e) {
@@ -134,6 +154,15 @@ export default function AdminProjects() {
               amount: amount,
               date: new Date().toISOString(),
               createdAt: new Date().toISOString()
+          });
+
+          // 3. Register in Project Bitacora
+          await addDoc(collection(db, "projects", viaticoProject, "logs"), {
+              type: 'status_change',
+              content: `Asignación de viático por ${formatCurrency(amount)} a ${targetUserName}`,
+              userName: 'Admin', // o currentUser?.displayName si se pasara currentUser a este componente
+              userRole: 'admin',
+              timestamp: serverTimestamp()
           });
 
           toast.success("Viático asignado exitosamente");

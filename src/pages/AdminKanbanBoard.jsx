@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import { collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp, getDocs } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp, getDocs, addDoc } from 'firebase/firestore';
 import { Link } from 'react-router-dom';
 import { db } from '../lib/firebase';
 import Layout from '../components/Layout';
@@ -8,7 +8,7 @@ import InvoiceBulkUploader from '../components/InvoiceBulkUploader';
 import { 
   FaFileContract, FaCheckCircle, FaMoneyBillWave, FaClock, 
   FaSearch, FaCloudUploadAlt, FaTimes, FaExternalLinkAlt, FaFileInvoiceDollar,
-  FaExclamationCircle, FaChartPie
+  FaExclamationCircle, FaChartPie, FaPlus as Plus
 } from 'react-icons/fa';
 import { toast } from 'sonner';
 
@@ -95,6 +95,15 @@ const KanbanCard = ({ project, index, onClick }) => {
 
 const ProjectDetailModal = ({ project, isOpen, onClose }) => {
     const [financials, setFinancials] = useState({ totalRendido: 0, pendingCount: 0, loading: true });
+    const [showPreInvoiceForm, setShowPreInvoiceForm] = useState(false);
+    const [preInvoiceData, setPreInvoiceData] = useState({ netAmount: '', draftNumber: '' });
+    
+    // IVA Logic
+    const IVA_RATE = 0.19;
+    const netValue = Number(preInvoiceData.netAmount) || 0;
+    const ivaValue = Math.round(netValue * IVA_RATE);
+    const totalValue = netValue + ivaValue;
+
 
     useEffect(() => {
         if (!isOpen || !project) return;
@@ -139,11 +148,59 @@ const ProjectDetailModal = ({ project, isOpen, onClose }) => {
                 billingStatus: 'report_issued',
                 lastBillingUpdate: serverTimestamp()
             });
-            toast.success("Informe emitido registrado");
+            toast.success("Informe emitido registrado (Manual)");
             onClose();
         } catch (e) {
             console.error(e);
             toast.error("Error al actualizar");
+        }
+    };
+
+    const handlePreInvoice = async (e) => {
+        e.preventDefault();
+        if (!preInvoiceData.netAmount) {
+            toast.error("Debe ingresar el monto neto");
+            return;
+        }
+
+        try {
+            // 1. Create Invoice Document
+            await addDoc(collection(db, "invoices"), {
+                projectId: project.id,
+                projectName: project.name,
+                clientName: project.client || 'Sin Cliente',
+                netAmount: netValue,
+                ivaAmount: ivaValue,
+                totalAmount: totalValue,
+                draftNumber: preInvoiceData.draftNumber,
+                paymentStatus: 'pending', // Pending payment
+                status: 'pending',        // Pending official emission
+                createdAt: serverTimestamp()
+            });
+
+            // 2. Move Project to Invoiced
+            const ref = doc(db, "projects", project.id);
+            await updateDoc(ref, {
+                billingStatus: 'invoiced',
+                lastBillingUpdate: serverTimestamp()
+            });
+
+            // 3. Register in Bitácora
+            await addDoc(collection(db, "projects", project.id, "logs"), {
+                type: 'status_change',
+                content: `Pre-factura generada: ${preInvoiceData.draftNumber || 'S/N'} por ${formatCurrency(totalValue)}`,
+                userName: 'Admin',
+                userRole: 'admin',
+                timestamp: serverTimestamp()
+            });
+
+            toast.success("Pre-factura generada y proyecto movido a Facturado");
+            setShowPreInvoiceForm(false);
+            setPreInvoiceData({ netAmount: '', draftNumber: '' });
+            onClose();
+        } catch (e) {
+            console.error("Error generating pre-invoice", e);
+            toast.error("Error al generar pre-factura");
         }
     };
 
@@ -225,26 +282,96 @@ const ProjectDetailModal = ({ project, isOpen, onClose }) => {
                     </div>
                 </div>
 
-                <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-between items-center gap-3">
-                     {/* Full Details Link */}
-                    <Link 
-                        to={`/admin/projects/${project.id}`} 
-                        className="text-indigo-600 hover:text-indigo-800 text-sm font-bold flex items-center gap-1 hover:underline"
-                    >
-                        Ver Detalle Completo <FaExternalLinkAlt className="w-3 h-3" />
-                    </Link>
-
-                    {/* Action Button: Only visible if 'pending' */}
-                    {project.billingStatus === 'pending' && (
-                        <button 
-                            onClick={handleAction}
-                            className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-bold text-sm shadow-md transition flex items-center gap-2"
-                        >
-                            <FaFileContract /> Informe Emitido
-                        </button>
+                    {/* Additional Details Form for Pre-Invoice */}
+                    {showPreInvoiceForm && (
+                        <div className="bg-indigo-50 p-4 border-t border-indigo-100 mt-4 -mx-6 -mb-6">
+                            <h4 className="font-bold text-indigo-800 mb-3 text-sm flex items-center gap-2">
+                                <FaFileInvoiceDollar /> Generar Pre-Factura
+                            </h4>
+                            <form onSubmit={handlePreInvoice} className="space-y-3">
+                                <div>
+                                    <label className="block text-xs font-bold text-indigo-400 uppercase tracking-wider mb-1">Monto Neto ($)</label>
+                                    <input 
+                                        type="number" 
+                                        className="w-full p-2 rounded-lg border border-indigo-200 focus:ring-2 outline-none text-sm"
+                                        value={preInvoiceData.netAmount}
+                                        onChange={e => setPreInvoiceData({...preInvoiceData, netAmount: e.target.value})}
+                                        required
+                                    />
+                                </div>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="bg-white p-2 rounded-lg border border-indigo-100 flex flex-col justify-center">
+                                        <p className="text-[10px] text-slate-500 font-bold uppercase">IVA (19%)</p>
+                                        <p className="font-mono text-sm font-bold text-indigo-600">{formatCurrency(ivaValue)}</p>
+                                    </div>
+                                    <div className="bg-indigo-600 p-2 rounded-lg border border-indigo-700 flex flex-col justify-center shadow-inner">
+                                        <p className="text-[10px] text-indigo-200 font-bold uppercase">Total a Cobrar</p>
+                                        <p className="font-mono text-sm font-bold text-white">{formatCurrency(totalValue)}</p>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-indigo-400 uppercase tracking-wider mb-1">N° Borrador / Ref (Opcional)</label>
+                                    <input 
+                                        type="text" 
+                                        className="w-full p-2 rounded-lg border border-indigo-200 focus:ring-2 outline-none text-sm"
+                                        value={preInvoiceData.draftNumber}
+                                        onChange={e => setPreInvoiceData({...preInvoiceData, draftNumber: e.target.value})}
+                                    />
+                                </div>
+                                <div className="flex gap-2 pt-2">
+                                    <button 
+                                        type="button" 
+                                        onClick={() => setShowPreInvoiceForm(false)} 
+                                        className="flex-1 py-2 text-sm font-bold text-slate-500 hover:text-slate-700 transition"
+                                    >
+                                        Cancelar
+                                    </button>
+                                    <button 
+                                        type="submit" 
+                                        className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-lg text-sm font-bold shadow-md transition"
+                                    >
+                                        Guardar Pre-Factura
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
                     )}
-                </div>
+                
+                {!showPreInvoiceForm && (
+                    <div className="p-4 bg-slate-50 border-t border-slate-100 flex flex-wrap justify-between items-center gap-3">
+                         {/* Full Details Link */}
+                        <Link 
+                            to={`/admin/projects/${project.id}`} 
+                            className="text-indigo-600 hover:text-indigo-800 text-sm font-bold flex items-center gap-1 hover:underline whitespace-nowrap"
+                        >
+                            Ver Detalle <FaExternalLinkAlt className="w-3 h-3" />
+                        </Link>
+
+                        <div className="flex gap-2">
+                            {/* Action Button: Manual move to Report Issued (Fallback) */}
+                            {project.billingStatus === 'pending' && (
+                                <button 
+                                    onClick={handleAction}
+                                    className="bg-slate-200 hover:bg-slate-300 text-slate-700 px-3 py-1.5 rounded-lg font-bold text-xs shadow-sm transition flex items-center gap-1"
+                                >
+                                    <FaFileContract /> (Manual) Inf. Emitido
+                                </button>
+                            )}
+
+                            {/* Action Button: Generate Pre-Invoice */}
+                            {project.billingStatus === 'report_issued' && (
+                                <button 
+                                    onClick={() => setShowPreInvoiceForm(true)}
+                                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-bold text-sm shadow-md transition flex items-center gap-2"
+                                >
+                                    <FaFileInvoiceDollar /> Emitir Pre-Factura
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                )}
             </div>
+
         </div>
     );
 };
@@ -255,7 +382,6 @@ const ProjectDetailModal = ({ project, isOpen, onClose }) => {
 export default function AdminKanbanBoard() {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showUploader, setShowUploader] = useState(false);
   const [filter, setFilter] = useState('');
   
   // Modal State
@@ -330,6 +456,16 @@ export default function AdminKanbanBoard() {
               billingStatus: newStatus,
               lastBillingUpdate: serverTimestamp()
           });
+
+          // 4. Register in Bitácora
+          const colTitle = COLUMNS.find(c => c.id === newStatus)?.title || newStatus;
+          await addDoc(collection(db, "projects", draggableId, "logs"), {
+              type: 'status_change',
+              content: `Cambio de estado en tablero: ${colTitle}`,
+              userName: 'Admin',
+              userRole: 'admin',
+              timestamp: serverTimestamp()
+          });
           // Success: No further action needed as snapshot listener will sync eventually
       } catch (error) {
           console.error("Drag update failed:", error);
@@ -367,23 +503,15 @@ export default function AdminKanbanBoard() {
                 />
             </div>
             
-            <button 
-                onClick={() => setShowUploader(true)}
+            <Link 
+                to="/admin/invoicing/generate"
                 className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-xl font-bold shadow-md flex items-center gap-2 transition text-sm"
             >
-                <FaCloudUploadAlt className="w-4 h-4" />
-                Carga Masiva (PDF)
-            </button>
+                <Plus className="w-4 h-4" />
+                Nueva Pre-Factura
+            </Link>
         </div>
 
-        {/* Uploader Modal */}
-        {showUploader && (
-            <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                 <div className="w-full max-w-2xl relative animate-in zoom-in-95 duration-200">
-                     <InvoiceBulkUploader onClose={() => setShowUploader(false)} />
-                 </div>
-            </div>
-        )}
 
         {/* Detail Modal */}
         <ProjectDetailModal 
