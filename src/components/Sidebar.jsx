@@ -85,24 +85,13 @@ export default function Sidebar({ isOpen, setIsOpen }) {
                         <Link 
                             to="/admin" 
                             className={`py-1.5 px-1 flex flex-col items-center justify-center text-center rounded-lg transition border ${
-                                !location.pathname.startsWith('/admin/expenses') && !location.pathname.startsWith('/admin/approvals') && !location.pathname.startsWith('/admin/projects') && !location.pathname.startsWith('/admin/balances') && !location.pathname.startsWith('/admin/reports') && !location.pathname.startsWith('/dashboard') && !location.pathname.startsWith('/admin/analytics')
+                                !location.pathname.startsWith('/admin/expenses') && !location.pathname.startsWith('/admin/approvals') && !location.pathname.startsWith('/admin/projects') && !location.pathname.startsWith('/admin/balances') && !location.pathname.startsWith('/admin/reports') && !location.pathname.startsWith('/dashboard')
                                 ? 'bg-indigo-500 text-white border-indigo-500 shadow-sm' 
                                 : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white hover:bg-slate-700'
                             }`}
                         >
                             <FileText className="w-4 h-4 mb-0.5"/>
-                            <span className="text-[9px] font-bold leading-none">Facturas</span>
-                        </Link>
-                        <Link 
-                            to="/admin/analytics" 
-                            className={`py-1.5 px-1 flex flex-col items-center justify-center text-center rounded-lg transition border ${
-                                location.pathname.startsWith('/admin/analytics')
-                                ? 'bg-violet-600 text-white border-violet-600 shadow-sm' 
-                                : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white hover:bg-slate-700'
-                            }`}
-                        >
-                            <BarChart3 className="w-4 h-4 mb-0.5"/>
-                            <span className="text-[9px] font-bold leading-none">Analítica</span>
+                            <span className="text-[9px] font-bold leading-none">Financiero</span>
                         </Link>
                     </div>
                 </div>
@@ -143,22 +132,11 @@ export default function Sidebar({ isOpen, setIsOpen }) {
                             Bandeja Informes
                         </Link>
                     </>
-                ) : location.pathname.startsWith('/admin/analytics') ? (
-                    // --- ANALYTICS MODULE MENU ---
-                    <>
-                        <div className="px-4 mt-6 mb-2">
-                             <p className="text-[10px] font-bold text-violet-400 uppercase tracking-widest">Inteligencia</p>
-                        </div>
-                        <Link to="/admin/analytics" className={linkClass('/admin/analytics')} onClick={() => setIsOpen(false)}>
-                            <Activity className="w-4 h-4 mr-3" />
-                            Dashboard BI
-                        </Link>
-                    </>
-                ) : (location.pathname === '/admin' || location.pathname.startsWith('/admin/invoicing')) ? (
-                    // --- BILLING MODULE MENU (Default /admin) ---
+                ) : (location.pathname === '/admin' || location.pathname.startsWith('/admin/invoicing') || location.pathname.startsWith('/admin/analytics')) ? (
+                    // --- FINANCIAL MODULE MENU ---
                     <>
                          <div className="px-4 mt-6 mb-2">
-                             <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">Facturación</p>
+                             <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">Módulo Financiero</p>
                         </div>
                         <Link to="/admin" className={linkClass('/admin')} onClick={() => setIsOpen(false)}>
                             <LayoutDashboard className="w-4 h-4 mr-3" />
@@ -166,7 +144,7 @@ export default function Sidebar({ isOpen, setIsOpen }) {
                         </Link>
                         <Link to="/admin/invoicing/generate" className={linkClass('/admin/invoicing/generate')} onClick={() => setIsOpen(false)}>
                             <FilePlus className="w-4 h-4 mr-3" />
-                            Pre-Factura
+                            Registro de Factura
                         </Link>
                         <Link to="/admin/invoicing/reconciliation" className={linkClass('/admin/invoicing/reconciliation')} onClick={() => setIsOpen(false)}>
                             <Wallet className="w-4 h-4 mr-3" />
@@ -175,6 +153,10 @@ export default function Sidebar({ isOpen, setIsOpen }) {
                         <Link to="/admin/invoicing/history" className={linkClass('/admin/invoicing/history')} onClick={() => setIsOpen(false)}>
                             <FolderOpen className="w-4 h-4 mr-3" />
                             Historial
+                        </Link>
+                        <Link to="/admin/analytics" className={linkClass('/admin/analytics')} onClick={() => setIsOpen(false)}>
+                            <BarChart3 className="w-4 h-4 mr-3" />
+                            Analítica BI
                         </Link>
                     </>
                 ) : null}

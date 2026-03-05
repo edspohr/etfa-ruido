@@ -373,12 +373,12 @@ export default function AdminInvoicingGeneration() {
               await batch.commit();
           }
 
-          toast.success("Pre-factura generada exitosamente");
+          toast.success("Registro de factura generado exitosamente");
           navigate('/admin/invoicing');
           
       } catch (e) {
           console.error("Error generating invoice:", e);
-          toast.error("Ocurrió un error al generar la pre-factura.");
+          toast.error("Ocurrió un error al generar el registro de factura.");
       } finally {
           setGenerating(false);
       }
@@ -521,7 +521,7 @@ export default function AdminInvoicingGeneration() {
         successCount++;
       }
 
-      toast.success(`${successCount} pre-facturas generadas exitosamente.`);
+      toast.success(`${successCount} registros de factura generados exitosamente.`);
       navigate('/admin/invoicing');
     } catch (e) {
       console.error('Batch generation error:', e);
@@ -540,7 +540,7 @@ export default function AdminInvoicingGeneration() {
   };
 
   return (
-    <Layout title="Generar Pre-Factura">
+    <Layout title="Generar Registro de Factura">
       <div className="mb-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
             <Link 
@@ -550,7 +550,7 @@ export default function AdminInvoicingGeneration() {
                 <ArrowLeft className="w-4 h-4 mr-1 group-hover:-translate-x-1 transition-transform" /> 
                 Volver al Dashboard
             </Link>
-            <h1 className="text-3xl font-black text-slate-800 tracking-tight">Generar Pre-Facturas</h1>
+            <h1 className="text-3xl font-black text-slate-800 tracking-tight">Generar Registros de Factura</h1>
             <p className="text-sm text-slate-500 mt-1 font-medium">Crea documentos manualmente o procesa PDFs en lote.</p>
         </div>
       </div>
@@ -739,7 +739,7 @@ export default function AdminInvoicingGeneration() {
                           >
                               <option value="electronic_invoice">Factura Electrónica</option>
                               <option value="exempt_invoice">Factura Exenta</option>
-                              <option value="draft">Borrador / Pre-factura</option>
+                              <option value="draft">Borrador / Registro de Factura</option>
                           </select>
                       </div>
 
@@ -958,7 +958,7 @@ export default function AdminInvoicingGeneration() {
                       }`}
                   >
                       {generating ? <Loader className="w-6 h-6 animate-spin" /> : <Save className="w-6 h-6" />}
-                      {generating ? 'Guardando Pre-Factura...' : 'Generar y Guardar Pre-Factura'}
+                      {generating ? 'Guardando Registro...' : 'Generar y Guardar Registro de Factura'}
                   </button>
               </div>
 
@@ -1131,7 +1131,7 @@ export default function AdminInvoicingGeneration() {
                           }`}
                       >
                           {batchSaving ? <Loader className="w-6 h-6 animate-spin" /> : <Save className="w-6 h-6" />}
-                          {batchSaving ? 'Generando Pre-Facturas...' : `Generar ${batchInvoices.filter(i => i.include).length} Pre-Facturas`}
+                          {batchSaving ? 'Generando Registros...' : `Generar ${batchInvoices.filter(i => i.include).length} Registros`}
                       </button>
                   </div>
               </div>

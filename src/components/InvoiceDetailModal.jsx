@@ -28,7 +28,7 @@ export default function InvoiceDetailModal({ invoice, isOpen, onClose, onUpdate 
     }, [isOpen, invoice]);
 
     const handleVoidInvoice = async () => {
-        if (!confirm("¿Estás seguro de que deseas ANULAR esta pre-factura? Desaparecerá de todos los listados y los gastos volverán a estar disponibles para facturar.")) return;
+        if (!confirm("¿Estás seguro de que deseas ANULAR este registro de factura? Desaparecerá de todos los listados y los gastos volverán a estar disponibles para facturar.")) return;
 
         setProcessing(true);
         try {
@@ -75,7 +75,7 @@ export default function InvoiceDetailModal({ invoice, isOpen, onClose, onUpdate 
                 <div className="p-6 border-b border-slate-100 flex justify-between items-start bg-slate-50">
                     <div>
                         <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                            <FileText className="w-5 h-5 text-indigo-600" /> Pre-Factura detalles
+                            <FileText className="w-5 h-5 text-indigo-600" /> Detalles del Registro de Factura
                         </h2>
                         <p className="text-sm text-slate-500 mt-1">{invoice.clientName} • {invoice.projectName}</p>
                     </div>
@@ -191,7 +191,7 @@ export default function InvoiceDetailModal({ invoice, isOpen, onClose, onUpdate 
                          className="flex items-center gap-2 text-red-500 hover:text-red-700 px-3 py-2 rounded-lg hover:bg-red-50 transition font-medium text-sm"
                     >
                         {processing ? <div className="animate-spin w-4 h-4 border-2 border-red-500 border-t-transparent rounded-full" /> : <Trash2 className="w-4 h-4" />}
-                        Anular Pre-Factura
+                        Anular Registro de Factura
                     </button>
 
                     <button 

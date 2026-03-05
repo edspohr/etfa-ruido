@@ -98,7 +98,7 @@ export default function AdminInvoicingDashboard() {
           className="flex items-center bg-indigo-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-indigo-700 transition-colors shadow-sm"
         >
           <Plus className="w-4 h-4 mr-2" />
-          Nueva Pre-Factura
+          Nuevo Registro de Factura
         </Link>
       </div>
 
@@ -195,7 +195,7 @@ export default function AdminInvoicingDashboard() {
 
       <div className="bg-white rounded-2xl shadow-soft border border-slate-100 overflow-hidden">
         <div className="p-6 border-b border-slate-100">
-            <h3 className="font-bold text-lg text-slate-800">Pre-Facturas Recientes</h3>
+            <h3 className="font-bold text-lg text-slate-800">Registros de Factura Recientes</h3>
         </div>
         
         {loading ? (
@@ -206,7 +206,7 @@ export default function AdminInvoicingDashboard() {
         ) : invoices.length === 0 ? (
             <div className="p-12 text-center text-slate-400">
                 <FileText className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                <p>No hay pre-facturas generadas aún.</p>
+                <p>No hay registros generados aún.</p>
             </div>
         ) : (
             <div className="divide-y divide-slate-100">

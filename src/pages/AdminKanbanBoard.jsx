@@ -191,19 +191,19 @@ const ProjectDetailModal = ({ project, isOpen, onClose }) => {
             // 3. Register in Bitácora
             await addDoc(collection(db, "projects", project.id, "logs"), {
                 type: 'status_change',
-                content: `Pre-factura generada: ${preInvoiceData.draftNumber || 'S/N'} por ${formatCurrency(totalValue)}`,
+                content: `Registro de factura generado: ${preInvoiceData.draftNumber || 'S/N'} por ${formatCurrency(totalValue)}`,
                 userName: 'Admin',
                 userRole: 'admin',
                 timestamp: serverTimestamp()
             });
 
-            toast.success("Pre-factura generada y proyecto movido a Facturado");
+            toast.success("Registro generado y proyecto movido a Facturado");
             setShowPreInvoiceForm(false);
             setPreInvoiceData({ netAmount: '', draftNumber: '' });
             onClose();
         } catch (e) {
             console.error("Error generating pre-invoice", e);
-            toast.error("Error al generar pre-factura");
+            toast.error("Error al generar registro de factura");
         }
     };
 
@@ -289,7 +289,7 @@ const ProjectDetailModal = ({ project, isOpen, onClose }) => {
                     {showPreInvoiceForm && (
                         <div className="bg-indigo-50 p-4 border-t border-indigo-100 mt-4 -mx-6 -mb-6">
                             <h4 className="font-bold text-indigo-800 mb-3 text-sm flex items-center gap-2">
-                                <FaFileInvoiceDollar /> Generar Pre-Factura
+                                <FaFileInvoiceDollar /> Generar Registro de Factura
                             </h4>
                             <form onSubmit={handlePreInvoice} className="space-y-3">
                                 <div>
@@ -333,7 +333,7 @@ const ProjectDetailModal = ({ project, isOpen, onClose }) => {
                                         type="submit" 
                                         className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-lg text-sm font-bold shadow-md transition"
                                     >
-                                        Guardar Pre-Factura
+                                        Guardar Registro
                                     </button>
                                 </div>
                             </form>
@@ -367,7 +367,7 @@ const ProjectDetailModal = ({ project, isOpen, onClose }) => {
                                     onClick={() => setShowPreInvoiceForm(true)}
                                     className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-bold text-sm shadow-md transition flex items-center gap-2"
                                 >
-                                    <FaFileInvoiceDollar /> Emitir Pre-Factura
+                                    <FaFileInvoiceDollar /> Emitir Registro de Factura
                                 </button>
                             )}
                         </div>
@@ -511,7 +511,7 @@ export default function AdminKanbanBoard() {
                 className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-xl font-bold shadow-md flex items-center gap-2 transition text-sm"
             >
                 <Plus className="w-4 h-4" />
-                Nueva Pre-Factura
+                Nuevo Registro de Factura
             </Link>
         </div>
 

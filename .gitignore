@@ -28,3 +28,6 @@ dist-ssr
 
 # Backup
 _backup/
+
+# Firebase
+.firebase/

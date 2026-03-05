@@ -26,7 +26,7 @@ export default function AdminModuleSelector() {
                     <p className="text-slate-500 text-lg font-medium opacity-80">Selecciona el módulo para comenzar a trabajar</p>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8">
                     {/* Module 1: Expenses */}
                     <Link to="/admin/expenses" className="group h-full flex">
                         <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 h-full w-full transition-all duration-500 hover:shadow-2xl hover:shadow-indigo-200/50 hover:border-indigo-300 hover:-translate-y-2 relative overflow-hidden flex flex-col shadow-sm">
@@ -51,7 +51,7 @@ export default function AdminModuleSelector() {
                             </div>
                             <h2 className="text-2xl font-bold text-slate-800 mb-3 tracking-tight">Informes Terreno</h2>
                             <p className="text-slate-500 mb-8 leading-relaxed text-sm flex-grow">
-                                Revisa y aprueba mediciones en terreno. Activa la pre-facturación.
+                                Revisa y aprueba mediciones en terreno. Activa el registro de facturación.
                             </p>
                             <div className="flex items-center text-teal-600 font-bold text-sm group-hover:gap-3 transition-all">
                                 Ingresar Módulo <ArrowRight className="w-4 h-4 ml-1" />
@@ -65,9 +65,9 @@ export default function AdminModuleSelector() {
                             <div className="w-14 h-14 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mb-8 group-hover:scale-110 group-hover:bg-blue-600 group-hover:text-white transition-all duration-500">
                                  <FileText className="w-7 h-7" />
                             </div>
-                            <h2 className="text-2xl font-bold text-slate-800 mb-3 tracking-tight">Facturación</h2>
+                            <h2 className="text-2xl font-bold text-slate-800 mb-3 tracking-tight">Módulo Financiero</h2>
                             <p className="text-slate-500 mb-8 leading-relaxed text-sm flex-grow">
-                                Emite pre-facturas, concilia con bancos y gestiona cobranzas.
+                                Emite registros de facturas, concilia con bancos, asocia gastos de proyectos y revisa analíticas y márgenes operativos.
                             </p>
                             <div className="flex items-center text-blue-600 font-bold text-sm group-hover:gap-3 transition-all">
                                 Ingresar Módulo <ArrowRight className="w-4 h-4 ml-1" />
@@ -75,21 +75,7 @@ export default function AdminModuleSelector() {
                         </div>
                     </Link>
 
-                    {/* Module 4: Analytics */}
-                    <Link to="/admin/analytics" className="group h-full flex">
-                        <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 h-full w-full transition-all duration-500 hover:shadow-2xl hover:shadow-violet-200/50 hover:border-violet-300 hover:-translate-y-2 relative overflow-hidden flex flex-col shadow-sm">
-                            <div className="w-14 h-14 bg-violet-50 text-violet-600 rounded-2xl flex items-center justify-center mb-8 group-hover:scale-110 group-hover:bg-violet-600 group-hover:text-white transition-all duration-500">
-                                 <BarChart3 className="w-7 h-7" />
-                            </div>
-                            <h2 className="text-2xl font-bold text-slate-800 mb-3 tracking-tight">Analítica BI</h2>
-                            <p className="text-slate-500 mb-8 leading-relaxed text-sm flex-grow">
-                                Dashboards financieros, márgenes por proyecto y métricas de rendimiento.
-                            </p>
-                            <div className="flex items-center text-violet-600 font-bold text-sm group-hover:gap-3 transition-all">
-                                Ingresar Módulo <ArrowRight className="w-4 h-4 ml-1" />
-                            </div>
-                        </div>
-                    </Link>
+
                 </div>
 
                 <div className="mt-16 text-center">
