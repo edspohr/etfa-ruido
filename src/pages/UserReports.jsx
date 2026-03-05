@@ -5,6 +5,8 @@ import { db } from '../lib/firebase';
 import { collection, addDoc, query, where, getDocs, serverTimestamp, orderBy } from 'firebase/firestore';
 import { toast } from 'sonner';
 import { ClipboardList, PlusCircle, CheckCircle, AlertTriangle, Clock } from 'lucide-react';
+import { sortProjects } from '../utils/sort';
+import SearchableSelect from '../components/SearchableSelect';
 
 export default function UserReports() {
     const { currentUser } = useAuth();
@@ -33,7 +35,7 @@ export default function UserReports() {
                 .map(d => ({id: d.id, ...d.data()}))
                 .filter(p => !['paid', 'invoiced'].includes(p.billingStatus)); // Only projects that can be reported
             
-            setProjects(pData);
+            setProjects(sortProjects(pData));
 
             // Bring user's reports
             if (currentUser) {
@@ -112,19 +114,16 @@ export default function UserReports() {
                         <form onSubmit={handleSubmit} className="space-y-4">
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-1">Proyecto *</label>
-                                <select 
-                                    className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50 text-sm focus:ring-2 focus:ring-teal-500 outline-none"
+                                <SearchableSelect
+                                    options={projects.map(p => ({
+                                        value: p.id,
+                                        label: `${p.code ? `[${p.code}] ` : ''}${p.name || 'Sin Nombre'}`
+                                    }))}
                                     value={formData.projectId}
-                                    onChange={e => setFormData({...formData, projectId: e.target.value})}
+                                    onChange={(val) => setFormData({...formData, projectId: val})}
+                                    placeholder="Buscar proyecto..."
                                     required
-                                >
-                                    <option value="">Seleccionar Proyecto...</option>
-                                    {projects.map(p => (
-                                        <option key={p.id} value={p.id}>
-                                            {p.code ? `[${p.code}] ` : ''}{p.name}
-                                        </option>
-                                    ))}
-                                </select>
+                                />
                             </div>
 
                             <div>

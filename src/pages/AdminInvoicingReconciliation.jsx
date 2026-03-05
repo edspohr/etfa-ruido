@@ -6,6 +6,7 @@ import { collection, query, where, getDocs, writeBatch, doc, serverTimestamp } f
 import { db } from '../lib/firebase';
 import { formatCurrency } from '../utils/format';
 import InvoiceDetailModal from '../components/InvoiceDetailModal';
+import { toast } from 'sonner';
 
 export default function AdminInvoicingReconciliation() {
   const [movements, setMovements] = useState([]);
@@ -75,40 +76,75 @@ export default function AdminInvoicingReconciliation() {
       reader.onload = (evt) => {
           try {
               const arrayBuffer = evt.target.result;
-              const workbook = XLSX.read(arrayBuffer, { type: 'array' }); // Use 'array' for robustness
+
+              // Detect HTML-as-XLS: some Chilean banks export HTML tables as .xls
+              let workbook;
+              try {
+                  const firstBytes = new Uint8Array(arrayBuffer.slice(0, 100));
+                  const headerStr = String.fromCharCode(...firstBytes).toLowerCase();
+                  const isHtml = headerStr.includes('<html') || headerStr.includes('<table') || headerStr.includes('<!doctype');
+
+                  if (isHtml) {
+                      // Parse as HTML table
+                      workbook = XLSX.read(arrayBuffer, { type: 'array', raw: true });
+                  } else {
+                      workbook = XLSX.read(arrayBuffer, { type: 'array' });
+                  }
+              } catch (xlsxErr) {
+                  console.error('XLSX.read failed, trying raw mode:', xlsxErr);
+                  // Last resort: try raw mode
+                  try {
+                      workbook = XLSX.read(arrayBuffer, { type: 'array', raw: true });
+                  } catch (rawErr) {
+                      console.error('Raw mode also failed:', rawErr);
+                      toast.error(`El formato del archivo de ${bankName} no es reconocido. Verifica que sea un Excel válido (.xlsx o .xls) con columnas de Fecha, Descripción y Monto.`);
+                      setLoading(false);
+                      return;
+                  }
+              }
+
               const wsname = workbook.SheetNames[0];
               const ws = workbook.Sheets[wsname];
-              const data = XLSX.utils.sheet_to_json(ws, { header: 1 }); // Array of arrays
+              const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
 
-              // Parsing Logic Tweak: Sort by Date
+              if (!data || data.length < 2) {
+                  toast.error(`El archivo de ${bankName} parece estar vacío o no contiene datos válidos.`);
+                  setLoading(false);
+                  return;
+              }
+
+              // Parsing Logic
               const parsedMovements = parseBankData(data, bankName);
               
               setMovements(prev => {
                   const combined = [...prev, ...parsedMovements];
-                  // Sort by ISO date for display
                   return combined.sort((a, b) => {
                       try {
-                          // Parse DD/MM/YYYY
                           if (!a.date || !b.date) return 0;
                           const [da, ma, ya] = a.date.split('/').map(Number);
-                          const [db, mb, yb] = b.date.split('/').map(Number);
+                          const [db2, mb, yb] = b.date.split('/').map(Number);
                           const dateA = new Date(ya, ma - 1, da);
-                          const dateB = new Date(yb, mb - 1, db);
+                          const dateB = new Date(yb, mb - 1, db2);
                           if (isNaN(dateA.getTime()) || isNaN(dateB.getTime())) return 0;
-                          return dateB - dateA; // Newest first
+                          return dateB - dateA;
                       } catch {
                           return 0;
                       }
                   });
               });
               
-              // Run Matching against ALL movements
               const newMovements = [...movements, ...parsedMovements];
               runMatching(newMovements, pendingInvoices);
 
+              if (parsedMovements.length > 0) {
+                  toast.success(`${parsedMovements.length} movimientos cargados de ${bankName}.`);
+              } else {
+                  toast.warning(`No se encontraron movimientos de ingreso en el archivo de ${bankName}.`);
+              }
+
           } catch (error) {
               console.error("Error parsing Excel:", error);
-              alert("Error al leer el archivo Excel. Asegúrate de que tenga un formato válido.");
+              toast.error(`Error al procesar el archivo de ${bankName}. Verifica que tenga un formato válido.`);
           } finally {
               setLoading(false);
           }
@@ -116,21 +152,22 @@ export default function AdminInvoicingReconciliation() {
 
       reader.onerror = () => {
           console.error("FileReader error");
-          alert("Error al leer el archivo.");
+          toast.error("Error al leer el archivo. Intente nuevamente.");
           setLoading(false);
       };
 
       try {
-          reader.readAsArrayBuffer(selectedFile); // Changed to ArrayBuffer for .xlsx support
+          reader.readAsArrayBuffer(selectedFile);
       } catch (error) {
           console.error("Error initiating read:", error);
+          toast.error("Error al iniciar la lectura del archivo.");
           setLoading(false);
       }
   };
 
   const parseBankData = (rows, bankName) => {
       if (!rows || rows.length < 2) {
-          alert("El archivo parece estar vacío o tener formato incorrecto.");
+          toast.error(`El archivo de ${bankName} parece estar vacío o tener formato incorrecto.`);
           return [];
       }
 
@@ -300,8 +337,53 @@ export default function AdminInvoicingReconciliation() {
       }
 
       if (headerRowIndex === -1) {
-          console.warn(`Could not find headers in ${bankName} file. Checked first 50 rows.`);
-          alert(`No se detectaron las columnas 'Fecha', 'Descripción' y 'Abono/Monto' en el archivo de ${bankName}. Por favor verifica el Excel.`);
+          // FALLBACK: Index-based column detection
+          // Try to find first row with at least 3 non-empty cells and assume:
+          // Col 0 = Date, Col 1 = Description, Col 2+ = Amount
+          console.warn(`[${bankName}] Keyword header detection failed. Trying index-based fallback...`);
+
+          let fallbackHeaderIdx = -1;
+          for (let i = 0; i < Math.min(rows.length, 30); i++) {
+              const row = rows[i];
+              if (!row) continue;
+              const nonEmpty = row.filter(cell => cell !== null && cell !== undefined && String(cell).trim() !== '');
+              if (nonEmpty.length >= 3) {
+                  // Check if first cell looks like a date or date header
+                  const firstCell = String(row[0] || '').toLowerCase().trim();
+                  const looksLikeHeader = firstCell.includes('fecha') || firstCell.includes('date');
+                  const looksLikeDate = /^\d{1,2}[/-]/.test(firstCell) || typeof row[0] === 'number';
+                  
+                  if (looksLikeHeader) {
+                      fallbackHeaderIdx = i;
+                      dateIdx = 0;
+                      descIdx = 1;
+                      // Find a numeric column for amount (prefer last columns)
+                      for (let c = row.length - 1; c >= 2; c--) {
+                          const hdr = cleanStr(row[c]);
+                          if (hdr.includes('abono') || hdr.includes('credit') || hdr.includes('monto') || hdr.includes('importe')) {
+                              abonoIdx = c;
+                              break;
+                          }
+                      }
+                      if (abonoIdx === -1) montoIdx = row.length - 1;
+                      headerRowIndex = fallbackHeaderIdx;
+                      break;
+                  } else if (looksLikeDate && i > 0) {
+                      // Previous row might be the header
+                      fallbackHeaderIdx = i - 1;
+                      dateIdx = 0;
+                      descIdx = Math.min(1, row.length - 1);
+                      montoIdx = Math.min(2, row.length - 1);
+                      headerRowIndex = fallbackHeaderIdx;
+                      break;
+                  }
+              }
+          }
+      }
+
+      if (headerRowIndex === -1) {
+          console.warn(`Could not find headers in ${bankName} file.`);
+          toast.error(`No se detectaron las columnas 'Fecha', 'Descripción' y 'Abono/Monto' en el archivo de ${bankName}. Verifica que el archivo sea correcto.`);
           return [];
       }
 
@@ -461,7 +543,7 @@ export default function AdminInvoicingReconciliation() {
           });
 
           await batch.commit();
-          alert(`${matches.length} facturas conciliadas exitosamente.`);
+          toast.success(`${matches.length} facturas conciliadas exitosamente.`);
           setMovements([]);
           setMatches([]);
           
@@ -471,7 +553,7 @@ export default function AdminInvoicingReconciliation() {
 
       } catch (e) {
           console.error("Error confirming matches:", e);
-          alert("Error al guardar conciliación.");
+          toast.error("Error al guardar conciliación.");
       } finally {
           setProcessing(false);
       }

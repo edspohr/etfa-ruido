@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import Layout from '../components/Layout';
-import { ArrowLeft, Save, Search, CheckCircle, AlertCircle, Plus, Trash2, Upload, FileText, Loader, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Save, Search, CheckCircle, AlertCircle, Plus, Trash2, Upload, FileText, Loader, RefreshCw, DollarSign } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { collection, query, where, getDocs, addDoc, writeBatch, doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { formatCurrency } from '../utils/format';
+import { sortProjects } from '../utils/sort';
 import { Skeleton } from '../components/Skeleton';
+import SearchableSelect from '../components/SearchableSelect';
 import { useDropzone } from "react-dropzone";
 import * as pdfjs from "pdfjs-dist";
 import { toast } from 'sonner';
@@ -48,6 +50,9 @@ export default function AdminInvoicingGeneration() {
   const [customItems, setCustomItems] = useState([]);
   const [glosa, setGlosa] = useState('');
 
+  // Direct Net Amount Input (Task 1 — simplified billing)
+  const [montoNeto, setMontoNeto] = useState('');
+
   // PDF Extraction State
   const [extractionMode, setExtractionMode] = useState(false);
   const [extracting, setExtracting] = useState(false);
@@ -71,9 +76,8 @@ export default function AdminInvoicingGeneration() {
             const snapshot = await getDocs(q);
             const loadedProjects = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
             
-            // Client-side sort to avoid requiring a composite index in Firestore
-            loadedProjects.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-            setProjects(loadedProjects);
+            // Sort using shared utility (A-Z by code then recurrence)
+            setProjects(sortProjects(loadedProjects));
         } catch (e) {
             console.error("Error fetching projects:", e);
             toast.error("Error cargando proyectos.");
@@ -172,6 +176,13 @@ export default function AdminInvoicingGeneration() {
         const pageText = textContent.items.map((item) => item.str).join(" ");
         fullText += pageText + " ";
       }
+
+      // Detect scanned/image-only PDFs
+      if (!fullText || fullText.trim().length < 10) {
+        toast.warning("El PDF es una imagen escaneada. Ingrese los datos manualmente.");
+        return null;
+      }
+
       return fullText;
     } catch (e) {
       console.error("Error reading PDF:", e);
@@ -205,19 +216,33 @@ export default function AdminInvoicingGeneration() {
             toast.success(`Proyecto detectado: ${matchedProj.name}`);
         }
 
-        // 2. Try to extract Amount
-        const totalMatch = text.match(/total[\s\S]{0,20}?\$?([\d.,]+)/i);
-        if (totalMatch && totalMatch[1]) {
-            let s = totalMatch[1].replace(/\./g, "").replace(",", ".").replace(/[^\d.]/g, "");
-            const extractedAmount = parseFloat(s) || 0;
-            if (extractedAmount > 0) {
-                setCustomItems([{ description: 'Servicios según PDF', amount: extractedAmount }]);
-                toast.success(`Monto detectado: ${formatCurrency(extractedAmount)}`);
+        // 2. Try to extract Amount (multiple patterns for Chilean invoices)
+        const amountPatterns = [
+            /total\s*(?:neto|a\s*pagar)?[\s:]*\$?\s*([\d.,]+)/i,
+            /monto\s*(?:total|neto)?[\s:]*\$?\s*([\d.,]+)/i,
+            /total[\s\S]{0,30}?\$\s?([\d.,]+)/i,
+            /total[\s\S]{0,20}?\$?([\d.,]+)/i,
+        ];
+        let extractedAmount = 0;
+        for (const pattern of amountPatterns) {
+            const totalMatch = text.match(pattern);
+            if (totalMatch && totalMatch[1]) {
+                let s = totalMatch[1].replace(/\./g, "").replace(",", ".").replace(/[^\d.]/g, "");
+                const parsed = parseFloat(s) || 0;
+                if (parsed > 0) {
+                    extractedAmount = parsed;
+                    break;
+                }
             }
         }
+        if (extractedAmount > 0) {
+            setMontoNeto(String(extractedAmount));
+            setCustomItems([{ description: 'Servicios según PDF', amount: extractedAmount }]);
+            toast.success(`Monto detectado: ${formatCurrency(extractedAmount)}`);
+        }
 
-        // 3. Try to extract RUT (Flexible pattern)
-        const rutMatch = text.match(/(\d{1,2}\.?\d{3}\.?\d{3}-?[\dkK])/);
+        // 3. Try to extract RUT (Flexible Chilean RUT patterns)
+        const rutMatch = text.match(/\b(\d{1,2}\.?\d{3}\.?\d{3}-?[\dkK])\b/i);
         if (rutMatch) {
             const rawRut = rutMatch[0];
             setClientData(prev => ({ ...prev, rut: rawRut }));
@@ -275,12 +300,18 @@ export default function AdminInvoicingGeneration() {
     .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
 
   const totalCustom = customItems.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
-  const totalInvoice = totalExpenses + totalCustom;
+  const montoNetoNum = Number(montoNeto) || 0;
+  // If the user entered a direct Monto Neto, that takes precedence
+  const totalInvoice = montoNetoNum > 0 ? montoNetoNum : (totalExpenses + totalCustom);
 
   // Save / Generate
   const handleGenerateInvoice = async () => {
       if (!clientData.rut || !clientData.razonSocial) {
           toast.error("RUT y Razón Social son requeridos");
+          return;
+      }
+      if (totalInvoice <= 0) {
+          toast.error("Debe ingresar un Monto Neto a Facturar mayor a 0.");
           return;
       }
       setGenerating(true);
@@ -671,18 +702,15 @@ export default function AdminInvoicingGeneration() {
                       {loadingProjects ? (
                           <Skeleton className="h-10 w-full" />
                       ) : (
-                          <select 
-                              className="w-full p-3 border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none text-sm transition-all hover:border-slate-300 bg-slate-50/50 focus:bg-white cursor-pointer"
+                          <SearchableSelect
+                              options={projects.map(p => ({
+                                  value: p.id,
+                                  label: `${p.code ? `[${p.code}] ` : ''}${p.recurrence ? `(${p.recurrence}) ` : ''}${p.name || 'Sin Nombre'}`
+                              }))}
                               value={selectedProjectId}
-                              onChange={e => setSelectedProjectId(e.target.value)}
-                          >
-                              <option value="">Seleccionar Proyecto...</option>
-                              {projects.map(p => (
-                                  <option key={p.id} value={p.id}>
-                                      {p.code ? `[${p.code}] ` : ''}{p.name}
-                                  </option>
-                              ))}
-                          </select>
+                              onChange={setSelectedProjectId}
+                              placeholder="Buscar proyecto..."
+                          />
                       )}
                   </div>
 
@@ -754,6 +782,42 @@ export default function AdminInvoicingGeneration() {
 
           {/* Right Column: Items & Summary */}
           <div className="lg:col-span-2 space-y-6">
+
+              {/* MONTO NETO A FACTURAR — Primary Input */}
+              <div className="bg-gradient-to-r from-indigo-50 to-blue-50 p-6 rounded-[2rem] border-2 border-indigo-200 shadow-md shadow-indigo-100/50 transition-all hover:shadow-lg">
+                  <div className="flex items-center gap-3 mb-4">
+                      <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-md">
+                          <DollarSign className="w-5 h-5" />
+                      </div>
+                      <div>
+                          <h3 className="font-black text-lg text-indigo-900">Monto Neto a Facturar</h3>
+                          <p className="text-xs text-indigo-500 font-medium">Ingrese el valor neto total del cobro (sin IVA)</p>
+                      </div>
+                  </div>
+                  <div className="relative">
+                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-indigo-400 font-bold text-lg">$</span>
+                      <input
+                          type="number"
+                          className="w-full pl-10 pr-4 py-4 bg-white border-2 border-indigo-200 rounded-xl focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none text-2xl font-black font-mono text-indigo-900 transition-all hover:border-indigo-300 placeholder:text-indigo-200"
+                          placeholder="0"
+                          value={montoNeto}
+                          onChange={e => setMontoNeto(e.target.value)}
+                          min="0"
+                      />
+                  </div>
+                  {montoNetoNum > 0 && (
+                      <div className="mt-3 grid grid-cols-2 gap-3">
+                          <div className="bg-white/80 p-3 rounded-xl border border-indigo-100">
+                              <p className="text-[10px] text-indigo-400 uppercase font-bold">IVA (19%)</p>
+                              <p className="font-mono text-sm font-bold text-indigo-700">{formatCurrency(Math.round(montoNetoNum * 0.19))}</p>
+                          </div>
+                          <div className="bg-indigo-600 p-3 rounded-xl text-white shadow-md">
+                              <p className="text-[10px] text-indigo-200 uppercase font-bold">Total con IVA</p>
+                              <p className="font-mono text-sm font-bold">{formatCurrency(Math.round(montoNetoNum * 1.19))}</p>
+                          </div>
+                      </div>
+                  )}
+              </div>
               
               {/* Expenses of the Project */}
               {selectedProjectId && (
@@ -886,9 +950,9 @@ export default function AdminInvoicingGeneration() {
 
                   <button 
                       onClick={handleGenerateInvoice}
-                      disabled={generating || !clientData.rut || !clientData.razonSocial || totalInvoice === 0}
+                      disabled={generating || !clientData.rut || !clientData.razonSocial || totalInvoice <= 0}
                       className={`w-full py-4 rounded-2xl font-black text-lg shadow-xl shadow-indigo-900/50 transition-all flex justify-center items-center gap-2 relative z-10 ${
-                          generating || !clientData.rut || !clientData.razonSocial || totalInvoice === 0
+                          generating || !clientData.rut || !clientData.razonSocial || totalInvoice <= 0
                           ? 'bg-slate-800/80 text-slate-500 cursor-not-allowed border border-slate-700/50' 
                           : 'bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white hover:scale-[1.02] active:scale-[0.98]'
                       }`}

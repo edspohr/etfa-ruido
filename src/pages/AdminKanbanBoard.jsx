@@ -173,8 +173,11 @@ const ProjectDetailModal = ({ project, isOpen, onClose }) => {
                 ivaAmount: ivaValue,
                 totalAmount: totalValue,
                 draftNumber: preInvoiceData.draftNumber,
-                paymentStatus: 'pending', // Pending payment
-                status: 'pending',        // Pending official emission
+                paymentStatus: 'pending',
+                status: 'pending',
+                documentType: 'draft',
+                issueDate: new Date().toISOString().split('T')[0],
+                source: 'kanban_pre_invoice',
                 createdAt: serverTimestamp()
             });
 

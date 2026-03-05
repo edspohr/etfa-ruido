@@ -48,7 +48,6 @@ export default function InvoiceBulkUploader({ onProcessingComplete, onClose }) {
       const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
       let fullText = "";
 
-      // Limit pages to scan (e.g. first 3 pages) to save time, usually info is on page 1
       const maxPages = Math.min(pdf.numPages, 3);
 
       for (let i = 1; i <= maxPages; i++) {
@@ -57,6 +56,13 @@ export default function InvoiceBulkUploader({ onProcessingComplete, onClose }) {
         const pageText = textContent.items.map((item) => item.str).join(" ");
         fullText += pageText + " ";
       }
+
+      // Detect scanned/image-only PDFs
+      if (!fullText || fullText.trim().length < 10) {
+        toast.warning(`"${file.name}" es una imagen escaneada. No se pudo extraer texto.`);
+        return null;
+      }
+
       return fullText;
     } catch (e) {
       console.error("Error reading PDF:", e);
@@ -185,15 +191,26 @@ export default function InvoiceBulkUploader({ onProcessingComplete, onClose }) {
           // BUT, user asked for "Monto Total" extraction.
 
           let extractedAmount = 0;
-          // Try to find "Total" keyword and grab subsequent number
-          const totalMatch = text.match(/total[\s\S]{0,20}?\$?([\d.,]+)/i);
-          if (totalMatch && totalMatch[1]) {
-            // unexpected formats like 1.000,00 or 1,000.00
-            let s = totalMatch[1]
-              .replace(/\./g, "")
-              .replace(",", ".")
-              .replace(/[^\d.]/g, "");
-            extractedAmount = parseFloat(s) || 0;
+          // Try multiple patterns for Chilean invoice formats
+          const amountPatterns = [
+              /total\s*(?:neto|a\s*pagar)?[\s:]*\$?\s*([\d.,]+)/i,
+              /monto\s*(?:total|neto)?[\s:]*\$?\s*([\d.,]+)/i,
+              /total[\s\S]{0,30}?\$\s?([\d.,]+)/i,
+              /total[\s\S]{0,20}?\$?([\d.,]+)/i,
+          ];
+          for (const pattern of amountPatterns) {
+              const totalMatch = text.match(pattern);
+              if (totalMatch && totalMatch[1]) {
+                  let s = totalMatch[1]
+                      .replace(/\./g, "")
+                      .replace(",", ".")
+                      .replace(/[^\d.]/g, "");
+                  const parsed = parseFloat(s) || 0;
+                  if (parsed > 0) {
+                      extractedAmount = parsed;
+                      break;
+                  }
+              }
           }
 
           // D. Create Invoice Record

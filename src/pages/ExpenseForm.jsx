@@ -5,10 +5,11 @@ import { parseReceiptImage } from '../lib/gemini';
 import { db, uploadReceiptImage } from '../lib/firebase';
 import { collection, getDocs, query, where, doc, increment, writeBatch, serverTimestamp } from 'firebase/firestore';
 import { Upload, Loader2, Camera, X, FileText, Plus } from 'lucide-react';
-import { formatCurrency } from '../utils/format'; // Validation aid/display
+import { formatCurrency } from '../utils/format';
 import { useNavigate } from 'react-router-dom';
 import { compressImage } from '../utils/imageUtils';
 import { sortProjects } from '../utils/sort';
+import SearchableSelect from '../components/SearchableSelect';
 import { toast } from 'sonner';
 
 const CATEGORIES_COMMON = [
@@ -509,20 +510,24 @@ export default function ExpenseForm() {
                         </div>
                         
                         {!isSplitMode ? (
-                            <select 
-                                required
-                                className="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-base focus:ring-2 focus:ring-slate-400 focus:border-transparent outline-none transition"
-                                value={formData.projectId}
-                                onChange={e => setFormData({...formData, projectId: e.target.value})}
-                            >
-                                <option value="">Selecciona un proyecto...</option>
-                                {projects.map(p => {
-                                    if (p.status === 'deleted') return null;
-                                    const isCajaChica = (p.name.toLowerCase().includes("caja chica") || p.type === 'petty_cash');
-                                    if (isCajaChica && userRole !== 'admin') return null;
-                                    return <option key={p.id} value={p.id}>{p.code ? `[${p.code}] ` : ''}{p.recurrence ? `(${p.recurrence}) ` : ''}{p.name}</option>
-                                })}
-                            </select>
+                            Array.isArray(projects) && (
+                                <SearchableSelect
+                                    options={projects.filter(p => {
+                                        if (!p || !p.name) return false;
+                                        if (p.status === 'deleted') return false;
+                                        const isCajaChica = (p.name.toLowerCase().includes("caja chica") || (p.type && p.type === 'petty_cash'));
+                                        if (isCajaChica && userRole !== 'admin') return false;
+                                        return true;
+                                    }).map(p => ({
+                                        value: p.id,
+                                        label: `${p.code ? `[${p.code}] ` : ''}${p.recurrence ? `(${p.recurrence}) ` : ''}${p.name || 'Sin Nombre'}`
+                                    }))}
+                                    value={formData.projectId}
+                                    onChange={(val) => setFormData({...formData, projectId: val})}
+                                    placeholder="Buscar proyecto..."
+                                    required
+                                />
+                            )
                         ) : (
                             <div className="bg-gray-50 p-4 rounded-lg border border-blue-200">
                                 <p className="text-sm text-gray-600 mb-2">
@@ -530,17 +535,18 @@ export default function ExpenseForm() {
                                 </p>
                                 {splitRows.map((row, idx) => (
                                     <div key={idx} className="flex gap-2 mb-2 items-start">
-                                        <select 
-                                            required
-                                            className="flex-grow border border-gray-300 rounded p-2 text-sm"
-                                            value={row.projectId}
-                                            onChange={e => handleSplitChange(idx, 'projectId', e.target.value)}
-                                        >
-                                            <option value="">Proyecto...</option>
-                                            {projects.map(p => (
-                                                <option key={p.id} value={p.id}>{p.code ? `[${p.code}] ` : ''}{p.recurrence ? `(${p.recurrence}) ` : ''}{p.name}</option>
-                                            ))}
-                                        </select>
+                                        <div className="flex-grow">
+                                            <SearchableSelect
+                                                options={projects.map(p => ({
+                                                    value: p.id,
+                                                    label: `${p.code ? `[${p.code}] ` : ''}${p.recurrence ? `(${p.recurrence}) ` : ''}${p.name}`
+                                                }))}
+                                                value={row.projectId}
+                                                onChange={(val) => handleSplitChange(idx, 'projectId', val)}
+                                                placeholder="Proyecto..."
+                                                required
+                                            />
+                                        </div>
                                         <input 
                                             type="number"
                                             placeholder="Monto"

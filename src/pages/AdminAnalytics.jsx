@@ -12,6 +12,7 @@ import {
     PieChart as PieIcon, BarChart3, Activity
 } from 'lucide-react';
 import { formatCurrency } from '../utils/format';
+import { sortProjects } from '../utils/sort';
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
@@ -47,7 +48,7 @@ export default function AdminAnalytics() {
             const expenses = expSnap.docs.map(d => ({ id: d.id, ...d.data(), date: d.data().createdAt ? d.data().createdAt.toDate() : new Date(d.data().date) }));
             const projects = projSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-            setData({ invoices, expenses, projects });
+            setData({ invoices, expenses, projects: sortProjects(projects) });
             
             // Unique clients for filter
             const uniqueClients = [...new Set(projects.map(p => p.client).filter(Boolean))];
