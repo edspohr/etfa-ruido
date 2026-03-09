@@ -31,3 +31,5 @@ _backup/
 
 # Firebase
 .firebase/
+node_modules_old/
+node_modules_old/
