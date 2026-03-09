@@ -43,5 +43,10 @@ service cloud.firestore {
     match /reports/{reportId} {
       allow read, write: if request.auth != null;
     }
+
+    // CLIENTS: Allow All Auth (Fixing the reported error)
+    match /clients/{clientId} {
+      allow read, write: if request.auth != null;
+    }
   }
 }

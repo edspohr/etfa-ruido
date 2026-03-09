@@ -25,9 +25,10 @@ import {
   ChevronDown,
   ChevronUp,
   Trash2,
-  ArrowRightLeft
+  ArrowRightLeft,
+  Settings
 } from "lucide-react";
-import { addDoc } from 'firebase/firestore';
+import { addDoc, serverTimestamp } from 'firebase/firestore';
 import { toast } from 'sonner';
 
 export default function AdminUserDetails() {
@@ -50,6 +51,13 @@ export default function AdminUserDetails() {
       sourceProjectId: '', 
       targetProjectId: '', 
       amount: '' 
+  });
+
+  // Adjustment Logic
+  const [adjustModalOpen, setAdjustModalOpen] = useState(false);
+  const [adjustForm, setAdjustForm] = useState({ 
+      amount: '', 
+      reason: '' 
   });
 
   const handleTransferFunds = async (e) => {
@@ -100,6 +108,58 @@ export default function AdminUserDetails() {
       } catch (err) {
           console.error("Error transferring funds:", err);
           toast.error("Error al reasignar fondos.");
+      }
+  };
+
+  const handleAdjustBalance = async (e) => {
+      e.preventDefault();
+      if (!adjustForm.amount || !adjustForm.reason) return;
+
+      const amount = Number(adjustForm.amount); // Can be negative
+      if (amount === 0) { toast.error("El monto no puede ser cero"); return; }
+
+      try {
+          const userRef = doc(db, "users", id);
+          
+          // 1. Update User Balance
+          await updateDoc(userRef, {
+              balance: increment(amount)
+          });
+
+          // 2. Create Adjustment Record (Persistent)
+          await addDoc(collection(db, "balance_adjustments"), {
+              userId: id,
+              userName: user.displayName,
+              amount: amount,
+              reason: adjustForm.reason,
+              adminId: 'admin_fixed', // Ideally currentUser.uid
+              adminName: 'Admin',
+              createdAt: serverTimestamp()
+          });
+
+          // 3. Create Global Audit Log
+          await addDoc(collection(db, "audit_logs"), {
+              type: 'balance_adjustment',
+              entityId: id,
+              entityName: user.displayName,
+              adminName: 'Admin',
+              details: {
+                  prevBalance: user.balance || 0,
+                  newBalance: (user.balance || 0) + amount,
+                  adjustment: amount,
+                  reason: adjustForm.reason
+              },
+              createdAt: serverTimestamp()
+          });
+
+          toast.success("Saldo ajustado y auditado.");
+          setAdjustModalOpen(false);
+          setAdjustForm({ amount: '', reason: '' });
+          fetchData();
+
+      } catch (err) {
+          console.error("Error adjusting balance:", err);
+          toast.error("Error al ajustar saldo.");
       }
   };
 
@@ -327,6 +387,12 @@ export default function AdminUserDetails() {
             <p className="text-blue-200 text-xs mt-1">
               {(user.balance || 0) < 0 ? "Fondos por Rendir" : "Saldo a Favor"}
             </p>
+            <button 
+                onClick={() => setAdjustModalOpen(true)}
+                className="mt-3 text-xs bg-white/20 hover:bg-white/30 px-3 py-1 rounded flex items-center transition font-bold"
+            >
+                <Settings className="w-3 h-3 mr-1" /> Ajustar Saldo (Manual)
+            </button>
           </div>
         </div>
       </div>
@@ -426,9 +492,13 @@ export default function AdminUserDetails() {
                                        </td>
                                        <td className="px-6 py-4 text-right">
                                            {row.totalAlloc > row.totalExp ? (
-                                               <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">En Rango</span>
+                                                <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-full border bg-emerald-100 text-emerald-700 border-emerald-200`}>
+                                                    En Rango
+                                                </span>
                                            ) : row.totalExp > row.totalAlloc ? (
-                                                <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full">⚠️ Excedido</span>
+                                                <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-full border bg-amber-100 text-amber-700 border-amber-200`}>
+                                                    ⚠️ Excedido
+                                                </span>
                                            ) : (
                                                 <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full">-</span>
                                            )}
@@ -499,11 +569,12 @@ export default function AdminUserDetails() {
                                                                                 </td>
                                                                                 <td className="px-3 py-2 font-bold text-gray-700 text-right">{formatCurrency(e.amount)}</td>
                                                                                 <td className="px-3 py-2 text-center">
-                                                                                    <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold
-                                                                                        ${e.status === 'approved' ? 'bg-green-100 text-green-700' : 
-                                                                                          e.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                                                                                        {e.status === 'approved' ? 'OK' : e.status === 'rejected' ? 'RECH' : 'PEND'}
-                                                                                    </span>
+                                                                                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${
+                                                                                            e.status === 'approved' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 
+                                                                                            e.status === 'rejected' ? 'bg-rose-100 text-rose-700 border-rose-200' : 'bg-amber-100 text-amber-700 border-amber-200'
+                                                                                        }`}>
+                                                                                            {e.status === 'approved' ? 'Aprobado' : e.status === 'rejected' ? 'Rechazado' : 'Pendiente'}
+                                                                                        </span>
                                                                                 </td>
                                                                                 <td className="px-3 py-2 text-center">
                                                                                     {e.status === 'pending' && (
@@ -605,6 +676,60 @@ export default function AdminUserDetails() {
                               className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
                           >
                               Reasignar
+                          </button>
+                      </div>
+                  </form>
+              </div>
+          </div>
+      )}
+
+      {/* Adjustment Modal */}
+      {adjustModalOpen && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+              <div className="bg-white rounded-lg p-6 max-w-md w-full">
+                  <h3 className="text-lg font-bold mb-4 flex items-center text-slate-800">
+                      <Settings className="w-5 h-5 mr-2" /> Ajuste Manual de Saldo (Auditable)
+                  </h3>
+                  <p className="text-sm text-gray-500 mb-4">
+                      Utiliza esto para corregir descuadres o registrar entradas/salidas que no corresponden a un proyecto específico. 
+                      <span className="block font-bold mt-1 text-red-600">Este ajuste se guardará permanentemente en el historial de auditoría.</span>
+                  </p>
+                  <form onSubmit={handleAdjustBalance} className="space-y-4">
+                      <div>
+                          <label className="block text-sm font-medium text-gray-700">Monto del Ajuste (Use "-" para descontar)</label>
+                          <input 
+                              type="number" 
+                              className="mt-1 w-full p-2 border rounded font-mono"
+                              value={adjustForm.amount}
+                              onChange={e => setAdjustForm({...adjustForm, amount: e.target.value})}
+                              required 
+                              placeholder="Ej: -5000 o 2500"
+                          />
+                      </div>
+                      <div>
+                          <label className="block text-sm font-medium text-gray-700">Motivo / Justificación</label>
+                          <textarea 
+                              className="mt-1 w-full p-2 border rounded"
+                              rows="3"
+                              value={adjustForm.reason}
+                              onChange={e => setAdjustForm({...adjustForm, reason: e.target.value})}
+                              required
+                              placeholder="Explica el porqué de este ajuste..."
+                          ></textarea>
+                      </div>
+                      <div className="flex justify-end gap-2 mt-6">
+                          <button 
+                              type="button"
+                              onClick={() => setAdjustModalOpen(false)}
+                              className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded"
+                          >
+                              Cancelar
+                          </button>
+                          <button 
+                              type="submit"
+                              className="px-4 py-2 bg-slate-900 text-white rounded hover:bg-black font-bold"
+                          >
+                              Aplicar Ajuste
                           </button>
                       </div>
                   </form>

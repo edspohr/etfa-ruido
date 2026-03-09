@@ -268,15 +268,14 @@ const ProjectDetailModal = ({ project, isOpen, onClose }) => {
                             <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Cliente</label>
                             <p className="text-sm font-medium text-slate-700 mt-1">{project.client}</p>
                         </div>
-
                         <div>
                              <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Estado Actual</label>
                              <div className="mt-1">
                                 <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                                    project.billingStatus === 'paid' ? 'bg-green-100 text-green-700' :
-                                    project.billingStatus === 'invoiced' ? 'bg-blue-100 text-blue-700' :
-                                    project.billingStatus === 'report_issued' ? 'bg-indigo-100 text-indigo-700' :
-                                    'bg-slate-100 text-slate-700'
+                                    project.billingStatus === 'paid' ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' :
+                                    project.billingStatus === 'invoiced' ? 'bg-blue-100 text-blue-700 border border-blue-200' :
+                                    project.billingStatus === 'report_issued' ? 'bg-indigo-100 text-indigo-700 border border-indigo-200' :
+                                    'bg-amber-100 text-amber-700 border border-amber-200'
                                 }`}>
                                     {COLUMNS.find(c => c.id === project.billingStatus)?.title || project.billingStatus}
                                 </span>
@@ -361,7 +360,8 @@ const ProjectDetailModal = ({ project, isOpen, onClose }) => {
                                 </button>
                             )}
 
-                            {/* Action Button: Generate Pre-Invoice */}
+                            {/* Action Button: Generate Pre-Invoice - DEPRECATED / HIDDEN per USER REQUEST */}
+                            {/* 
                             {project.billingStatus === 'report_issued' && (
                                 <button 
                                     onClick={() => setShowPreInvoiceForm(true)}
@@ -370,6 +370,7 @@ const ProjectDetailModal = ({ project, isOpen, onClose }) => {
                                     <FaFileInvoiceDollar /> Emitir Registro de Factura
                                 </button>
                             )}
+                            */}
                         </div>
                     </div>
                 )}

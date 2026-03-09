@@ -170,10 +170,10 @@ export async function recalculateAllUserBalances() {
 
     //   Update user.balance.
 
-    // 4. Fetch Expenses
-    const expSnap = await getDocs(collection(db, "expenses"));
-    const allExpenses = expSnap.docs.map((d) => d.data());
-    console.log(`Found ${allExpenses.length} expenses.`);
+    // 4. Fetch Manual Adjustments
+    const adjustSnap = await getDocs(collection(db, "balance_adjustments"));
+    const allAdjustments = adjustSnap.docs.map((d) => d.data());
+    console.log(`Found ${allAdjustments.length} manual adjustments.`);
 
     const batch = writeBatch(db);
     let batchCount = 0;
@@ -189,23 +189,24 @@ export async function recalculateAllUserBalances() {
       );
 
       const userAllocations = allocations.filter((a) => a.userId === user.id);
-      // Allocations reduce the "Credit". (Money given to user).
-      // But if `amount` is stored nicely, we just sum them.
-      // Wait.
-      // If Balance = Money Owed To User.
-      // Allocation (Value 1000). Should it be -1000?
-      // Yes.
-      // So Balance = ExpSum - AllocSum.
-
       const ALLOC_SUM = userAllocations.reduce(
         (sum, a) => sum + (Number(a.amount) || 0),
         0,
       );
 
-      const calculatedBalance = EXPENSE_SUM - ALLOC_SUM;
+      const userAdjustments = allAdjustments.filter(
+        (ad) => ad.userId === user.id,
+      );
+      const ADJUST_SUM = userAdjustments.reduce(
+        (sum, ad) => sum + (Number(ad.amount) || 0),
+        0,
+      );
+
+      // Final Formula: Expenses (Credit) - Allocations (Debit) + Manual Adjustments
+      const calculatedBalance = EXPENSE_SUM - ALLOC_SUM + ADJUST_SUM;
 
       console.log(
-        `User ${user.email}: Exp=${EXPENSE_SUM}, Alloc=${ALLOC_SUM}, NewBal=${calculatedBalance}, OldBal=${user.balance}`,
+        `User ${user.email}: Exp=${EXPENSE_SUM}, Alloc=${ALLOC_SUM}, Adjust=${ADJUST_SUM}, NewBal=${calculatedBalance}, OldBal=${user.balance}`,
       );
 
       const userRef = doc(db, "users", user.id);

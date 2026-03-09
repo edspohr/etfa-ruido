@@ -23,77 +23,77 @@ export default function Sidebar({ isOpen, setIsOpen }) {
 
   return (
     <div className={`
-      bg-slate-900 text-white w-72 space-y-6 py-6 px-4 absolute inset-y-0 left-0 transform 
+      bg-slate-900 text-white w-72 flex flex-col absolute inset-y-0 left-0 transform 
       ${isOpen ? 'translate-x-0' : '-translate-x-full'} 
       md:relative md:translate-x-0 transition duration-300 ease-in-out z-30 shadow-2xl border-r border-slate-800
+      overflow-y-auto scrollbar-hide
     `}>
-      <div className="flex items-center justify-center px-2 mb-10 mt-2">
-        <div className="bg-white p-2 rounded-xl shadow-lg shadow-blue-900/20">
-            <img src="/logo.png" alt="ETFA Ruido" className="h-10 w-auto" />
+      <div className="flex items-center justify-center px-6 mb-2 mt-6 shrink-0">
+        <div className="bg-white p-3 rounded-2xl shadow-xl shadow-blue-900/40 w-full flex justify-center items-center overflow-hidden h-24">
+            <img src="/logo.png" alt="ETFA Ruido" className="h-20 w-auto object-contain scale-110" />
         </div>
       </div>
 
-      <div className="px-4 mb-8 border-b border-slate-800 pb-6 text-center">
-        <div className="w-16 h-16 bg-gradient-to-br from-slate-700 to-slate-800 rounded-full mx-auto mb-3 flex items-center justify-center shadow-inner text-2xl">
-            🤖
-        </div>
-        <p className="text-sm font-semibold text-white tracking-wide truncate">{currentUser?.displayName || 'Usuario'}</p>
-        <p className="text-[10px] bg-slate-800 text-slate-400 inline-block px-2 py-0.5 rounded-full mt-2 uppercase tracking-wider border border-slate-700">
+      <div className="px-4 mb-6 pt-4 text-center shrink-0">
+        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] mb-0.5">Usuario Activo</p>
+        <p className="text-sm font-bold text-white tracking-wide truncate">{currentUser?.displayName || 'Usuario'}</p>
+        <p className="text-[9px] bg-indigo-500/10 text-indigo-400 inline-block px-3 py-0.5 rounded-full mt-2 uppercase font-black tracking-tighter border border-indigo-500/20">
             {userRole === 'admin' ? 'Administrador' : 'Profesional'}
         </p>
       </div>
 
-      <nav className="space-y-1">
+      <nav className="flex-1 space-y-1 pb-10">
         {userRole === 'admin' && (
             <>
-                <div className="px-4 mb-6">
+                <div className="px-4 mb-8">
                     <Link 
                         to="/admin/select-module" 
-                        className="flex items-center justify-center w-full py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl border border-slate-700 transition-all text-xs font-bold group"
+                        className="flex items-center justify-center w-full py-3 px-4 bg-slate-800/50 hover:bg-slate-800 text-slate-400 hover:text-white rounded-xl border border-slate-700 transition-all text-xs font-bold group"
                         onClick={() => setIsOpen(false)}
                     >
                         <Grid className="w-4 h-4 mr-2 group-hover:rotate-90 transition-transform duration-300" />
-                        Cambiar de Módulo
+                        Seleccionar Módulo
                     </Link>
                 </div>
 
-                <div className="px-4 mb-2">
-                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Módulos</p>
-                    <div className="grid grid-cols-2 gap-1.5">
-                        <Link 
-                            to="/admin/expenses" 
-                            className={`py-1.5 px-1 flex flex-col items-center justify-center text-center rounded-lg transition border ${
-                                location.pathname.startsWith('/admin/expenses') || location.pathname.startsWith('/admin/approvals') || location.pathname.startsWith('/admin/projects') || location.pathname.startsWith('/admin/balances')
-                                ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' 
-                                : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white hover:bg-slate-700'
-                            }`}
-                        >
-                            <Receipt className="w-4 h-4 mb-0.5"/>
-                            <span className="text-[9px] font-bold leading-none">Rendición</span>
-                        </Link>
-                        <Link 
-                            to="/admin/reports" 
-                            className={`py-1.5 px-1 flex flex-col items-center justify-center text-center rounded-lg transition border ${
-                                location.pathname.startsWith('/admin/reports')
-                                ? 'bg-teal-600 text-white border-teal-600 shadow-sm' 
-                                : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white hover:bg-slate-700'
-                            }`}
-                        >
-                            <ClipboardList className="w-4 h-4 mb-0.5"/>
-                            <span className="text-[9px] font-bold leading-none">Informes</span>
-                        </Link>
-                        <Link 
-                            to="/admin" 
-                            className={`py-1.5 px-1 flex flex-col items-center justify-center text-center rounded-lg transition border ${
-                                !location.pathname.startsWith('/admin/expenses') && !location.pathname.startsWith('/admin/approvals') && !location.pathname.startsWith('/admin/projects') && !location.pathname.startsWith('/admin/balances') && !location.pathname.startsWith('/admin/reports') && !location.pathname.startsWith('/dashboard')
-                                ? 'bg-indigo-500 text-white border-indigo-500 shadow-sm' 
-                                : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white hover:bg-slate-700'
-                            }`}
-                        >
-                            <FileText className="w-4 h-4 mb-0.5"/>
-                            <span className="text-[9px] font-bold leading-none">Financiero</span>
-                        </Link>
-                    </div>
+                <div className="px-4 mb-2 space-y-1.5">
+                    <p className="text-[9px] font-bold text-slate-600 uppercase tracking-widest mb-2 pl-1">Módulos</p>
+                    
+                    <Link 
+                        to="/admin/expenses" 
+                        className={`w-full py-2 px-3.5 flex items-center rounded-xl transition-all border ${
+                            location.pathname.startsWith('/admin/expenses') || location.pathname.startsWith('/admin/approvals') || location.pathname.startsWith('/admin/projects') || location.pathname.startsWith('/admin/balances')
+                            ? 'bg-indigo-600 text-white border-indigo-500 shadow-lg shadow-indigo-900/20' 
+                            : 'bg-slate-800/20 text-slate-400 border-slate-800/50 hover:text-white hover:bg-slate-800'
+                        }`}
+                    >
+                        <Receipt className="w-3.5 h-3.5 mr-3 opacity-60"/>
+                        <span className="text-[11px] font-bold tracking-tight">Rendición</span>
+                    </Link>
+
+                    <Link 
+                        to="/admin/reports" 
+                        className={`w-full py-2 px-3.5 flex items-center rounded-xl transition-all border ${
+                            location.pathname.startsWith('/admin/reports')
+                            ? 'bg-teal-600 text-white border-teal-500 shadow-lg shadow-teal-900/20' 
+                            : 'bg-slate-800/20 text-slate-400 border-slate-800/50 hover:text-white hover:bg-slate-800'
+                        }`}
+                    >
+                        <ClipboardList className="w-3.5 h-3.5 mr-3 opacity-60"/>
+                        <span className="text-[11px] font-bold tracking-tight">Informes</span>
+                    </Link>
+
+                    <Link 
+                        to="/admin" 
+                        className={`w-full py-2 px-3.5 flex items-center rounded-xl transition-all border ${
+                            !location.pathname.startsWith('/admin/expenses') && !location.pathname.startsWith('/admin/approvals') && !location.pathname.startsWith('/admin/projects') && !location.pathname.startsWith('/admin/balances') && !location.pathname.startsWith('/admin/reports') && !location.pathname.startsWith('/dashboard')
+                            ? 'bg-blue-600 text-white border-blue-500 shadow-lg shadow-blue-900/20' 
+                            : 'bg-slate-800/20 text-slate-400 border-slate-800/50 hover:text-white hover:bg-slate-800'
+                        }`}
+                    >
+                        <FileText className="w-3.5 h-3.5 mr-3 opacity-60"/>
+                        <span className="text-[11px] font-bold tracking-tight">Financiero</span>
+                    </Link>
                 </div>
 
                 {/* Show different menus based on "Active Module" inferred from URL */}

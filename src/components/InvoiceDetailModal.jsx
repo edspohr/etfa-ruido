@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react';
-import { X, FileText, AlertTriangle, Trash2 } from 'lucide-react';
-import { doc, getDocs, collection, query, where, writeBatch, serverTimestamp } from 'firebase/firestore';
+import { X, AlertTriangle, Trash2, FileText } from 'lucide-react';
+import { doc, getDocs, collection, query, where, writeBatch, serverTimestamp, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { formatCurrency } from '../utils/format';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { Download } from 'lucide-react';
 
 export default function InvoiceDetailModal({ invoice, isOpen, onClose, onUpdate }) {
     const [expenses, setExpenses] = useState([]);
@@ -11,58 +14,122 @@ export default function InvoiceDetailModal({ invoice, isOpen, onClose, onUpdate 
 
     useEffect(() => {
         if (isOpen && invoice) {
-            const fetchExpenses = async () => {
+            const fetchData = async () => {
                 setLoading(true);
                 try {
+                    // 1. Fetch Expenses
                     const q = query(collection(db, "expenses"), where("invoiceId", "==", invoice.id));
                     const snap = await getDocs(q);
-                    setExpenses(snap.docs.map(d => ({id: d.id, ...d.data()})));
+                    const rawExpenses = snap.docs.map(d => ({id: d.id, ...d.data()}));
+                    
+                    // 2. Fetch Project Names for these expenses
+                    const projectIds = [...new Set(rawExpenses.map(e => e.projectId))];
+                    const projectMap = {};
+                    
+                    for (const pid of projectIds) {
+                        if (!pid) continue;
+                        const pDoc = await getDoc(doc(db, "projects", pid));
+                        if (pDoc.exists()) {
+                            projectMap[pid] = pDoc.data().name;
+                        }
+                    }
+
+                    setExpenses(rawExpenses.map(e => ({
+                        ...e,
+                        projectName: projectMap[e.projectId] || 'S/P'
+                    })));
                 } catch (error) {
                     console.error("Error loading invoice expenses", error);
                 } finally {
                     setLoading(false);
                 }
             };
-            fetchExpenses();
+            fetchData();
         }
     }, [isOpen, invoice]);
 
-    const handleVoidInvoice = async () => {
-        if (!confirm("¿Estás seguro de que deseas ANULAR este registro de factura? Desaparecerá de todos los listados y los gastos volverán a estar disponibles para facturar.")) return;
+    const handleDownloadPDF = () => {
+        const doc = new jsPDF();
+        
+        // Header
+        doc.setFontSize(22);
+        doc.setTextColor(30, 41, 59);
+        doc.text("REGISTRO DE FACTURA", 14, 22);
+        
+        doc.setFontSize(10);
+        doc.setTextColor(100, 116, 139);
+        const dateStr = invoice.createdAt?.seconds 
+            ? new Date(invoice.createdAt.seconds * 1000).toLocaleDateString()
+            : 'N/A';
+        doc.text(`Fecha de Emisión: ${dateStr}`, 14, 30);
+        doc.text(`ID Registro: ${invoice.id}`, 14, 35);
 
-        setProcessing(true);
-        try {
-            const batch = writeBatch(db);
+        // Client Info
+        doc.setFontSize(12);
+        doc.setTextColor(30, 41, 59);
+        doc.text("DATOS DEL CLIENTE", 14, 50);
+        doc.line(14, 52, 70, 52);
 
-            // 1. Mark Invoice as Void
-            const invRef = doc(db, "invoices", invoice.id);
-            batch.update(invRef, { 
-                status: 'void', 
-                paymentStatus: 'void',
-                voidedAt: serverTimestamp() 
-            });
+        doc.setFontSize(10);
+        doc.text(`Razón Social: ${invoice.clientName}`, 14, 60);
+        doc.text(`RUT: ${invoice.clientRut}`, 14, 65);
+        doc.text(`Dirección: ${invoice.clientAddress || 'N/A'}`, 14, 70);
+        if (invoice.clientComuna) doc.text(`Comuna: ${invoice.clientComuna}`, 14, 75);
 
-            // 2. Release Expenses
-            // query all related expenses (we already fetched them)
-            expenses.forEach(exp => {
-                const expRef = doc(db, "expenses", exp.id);
-                // Reset to approved so they can be invoiced again
-                batch.update(expRef, { 
-                    invoiceId: null, 
-                    invoiceStatus: 'approved' 
-                });
-            });
+        // Projects
+        const uniqueProjects = [...new Set(expenses.map(e => e.projectName))];
+        doc.setFontSize(12);
+        doc.text("PROYECTOS ASOCIADOS", 120, 50);
+        doc.line(120, 52, 180, 52);
+        doc.setFontSize(9);
+        uniqueProjects.forEach((p, i) => {
+            doc.text(`• ${p}`, 120, 60 + (i * 5));
+        });
 
-            await batch.commit();
-            onClose();
-            if (onUpdate) onUpdate(); // Refresh parent list
-            
-        } catch (error) {
-            console.error("Error voiding invoice:", error);
-            alert("Error al anular la factura.");
-        } finally {
-            setProcessing(false);
+        // Table
+        const tableData = [
+            ...expenses.map(e => [
+                e.date?.seconds ? new Date(e.date.seconds * 1000).toLocaleDateString() : (e.date || 'S/F'),
+                `[${e.projectName}] ${e.description}`,
+                formatCurrency(e.amount)
+            ]),
+            ...(invoice.customItems || []).map(c => [
+                '-',
+                c.description,
+                formatCurrency(c.amount)
+            ])
+        ];
+
+        autoTable(doc, {
+            startY: 90,
+            head: [['Fecha', 'Descripción / Proyecto', 'Monto Neto']],
+            body: tableData,
+            headStyles: { fillStyle: [79, 70, 229], textColor: 255 },
+            alternateRowStyles: { fillStyle: [248, 250, 252] },
+        });
+
+        // Totals
+        const finalY = doc.lastAutoTable.finalY + 10;
+        doc.setFontSize(10);
+        doc.text(`Monto Neto:`, 140, finalY);
+        doc.text(`${formatCurrency(invoice.totalAmount)}`, 180, finalY, { align: 'right' });
+        
+        doc.text(`IVA (19%):`, 140, finalY + 7);
+        doc.text(`${formatCurrency(Math.round(invoice.totalAmount * 0.19))}`, 180, finalY + 7, { align: 'right' });
+        
+        doc.setFontSize(12);
+        doc.setFont("helvetica", "bold");
+        doc.text(`TOTAL:`, 140, finalY + 16);
+        doc.text(`${formatCurrency(Math.round(invoice.totalAmount * 1.19))}`, 180, finalY + 16, { align: 'right' });
+
+        if (invoice.glosa) {
+            doc.setFontSize(9);
+            doc.setFont("helvetica", "normal");
+            doc.text("Notas:", 14, finalY + 30);
+            doc.text(invoice.glosa, 14, finalY + 35, { maxWidth: 180 });
         }
+
+        doc.save(`Registro_${invoice.id}.pdf`);
     };
 
     if (!isOpen || !invoice) return null;
@@ -184,15 +251,25 @@ export default function InvoiceDetailModal({ invoice, isOpen, onClose, onUpdate 
                 </div>
 
                 {/* Footer Actions */}
-                <div className="p-6 border-t border-slate-100 bg-slate-50 flex justify-between items-center">
-                    <button 
-                         onClick={handleVoidInvoice}
-                         disabled={processing || invoice.status === 'void'}
-                         className="flex items-center gap-2 text-red-500 hover:text-red-700 px-3 py-2 rounded-lg hover:bg-red-50 transition font-medium text-sm"
-                    >
-                        {processing ? <div className="animate-spin w-4 h-4 border-2 border-red-500 border-t-transparent rounded-full" /> : <Trash2 className="w-4 h-4" />}
-                        Anular Registro de Factura
-                    </button>
+                <div className="p-6 border-t border-slate-100 bg-slate-50 flex justify-between items-center gap-3">
+                    <div className="flex gap-2">
+                        <button 
+                             onClick={handleVoidInvoice}
+                             disabled={processing || invoice.status === 'void'}
+                             className="flex items-center gap-2 text-red-500 hover:text-red-700 px-3 py-2 rounded-lg hover:bg-red-50 transition font-medium text-sm"
+                        >
+                            {processing ? <div className="animate-spin w-4 h-4 border-2 border-red-500 border-t-transparent rounded-full" /> : <Trash2 className="w-4 h-4" />}
+                            Anular
+                        </button>
+
+                        <button 
+                             onClick={handleDownloadPDF}
+                             className="flex items-center gap-2 text-indigo-600 hover:text-indigo-800 px-3 py-2 rounded-lg hover:bg-indigo-50 transition font-medium text-sm"
+                        >
+                            <Download className="w-4 h-4" />
+                            Descargar PDF
+                        </button>
+                    </div>
 
                     <button 
                         onClick={onClose}

@@ -17,6 +17,8 @@
     "firebase": "^12.6.0",
     "firebase-admin": "^13.6.1",
     "framer-motion": "^12.26.1",
+    "jspdf": "^4.2.0",
+    "jspdf-autotable": "^5.0.7",
     "lucide-react": "^0.561.0",
     "pdfjs-dist": "^5.4.624",
     "postcss": "^8.5.6",

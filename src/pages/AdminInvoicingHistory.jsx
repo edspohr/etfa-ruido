@@ -99,9 +99,10 @@ export default function AdminInvoicingHistory() {
 
   const getStatusColor = (status) => {
       switch (status) {
-          case 'paid': return 'bg-green-100 text-green-600';
-          case 'void': return 'bg-red-100 text-red-600';
-          default: return 'bg-orange-100 text-orange-600';
+          case 'paid': return 'bg-emerald-100 text-emerald-700 border border-emerald-200';
+          case 'pending': return 'bg-amber-100 text-amber-700 border border-amber-200';
+          case 'void': return 'bg-rose-100 text-rose-700 border border-rose-200';
+          default: return 'bg-slate-100 text-slate-600 border border-slate-200';
       }
   };
 

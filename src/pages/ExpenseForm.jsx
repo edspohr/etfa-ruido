@@ -6,7 +6,7 @@ import { db, uploadReceiptImage } from '../lib/firebase';
 import { collection, getDocs, query, where, doc, increment, writeBatch, serverTimestamp } from 'firebase/firestore';
 import { Upload, Loader2, Camera, X, FileText, Plus } from 'lucide-react';
 import { formatCurrency } from '../utils/format';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { compressImage } from '../utils/imageUtils';
 import { sortProjects } from '../utils/sort';
 import SearchableSelect from '../components/SearchableSelect';
@@ -30,6 +30,7 @@ const CATEGORIES_ADMIN = [
 export default function ExpenseForm() {
   const { currentUser, userRole } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [loading, setLoading] = useState(false);
   const [processingAi, setProcessingAi] = useState(false);
   const [projects, setProjects] = useState([]);
@@ -72,6 +73,25 @@ export default function ExpenseForm() {
           fetchData();
       }
   }, [userRole]);
+
+  // Handle Duplication Pre-fill
+  useEffect(() => {
+      if (location.state?.duplicate) {
+          const d = location.state.duplicate;
+          
+          setFormData({
+              projectId: d.projectId || '',
+              date: new Date().toISOString().split('T')[0], // Use today's date
+              merchant: d.merchant || d.vendor || d.comercio || '',
+              description: d.description || d.details || d.detalle || '',
+              category: d.category || '',
+              amount: d.amount || '',
+              receiptImage: null // Force new upload
+          });
+          setStep('review'); // Skip upload step
+          toast.info("Rendición duplicada. Por favor, sube la nueva boleta.");
+      }
+  }, [location.state]);
 
   const handleFileChange = async (e) => {
     const originalFile = e.target.files[0];

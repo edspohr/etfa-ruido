@@ -8,6 +8,7 @@ import { Plus, DollarSign, Trash2 } from 'lucide-react';
 
 import { sortProjects } from '../utils/sort';
 import { toast } from 'sonner';
+import SearchableSelect from '../components/SearchableSelect';
 
 export default function AdminProjects() {
   const [projects, setProjects] = useState([]);
@@ -17,7 +18,14 @@ export default function AdminProjects() {
 
   // Form States
   const [showProjectForm, setShowProjectForm] = useState(false);
-  const [newProject, setNewProject] = useState({ name: '', client: '', code: '', recurrence: '' });
+  const [newProject, setNewProject] = useState({ 
+    name: '', 
+    client: '', 
+    code: '', 
+    recurrence: '',
+    isRecurrent: false 
+  });
+  const [clients, setClients] = useState([]);
   
   const [viaticoUser, setViaticoUser] = useState('');
   const [viaticoProject, setViaticoProject] = useState('');
@@ -43,6 +51,16 @@ export default function AdminProjects() {
         const uSnap = await getDocs(uQuery);
         const uData = uSnap.docs.map(d => ({id: d.id, ...d.data()}));
         setUsers(uData);
+
+        // Fetch Clients for the dropdown
+        const cSnap = await getDocs(collection(db, "clients"));
+        const cData = cSnap.docs.map(d => ({
+            id: d.id, 
+            label: d.data().razonSocial || d.data().name || 'Sin Nombre',
+            value: d.data().razonSocial || d.data().name || 'Sin Nombre',
+            ...d.data()
+        }));
+        setClients(cData);
     } catch (e) {
         console.error("Error fetching admin data:", e);
     } finally {
@@ -62,7 +80,8 @@ export default function AdminProjects() {
         const projectRef = await addDoc(collection(db, "projects"), {
             name: newProject.name,
             code: newProject.code || '',
-            recurrence: newProject.recurrence || '',
+            recurrence: newProject.isRecurrent ? newProject.recurrence : '',
+            isRecurrent: newProject.isRecurrent,
             client: newProject.client,
             expenses: 0,
             status: 'active',
@@ -79,7 +98,7 @@ export default function AdminProjects() {
         });
 
         toast.success("Proyecto creado exitosamente");
-        setNewProject({ name: '', client: '', code: '', recurrence: '' });
+        setNewProject({ name: '', client: '', code: '', recurrence: '', isRecurrent: false });
         setShowProjectForm(false);
         fetchData();
     } catch (err) {
@@ -102,13 +121,26 @@ export default function AdminProjects() {
               status: 'deleted'
           });
 
-          // Register in Bitacora
+          // Register in Project Bitacora
           await addDoc(collection(db, "projects", projectId, "logs"), {
               type: 'status_change',
               content: `Proyecto marcado como ELIMINADO`,
               userName: 'Admin',
               userRole: 'admin',
               timestamp: serverTimestamp()
+          });
+
+          // 2. Register in Global Audit Logs
+          await addDoc(collection(db, "audit_logs"), {
+              type: 'project_deletion',
+              entityId: projectId,
+              entityName: projects.find(p => p.id === projectId)?.name || 'Unknown',
+              adminName: 'Admin',
+              details: {
+                  status: 'deleted',
+                  timestamp: new Date().toISOString()
+              },
+              createdAt: serverTimestamp()
           });
 
           alert("Proyecto eliminado.");
@@ -238,21 +270,45 @@ export default function AdminProjects() {
                             />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700">Cliente</label>
-                            <input 
-                                type="text" 
-                                list="client-suggestions" // [NEW] Link to datalist
-                                className="mt-1 w-full p-2 border rounded"
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Cliente</label>
+                            <SearchableSelect 
+                                options={clients}
                                 value={newProject.client}
-                                onChange={e => setNewProject({...newProject, client: e.target.value})}
+                                onChange={(val) => setNewProject({...newProject, client: val})}
+                                placeholder="Seleccionar cliente..."
                             />
-                            {/* [NEW] Dynamic Client List */}
-                            <datalist id="client-suggestions">
-                                {[...new Set(projects.map(p => p.client).filter(Boolean))].map((c, i) => (
-                                    <option key={i} value={c} />
-                                ))}
-                            </datalist>
                         </div>
+
+                        <div className="flex items-center gap-2 py-2">
+                            <input 
+                                type="checkbox"
+                                id="isRecurrent"
+                                checked={newProject.isRecurrent}
+                                onChange={e => setNewProject({...newProject, isRecurrent: e.target.checked})}
+                                className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
+                            />
+                            <label htmlFor="isRecurrent" className="text-sm font-bold text-gray-700 cursor-pointer">
+                                Este proyecto es recurrente
+                            </label>
+                        </div>
+
+                        {newProject.isRecurrent && (
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Frecuencia de Recurrencia</label>
+                                <select 
+                                    className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none"
+                                    value={newProject.recurrence}
+                                    onChange={e => setNewProject({...newProject, recurrence: e.target.value})}
+                                    required={newProject.isRecurrent}
+                                >
+                                    <option value="">Seleccionar frecuencia...</option>
+                                    <option value="Mensual">Mensual</option>
+                                    <option value="Trimestral">Trimestral</option>
+                                    <option value="Semestral">Semestral</option>
+                                    <option value="Anual">Anual</option>
+                                </select>
+                            </div>
+                        )}
                         <button type="submit" className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700">
                             Guardar Proyecto
                         </button>
@@ -395,7 +451,7 @@ export default function AdminProjects() {
                                     )}
 
                                     {otherProjects.map(p => (
-                                        <tr key={p.id} className="border-b last:border-0 hover:bg-gray-50">
+                                        <tr key={p.id} className="border-b last:border-0 hover:bg-slate-50 transition-colors group">
                                             <td className="px-6 py-4 font-medium">
                                                 <Link to={`/admin/projects/${p.id}`} className="text-blue-600 hover:text-blue-800 hover:underline">
                                                     {formatProjectName(p)}

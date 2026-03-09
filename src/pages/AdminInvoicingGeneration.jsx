@@ -11,6 +11,8 @@ import SearchableSelect from '../components/SearchableSelect';
 import { useDropzone } from "react-dropzone";
 import * as pdfjs from "pdfjs-dist";
 import { toast } from 'sonner';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 // Configure PDF.js Worker
 pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
@@ -19,13 +21,15 @@ export default function AdminInvoicingGeneration() {
   const navigate = useNavigate();
   
   // View Mode: 'individual' | 'batch'
-  const [generationMode, setGenerationMode] = useState('individual');
+  const [generationMode, setGenerationMode] = useState('batch'); // Default to batch as per user request
 
   const [projects, setProjects] = useState([]);
   const [selectedProjectId, setSelectedProjectId] = useState('');
   const [selectedProject, setSelectedProject] = useState(null);
 
-  // Client State (RUT lookup logic)
+  // Client State
+  const [clients, setClients] = useState([]);
+  const [selectedClientId, setSelectedClientId] = useState('');
   const [clientData, setClientData] = useState({
       rut: '',
       razonSocial: '',
@@ -53,9 +57,10 @@ export default function AdminInvoicingGeneration() {
   // Direct Net Amount Input (Task 1 — simplified billing)
   const [montoNeto, setMontoNeto] = useState('');
 
-  // PDF Extraction State
-  const [extractionMode, setExtractionMode] = useState(false);
+  // PDF Extraction State (Massive Load is now the primary function)
+  const [extractionMode, setExtractionMode] = useState(true);
   const [extracting, setExtracting] = useState(false);
+  const [extractionResult, setExtractionResult] = useState(null);
 
   // UI State
   const [loadingProjects, setLoadingProjects] = useState(true);
@@ -68,24 +73,27 @@ export default function AdminInvoicingGeneration() {
   const [batchSaving, setBatchSaving] = useState(false);
   const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
 
-  // Fetch Projects on Load
+  // Fetch Projects & Clients on Load
   useEffect(() => {
-    async function fetchProjects() {
+    async function fetchData() {
         try {
-            const q = query(collection(db, "projects"), where("status", "!=", "deleted"));
-            const snapshot = await getDocs(q);
-            const loadedProjects = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+            // Fetch Projects
+            const qProj = query(collection(db, "projects"), where("status", "!=", "deleted"));
+            const snapProj = await getDocs(qProj);
+            setProjects(sortProjects(snapProj.docs.map(d => ({ id: d.id, ...d.data() }))));
             
-            // Sort using shared utility (A-Z by code then recurrence)
-            setProjects(sortProjects(loadedProjects));
+            // Fetch All Clients for the dropdown
+            const qClient = query(collection(db, "clients"));
+            const snapClient = await getDocs(qClient);
+            setClients(snapClient.docs.map(d => ({ id: d.id, ...d.data() })));
         } catch (e) {
-            console.error("Error fetching projects:", e);
-            toast.error("Error cargando proyectos.");
+            console.error("Error fetching data:", e);
+            toast.error("Error cargando datos iniciales.");
         } finally {
             setLoadingProjects(false);
         }
     }
-    fetchProjects();
+    fetchData();
   }, []);
 
   // Handle Project Selection & Auto-fill Client (if project has client string)
@@ -102,36 +110,61 @@ export default function AdminInvoicingGeneration() {
       }
   }, [selectedProjectId, projects]);
 
-  // Fetch Expenses when Project changes
+  // Handle Client Selection: Fetch all expenses for ALL projects of this client
   useEffect(() => {
-    if (!selectedProjectId) return;
+    if (!selectedClientId) {
+        setExpenses([]);
+        setSelectedExpenses([]);
+        return;
+    }
 
-    async function fetchExpenses() {
+    const client = clients.find(c => c.id === selectedClientId);
+    if (client) {
+        setClientData({
+            rut: client.rut || '',
+            razonSocial: client.razonSocial || '',
+            direccion: client.direccion || '',
+            comuna: client.comuna || '',
+            giro: client.giro || ''
+        });
+    }
+
+    async function fetchClientExpenses() {
         setLoadingExpenses(true);
         try {
+            // 1. Find all projects that point to this client (by client name or potentially a future clientId field)
+            // For now, we match by selectedProject.client string if they match exactly
+            // OR we can fetch expenses and filter them. 
+            // Better: Fetch all approved expenses without invoiceId.
             const q = query(
                 collection(db, "expenses"), 
-                where("projectId", "==", selectedProjectId),
                 where("status", "==", "approved")
             );
             
             const snapshot = await getDocs(q);
-            const validExpenses = snapshot.docs
+            const allApproved = snapshot.docs
                 .map(d => ({ id: d.id, ...d.data() }))
                 .filter(e => !e.invoiceId);
 
-            setExpenses(validExpenses);
-            setSelectedExpenses(validExpenses.map(e => e.id));
+            // 2. Filter expenses that belong to projects of this client
+            // We need to know which projects belong to this client.
+            const clientProjects = projects.filter(p => p.client === client?.razonSocial);
+            const clientProjectIds = clientProjects.map(p => p.id);
+
+            const filtered = allApproved.filter(e => clientProjectIds.includes(e.projectId));
+
+            setExpenses(filtered);
+            setSelectedExpenses(filtered.map(e => e.id));
         } catch (e) {
-            console.error("Error fetching expenses:", e);
-            toast.error("Error cargando gastos.");
+            console.error("Error fetching client expenses:", e);
+            toast.error("Error cargando gastos del cliente.");
         } finally {
             setLoadingExpenses(false);
         }
     }
 
-    fetchExpenses();
-  }, [selectedProjectId]);
+    fetchClientExpenses();
+  }, [selectedClientId, clients, projects]);
 
   // Client RUT Lookup
   const handleRutBlur = async () => {
@@ -326,15 +359,27 @@ export default function AdminInvoicingGeneration() {
               updatedAt: serverTimestamp()
           }, { merge: true });
 
-          // 2. Create Invoice Document
+          // 2. Determine Project Name (handle multi-project)
+          const selectedExpDocs = expenses.filter(e => selectedExpenses.includes(e.id));
+          const projectNames = [...new Set(selectedExpDocs.map(e => projects.find(p => p.id === e.projectId)?.name).filter(Boolean))];
+          
+          let displayProjectName = selectedProject?.name || 'Manual';
+          if (projectNames.length > 1) {
+              displayProjectName = `Múltiples (${projectNames.length})`;
+          } else if (projectNames.length === 1) {
+              displayProjectName = projectNames[0];
+          }
+
+          // 3. Create Invoice Document
           const invoiceData = {
               clientId: cleanRut,
               clientName: clientData.razonSocial,
               clientRut: clientData.rut,
               clientAddress: clientData.direccion,
+              clientComuna: clientData.comuna, // Added
               
-              projectId: selectedProjectId || 'manual',
-              projectName: selectedProject?.name || 'Varios / Sin Proyecto',
+              projectId: selectedProjectId || (projectNames.length === 1 ? selectedExpDocs[0].projectId : 'multi'),
+              projectName: displayProjectName,
               projectRecurrence: selectedProject?.recurrence || 'N/A',
               
               glosa: glosa,
@@ -382,6 +427,93 @@ export default function AdminInvoicingGeneration() {
       } finally {
           setGenerating(false);
       }
+  };
+
+  // PDF Export Logic
+  const generatePDF = (invData, exps, customs) => {
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.width;
+      
+      // Header
+      doc.setFontSize(22);
+      doc.setTextColor(30, 41, 59); // slate-800
+      doc.text("REGISTRO DE FACTURA", 14, 22);
+      
+      doc.setFontSize(10);
+      doc.setTextColor(100, 116, 139); // slate-500
+      doc.text(`Fecha de Emisión: ${invData.issueDate}`, 14, 30);
+      doc.text(`ID Registro: ${invData.id || 'Nuevo'}`, 14, 35);
+
+      // Client Info
+      doc.setFontSize(12);
+      doc.setTextColor(30, 41, 59);
+      doc.text("DATOS DEL CLIENTE", 14, 50);
+      doc.setLineWidth(0.5);
+      doc.line(14, 52, 70, 52);
+
+      doc.setFontSize(10);
+      doc.text(`Razón Social: ${invData.clientName}`, 14, 60);
+      doc.text(`RUT: ${invData.clientRut}`, 14, 65);
+      doc.text(`Dirección: ${invData.clientAddress || 'N/A'}`, 14, 70);
+      doc.text(`Comuna: ${invData.clientComuna || 'N/A'}`, 14, 75);
+
+      // Projects Involved
+      const uniqueProjects = [...new Set(exps.map(e => e.projectName || 'Sin Proyecto'))];
+      doc.setFontSize(12);
+      doc.text("PROYECTOS ASOCIADOS", 120, 50);
+      doc.line(120, 52, 180, 52);
+      doc.setFontSize(9);
+      uniqueProjects.forEach((p, i) => {
+          doc.text(`• ${p}`, 120, 60 + (i * 5));
+      });
+
+      // Table of Items
+      const tableData = [
+          ...exps.map(e => [
+              e.date?.seconds ? new Date(e.date.seconds * 1000).toLocaleDateString() : (e.date || 'S/F'),
+              `[${e.projectName || 'S/P'}] ${e.description}`,
+              formatCurrency(e.amount)
+          ]),
+          ...customs.map(c => [
+              '-',
+              c.description,
+              formatCurrency(c.amount)
+          ])
+      ];
+
+      autoTable(doc, {
+          startY: 90,
+          head: [['Fecha', 'Descripción / Proyecto', 'Monto Neto']],
+          body: tableData,
+          headStyles: { fillStyle: [79, 70, 229], textColor: 255, fontStyle: 'bold' },
+          alternateRowStyles: { fillStyle: [248, 250, 252] },
+          margin: { top: 90 },
+      });
+
+      // Totals
+      const finalY = (doc).lastAutoTable.finalY + 10;
+      doc.setFontSize(10);
+      doc.text(`Monto Neto:`, 140, finalY);
+      doc.text(`${formatCurrency(invData.totalAmount)}`, 180, finalY, { align: 'right' });
+      
+      doc.text(`IVA (19%):`, 140, finalY + 7);
+      doc.text(`${formatCurrency(Math.round(invData.totalAmount * 0.19))}`, 180, finalY + 7, { align: 'right' });
+      
+      doc.setFontSize(12);
+      doc.setFont("helvetica", "bold");
+      doc.text(`TOTAL:`, 140, finalY + 16);
+      doc.text(`${formatCurrency(Math.round(invData.totalAmount * 1.19))}`, 180, finalY + 16, { align: 'right' });
+
+      // Glosa
+      if (invData.glosa) {
+          doc.setFontSize(9);
+          doc.setFont("helvetica", "normal");
+          doc.setTextColor(100);
+          doc.text("Notas/Glosa:", 14, finalY + 30);
+          doc.text(invData.glosa, 14, finalY + 35, { maxWidth: 180 });
+      }
+
+      doc.save(`Registro_Factura_${invData.clientName.replace(/\s+/g, '_')}.pdf`);
   };
 
   const toggleExpense = (id) => {
@@ -541,71 +673,74 @@ export default function AdminInvoicingGeneration() {
 
   return (
     <Layout title="Generar Registro de Factura">
-      <div className="mb-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-            <Link 
-                to="/admin/invoicing" 
-                className="inline-flex items-center text-xs font-bold uppercase tracking-wider text-slate-400 hover:text-indigo-600 transition-colors mb-2 group"
-            >
-                <ArrowLeft className="w-4 h-4 mr-1 group-hover:-translate-x-1 transition-transform" /> 
-                Volver al Dashboard
-            </Link>
-            <h1 className="text-3xl font-black text-slate-800 tracking-tight">Generar Registros de Factura</h1>
-            <p className="text-sm text-slate-500 mt-1 font-medium">Crea documentos manualmente o procesa PDFs en lote.</p>
-        </div>
-      </div>
-      
-      {/* Mode Switcher */}
-      <div className="flex bg-slate-200/50 p-1 rounded-xl mb-8 w-fit border border-slate-200">
-          <button 
-              onClick={() => setGenerationMode('individual')}
-              className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${generationMode === 'individual' ? 'bg-white text-indigo-700 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'}`}
-          >
-              Individual / Manual
-          </button>
-          <button 
-              onClick={() => setGenerationMode('batch')}
-              className={`px-6 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 ${generationMode === 'batch' ? 'bg-white text-indigo-700 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'}`}
-          >
-              <Upload className="w-4 h-4" /> Carga Múltiple (Lote)
-          </button>
-      </div>
-
-      {generationMode === 'individual' && (
-        <>
-          {extractionMode && (
-              <div className="mb-8 relative overflow-hidden rounded-3xl animate-in fade-in slide-in-from-top-4 duration-300">
-                  <div className="absolute inset-0 bg-gradient-to-br from-indigo-50/50 to-blue-50/50 -z-10" />
-                  <div className={`
-                      border-2 border-dashed rounded-3xl p-10 text-center transition-all duration-300
-                      ${isDragActive ? 'border-indigo-500 bg-indigo-50/80 scale-[1.01] shadow-lg shadow-indigo-100' : 'border-indigo-200 hover:border-indigo-400 hover:bg-white'}
-                  `}>
+      <div className="max-w-6xl mx-auto">
+          {/* Main Action Banner */}
+          <div className="bg-gradient-to-r from-slate-900 to-indigo-950 rounded-[2.5rem] p-8 md:p-12 mb-10 shadow-2xl relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-96 h-96 bg-indigo-500/10 rounded-full blur-[100px] -z-0" />
+              <div className="absolute -bottom-20 -left-20 w-80 h-80 bg-blue-500/10 rounded-full blur-[80px] -z-0" />
+              
+              <div className="relative z-10 flex flex-col md:flex-row justify-between items-center gap-8">
+                  <div className="text-center md:text-left">
+                      <h1 className="text-4xl md:text-5xl font-black text-white mb-4 tracking-tight">
+                          Registro de <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-blue-300">Facturas</span>
+                      </h1>
+                      <p className="text-slate-400 text-lg font-medium max-w-xl">
+                          Carga masiva de documentos PDF para registrar facturas rápidamente o gestiona registros individuales.
+                      </p>
+                  </div>
+                  
+                  <div className="flex bg-slate-800/50 p-1.5 rounded-2xl border border-slate-700/50 backdrop-blur-md">
                       <button 
-                          onClick={() => setExtractionMode(false)} 
-                          className="absolute top-4 right-4 text-slate-400 hover:text-rose-500 hover:bg-rose-50 p-2 rounded-full transition-all"
-                          title="Cancelar Carga"
+                          onClick={() => setGenerationMode('batch')}
+                          className={`px-8 py-3 rounded-xl font-bold transition-all text-sm flex items-center gap-2 ${generationMode === 'batch' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/50' : 'text-slate-400 hover:text-white'}`}
                       >
-                          <Trash2 className="w-5 h-5" />
+                          <Upload className="w-4 h-4" /> Carga Masiva (PDF)
                       </button>
-                      <div {...getRootProps()} className="cursor-pointer outline-none">
-                          <input {...getInputProps()} />
-                          <div className={`
-                              w-20 h-20 mx-auto mb-4 rounded-2xl flex items-center justify-center transition-all duration-300
-                              ${isDragActive ? 'bg-indigo-600 text-white scale-110 shadow-lg shadow-indigo-200' : 'bg-indigo-100 text-indigo-500 group-hover:bg-indigo-200'}
-                          `}>
-                              <FileText className="w-10 h-10" />
-                          </div>
-                          <h3 className="text-xl font-bold text-slate-800 mb-2">
-                              {isDragActive ? '¡Suéltalo aquí!' : 'Sube tu archivo PDF'}
-                          </h3>
-                          <p className="text-slate-500 text-sm max-w-sm mx-auto font-medium">
-                              Arrastra y suelta el documento, o haz clic para explorar. 
-                              Extraeremos RUT, Proyecto y Montos.
-                          </p>
-                      </div>
+                      <button 
+                          onClick={() => setGenerationMode('individual')}
+                          className={`px-8 py-3 rounded-xl font-bold transition-all text-sm flex items-center gap-2 ${generationMode === 'individual' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/50' : 'text-slate-400 hover:text-white'}`}
+                      >
+                          <Plus className="w-4 h-4" /> Registro Manual
+                      </button>
                   </div>
               </div>
-          )}
+          </div>
+
+          {generationMode === 'individual' ? (
+            <>
+              {extractionMode && !extractionResult && (
+                  <div className="mb-8 relative overflow-hidden rounded-3xl animate-in fade-in slide-in-from-top-4 duration-300">
+                      <div className="absolute inset-0 bg-gradient-to-br from-indigo-50/50 to-blue-50/50 -z-10" />
+                      <div className={`
+                          border-2 border-dashed rounded-3xl p-10 text-center transition-all duration-300
+                          ${isDragActive ? 'border-indigo-500 bg-indigo-50/80 scale-[1.01] shadow-lg shadow-indigo-100' : 'border-indigo-200 hover:border-indigo-400 hover:bg-white'}
+                      `}>
+                          <button 
+                              onClick={() => setExtractionMode(false)} 
+                              className="absolute top-4 right-4 text-slate-400 hover:text-rose-500 hover:bg-rose-50 p-2 rounded-full transition-all"
+                              title="Cancelar Carga"
+                          >
+                              <Trash2 className="w-5 h-5" />
+                          </button>
+                          <div {...getRootProps()} className="cursor-pointer outline-none">
+                              <input {...getInputProps()} />
+                              <div className={`
+                                  w-20 h-20 mx-auto mb-4 rounded-2xl flex items-center justify-center transition-all duration-300
+                                  ${isDragActive ? 'bg-indigo-600 text-white scale-110 shadow-lg shadow-indigo-200' : 'bg-indigo-100 text-indigo-500 group-hover:bg-indigo-200'}
+                              `}>
+                                  <FileText className="w-10 h-10" />
+                              </div>
+                              <h3 className="text-xl font-bold text-slate-800 mb-2">
+                                  {isDragActive ? '¡Suéltalo aquí!' : 'Sube tu archivo PDF'}
+                              </h3>
+                              <p className="text-slate-500 text-sm max-w-sm mx-auto font-medium">
+                                  Arrastra y suelta el documento, o haz clic para explorar. 
+                                  Extraeremos RUT, Proyecto y Montos.
+                              </p>
+                          </div>
+                      </div>
+                  </div>
+              )}
 
           {extracting && (
               <div className="mb-8 bg-white border border-indigo-100 shadow-xl shadow-indigo-100/50 rounded-3xl p-10 text-center relative overflow-hidden animate-in fade-in zoom-in-95 duration-300">
@@ -630,12 +765,29 @@ export default function AdminInvoicingGeneration() {
               <div className="bg-white p-8 rounded-[2rem] shadow-lg shadow-slate-200/40 border border-slate-200/60 transition-all hover:shadow-xl hover:shadow-slate-200/50">
                   <div className="flex items-center gap-3 mb-6">
                       <div className="w-8 h-8 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-sm">1</div>
-                      <h3 className="font-bold text-lg text-slate-800">Datos del Cliente</h3>
+                      <h3 className="font-bold text-lg text-slate-800">Seleccionar Cliente</h3>
                   </div>
                   
                   <div className="space-y-4">
-                      <div>
-                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">RUT</label>
+                      <div className="mb-4">
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Cliente Registrado</label>
+                          {loadingProjects ? (
+                              <Skeleton className="h-10 w-full" />
+                          ) : (
+                              <SearchableSelect
+                                  options={clients.map(c => ({
+                                      value: c.id,
+                                      label: `${c.razonSocial} (${c.rut})`
+                                  }))}
+                                  value={selectedClientId}
+                                  onChange={setSelectedClientId}
+                                  placeholder="Buscar cliente..."
+                              />
+                          )}
+                      </div>
+
+                      <div className="relative pt-4 border-t border-slate-100">
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">RUT (Manual o Autocompletado)</label>
                           <div className="relative">
                               <input 
                                   type="text"
@@ -695,7 +847,7 @@ export default function AdminInvoicingGeneration() {
               <div className="bg-white p-8 rounded-[2rem] shadow-lg shadow-slate-200/40 border border-slate-200/60 transition-all hover:shadow-xl hover:shadow-slate-200/50">
                   <div className="flex items-center gap-3 mb-6">
                        <div className="w-8 h-8 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-sm">2</div>
-                       <h3 className="font-bold text-lg text-slate-800">Proyecto <span className="text-slate-400 font-normal text-sm ml-1">(Opcional)</span></h3>
+                       <h3 className="font-bold text-lg text-slate-800">Proyecto Principal <span className="text-slate-400 font-normal text-sm ml-1">(Opcional)</span></h3>
                   </div>
                   
                   <div className="mb-4">
@@ -703,7 +855,9 @@ export default function AdminInvoicingGeneration() {
                           <Skeleton className="h-10 w-full" />
                       ) : (
                           <SearchableSelect
-                              options={projects.map(p => ({
+                              options={projects
+                                .filter(p => !selectedClientId || p.client === clientData.razonSocial)
+                                .map(p => ({
                                   value: p.id,
                                   label: `${p.code ? `[${p.code}] ` : ''}${p.recurrence ? `(${p.recurrence}) ` : ''}${p.name || 'Sin Nombre'}`
                               }))}
@@ -819,11 +973,11 @@ export default function AdminInvoicingGeneration() {
                   )}
               </div>
               
-              {/* Expenses of the Project */}
-              {selectedProjectId && (
+              {/* Expenses of the Client (Grouped by Project) */}
+              {(selectedClientId || selectedProjectId) && (
                   <div className="bg-white rounded-[2rem] shadow-lg shadow-slate-200/40 border border-slate-200/60 overflow-hidden transition-all hover:shadow-xl hover:shadow-slate-200/50">
                       <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/80 backdrop-blur-sm">
-                          <h3 className="font-bold text-lg text-slate-800">Gastos Reembolsables</h3>
+                          <h3 className="font-bold text-lg text-slate-800">Gastos Reembolsables por Proyecto</h3>
                           <span className="text-xs font-bold text-indigo-700 bg-indigo-100 px-3 py-1.5 rounded-full uppercase tracking-wider border border-indigo-200/50">
                                {selectedExpenses.length} Seleccionados
                           </span>
@@ -834,27 +988,49 @@ export default function AdminInvoicingGeneration() {
                       ) : expenses.length === 0 ? (
                           <div className="p-8 text-center text-slate-400 italic text-sm">No hay gastos aprobados pendientes</div>
                       ) : (
-                          <div className="divide-y divide-slate-100 max-h-64 overflow-y-auto">
-                              {expenses.map(expense => (
-                                  <div 
-                                      key={expense.id} 
-                                      className={`p-4 flex items-center justify-between transition-all cursor-pointer group ${selectedExpenses.includes(expense.id) ? 'bg-indigo-50/50 border-l-4 border-indigo-500' : 'hover:bg-slate-50 border-l-4 border-transparent'}`}
-                                      onClick={() => toggleExpense(expense.id)}
-                                  >
-                                      <div className="flex items-center gap-4">
-                                          <div className={`w-5 h-5 rounded flex items-center justify-center transition-colors ${selectedExpenses.includes(expense.id) ? 'bg-indigo-500 text-white' : 'border-2 border-slate-300 group-hover:border-indigo-400'}`}>
-                                              {selectedExpenses.includes(expense.id) && <CheckCircle className="w-3.5 h-3.5" />}
+                          <div className="divide-y divide-slate-100 max-h-[500px] overflow-y-auto">
+                              {/* Grouping Logic */}
+                              {Object.entries(
+                                  expenses.reduce((acc, exp) => {
+                                      const pName = projects.find(p => p.id === exp.projectId)?.name || 'Otros / Sin Proyecto';
+                                      if (!acc[pName]) acc[pName] = [];
+                                      acc[pName].push(exp);
+                                      return acc;
+                                  }, {})
+                              ).map(([projectName, projectExpenses]) => {
+                                  const projectSubtotal = projectExpenses
+                                    .filter(e => selectedExpenses.includes(e.id))
+                                    .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+
+                                  return (
+                                      <div key={projectName} className="bg-white">
+                                          <div className="bg-slate-50/50 px-6 py-2 flex justify-between items-center border-y border-slate-100">
+                                              <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest">{projectName}</span>
+                                              <span className="text-xs font-bold text-slate-600">Subtotal: {formatCurrency(projectSubtotal)}</span>
                                           </div>
-                                          <div>
-                                              <p className={`font-bold text-sm transition-colors ${selectedExpenses.includes(expense.id) ? 'text-indigo-900' : 'text-slate-800 group-hover:text-indigo-700'}`}>{expense.description}</p>
-                                              <p className="text-[10px] text-slate-500 uppercase tracking-wider mt-0.5">{expense.category}</p>
-                                          </div>
+                                          {projectExpenses.map(expense => (
+                                              <div 
+                                                  key={expense.id} 
+                                                  className={`p-4 px-6 flex items-center justify-between transition-all cursor-pointer group ${selectedExpenses.includes(expense.id) ? 'bg-indigo-50/30' : 'hover:bg-slate-50'}`}
+                                                  onClick={() => toggleExpense(expense.id)}
+                                              >
+                                                  <div className="flex items-center gap-4">
+                                                      <div className={`w-5 h-5 rounded flex items-center justify-center transition-colors ${selectedExpenses.includes(expense.id) ? 'bg-indigo-500 text-white' : 'border-2 border-slate-300 group-hover:border-indigo-400'}`}>
+                                                          {selectedExpenses.includes(expense.id) && <CheckCircle className="w-3.5 h-3.5" />}
+                                                      </div>
+                                                      <div>
+                                                          <p className={`font-bold text-sm transition-colors ${selectedExpenses.includes(expense.id) ? 'text-indigo-900' : 'text-slate-800 group-hover:text-indigo-700'}`}>{expense.description}</p>
+                                                          <p className="text-[10px] text-slate-500 uppercase tracking-wider mt-0.5">{expense.category} • {expense.date?.seconds ? new Date(expense.date.seconds * 1000).toLocaleDateString() : (expense.date || 'S/F')}</p>
+                                                      </div>
+                                                  </div>
+                                                  <div className={`font-bold font-mono transition-colors ${selectedExpenses.includes(expense.id) ? 'text-indigo-700' : 'text-slate-600 group-hover:text-slate-800'}`}>
+                                                      {formatCurrency(expense.amount)}
+                                                  </div>
+                                              </div>
+                                          ))}
                                       </div>
-                                      <div className={`font-bold font-mono transition-colors ${selectedExpenses.includes(expense.id) ? 'text-indigo-700' : 'text-slate-600 group-hover:text-slate-800'}`}>
-                                          {formatCurrency(expense.amount)}
-                                      </div>
-                                  </div>
-                              ))}
+                                  );
+                              })}
                           </div>
                       )}
                   </div>
@@ -948,198 +1124,216 @@ export default function AdminInvoicingGeneration() {
                       />
                   </div>
 
-                  <button 
-                      onClick={handleGenerateInvoice}
-                      disabled={generating || !clientData.rut || !clientData.razonSocial || totalInvoice <= 0}
-                      className={`w-full py-4 rounded-2xl font-black text-lg shadow-xl shadow-indigo-900/50 transition-all flex justify-center items-center gap-2 relative z-10 ${
-                          generating || !clientData.rut || !clientData.razonSocial || totalInvoice <= 0
-                          ? 'bg-slate-800/80 text-slate-500 cursor-not-allowed border border-slate-700/50' 
-                          : 'bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white hover:scale-[1.02] active:scale-[0.98]'
-                      }`}
-                  >
-                      {generating ? <Loader className="w-6 h-6 animate-spin" /> : <Save className="w-6 h-6" />}
-                      {generating ? 'Guardando Registro...' : 'Generar y Guardar Registro de Factura'}
-                  </button>
-              </div>
-
-          </div>
-          </div>
-        </>
-      )}
-
-      {/* ======================== */}
-      {/* BATCH MODE VIEW */}
-      {/* ======================== */}
-      {generationMode === 'batch' && (
-        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
-
-          {/* Batch Dropzone */}
-          {batchInvoices.length === 0 && !batchProcessing && (
-            <div className="relative overflow-hidden rounded-3xl">
-              <div className="absolute inset-0 bg-gradient-to-br from-violet-50/50 to-indigo-50/50 -z-10" />
-              <div {...getBatchRootProps()} className={`
-                  border-2 border-dashed rounded-3xl p-16 text-center transition-all duration-300 cursor-pointer outline-none
-                  ${isBatchDragActive ? 'border-violet-500 bg-violet-50/80 scale-[1.01] shadow-lg shadow-violet-100' : 'border-violet-200 hover:border-violet-400 hover:bg-white'}
-              `}>
-                  <input {...getBatchInputProps()} />
-                  <div className={`
-                      w-24 h-24 mx-auto mb-6 rounded-2xl flex items-center justify-center transition-all duration-300
-                      ${isBatchDragActive ? 'bg-violet-600 text-white scale-110 shadow-lg shadow-violet-200' : 'bg-violet-100 text-violet-500'}
-                  `}>
-                      <Upload className="w-12 h-12" />
-                  </div>
-                  <h3 className="text-2xl font-black text-slate-800 mb-2">
-                      {isBatchDragActive ? '¡Suelta los archivos aquí!' : 'Arrastra múltiples PDFs'}
-                  </h3>
-                  <p className="text-slate-500 text-sm max-w-md mx-auto font-medium">
-                      Sube varios documentos PDF a la vez. Extraeremos RUT, Proyecto y Montos de cada uno 
-                      <strong className="text-violet-600"> sin almacenar los archivos</strong> para optimizar espacio.
-                  </p>
-              </div>
-            </div>
-          )}
-
-          {/* Processing Indicator */}
-          {batchProcessing && (
-            <div className="bg-white border border-violet-100 shadow-xl shadow-violet-100/50 rounded-3xl p-10 text-center">
-                <div className="w-20 h-20 mx-auto bg-violet-50 rounded-2xl flex items-center justify-center mb-6 relative">
-                    <div className="absolute inset-0 border-4 border-violet-100 rounded-2xl animate-pulse"></div>
-                    <Loader className="w-10 h-10 text-violet-600 animate-spin" />
-                </div>
-                <h3 className="text-xl font-black text-slate-800 mb-2">Procesando PDFs en Lote</h3>
-                <p className="text-slate-500 font-medium">Analizando {batchProgress.current} de {batchProgress.total} documentos...</p>
-                <div className="mt-4 w-full max-w-xs mx-auto bg-slate-200 rounded-full h-2">
-                    <div 
-                      className="bg-violet-600 h-2 rounded-full transition-all duration-300" 
-                      style={{ width: `${batchProgress.total > 0 ? (batchProgress.current / batchProgress.total) * 100 : 0}%` }}
-                    />
-                </div>
-            </div>
-          )}
-
-          {/* Results Table */}
-          {batchInvoices.length > 0 && !batchProcessing && (
-            <>
-              <div className="bg-white border border-slate-200/60 rounded-[2rem] shadow-lg shadow-slate-200/40 overflow-hidden">
-                <div className="p-6 border-b border-slate-100 flex justify-between items-center">
-                    <div>
-                        <h2 className="text-lg font-black text-slate-800">Resultados de Extracción</h2>
-                        <p className="text-xs text-slate-500 mt-1">
-                            {batchInvoices.filter(i => i.include).length} de {batchInvoices.length} documentos seleccionados
-                        </p>
-                    </div>
-                    <button
-                        onClick={() => setBatchInvoices([])}
-                        className="text-xs font-bold text-slate-400 hover:text-rose-500 px-3 py-1.5 rounded-lg hover:bg-rose-50 transition-all"
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 relative z-10">
+                    <button 
+                        onClick={handleGenerateInvoice}
+                        disabled={generating || !clientData.rut || !clientData.razonSocial || totalInvoice <= 0}
+                        className={`w-full py-4 rounded-2xl font-black text-lg shadow-xl transition-all flex justify-center items-center gap-2 ${
+                            generating || !clientData.rut || !clientData.razonSocial || totalInvoice <= 0
+                            ? 'bg-slate-800/80 text-slate-500 cursor-not-allowed border border-slate-700/50' 
+                            : 'bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white hover:scale-[1.02] active:scale-[0.98]'
+                        }`}
                     >
-                        <RefreshCw className="w-4 h-4 inline mr-1" /> Reiniciar
+                        {generating ? <Loader className="w-6 h-6 animate-spin" /> : <Save className="w-6 h-6" />}
+                        {generating ? 'Guardando...' : 'Generar y Guardar'}
                     </button>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-100 bg-slate-50/50">
-                        <th className="text-left py-3 px-4 font-bold text-slate-500 text-xs uppercase tracking-wider">Incluir</th>
-                        <th className="text-left py-3 px-4 font-bold text-slate-500 text-xs uppercase tracking-wider">Archivo</th>
-                        <th className="text-left py-3 px-4 font-bold text-slate-500 text-xs uppercase tracking-wider">RUT</th>
-                        <th className="text-left py-3 px-4 font-bold text-slate-500 text-xs uppercase tracking-wider">Razón Social</th>
-                        <th className="text-left py-3 px-4 font-bold text-slate-500 text-xs uppercase tracking-wider">Proyecto</th>
-                        <th className="text-right py-3 px-4 font-bold text-slate-500 text-xs uppercase tracking-wider">Monto</th>
-                        <th className="text-center py-3 px-4 font-bold text-slate-500 text-xs uppercase tracking-wider">Estado</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {batchInvoices.map((inv, idx) => (
-                        <tr key={idx} className={`border-b border-slate-50 transition-colors ${
-                          inv.status === 'error' ? 'bg-rose-50/50' : inv.include ? 'bg-indigo-50/30 hover:bg-indigo-50/50' : 'hover:bg-slate-50'
-                        }`}>
-                          <td className="py-3 px-4">
-                            <input 
-                              type="checkbox" 
-                              checked={inv.include} 
-                              disabled={inv.status === 'error'}
-                              onChange={() => updateBatchInvoice(idx, 'include', !inv.include)}
-                              className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                            />
-                          </td>
-                          <td className="py-3 px-4 font-medium text-slate-700 max-w-[200px] truncate">{inv.fileName}</td>
-                          <td className="py-3 px-4">
-                            <input 
-                              type="text" value={inv.rut} 
-                              onChange={(e) => updateBatchInvoice(idx, 'rut', e.target.value)} 
-                              className="w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 outline-none py-1 text-sm"
-                              placeholder="—"
-                            />
-                          </td>
-                          <td className="py-3 px-4">
-                            <input 
-                              type="text" value={inv.razonSocial} 
-                              onChange={(e) => updateBatchInvoice(idx, 'razonSocial', e.target.value)} 
-                              className="w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 outline-none py-1 text-sm"
-                              placeholder="—"
-                            />
-                          </td>
-                          <td className="py-3 px-4 text-slate-600">{inv.project || <span className="text-slate-400 italic">Sin proyecto</span>}</td>
-                          <td className="py-3 px-4 text-right">
-                            <input 
-                              type="number" value={inv.amount} 
-                              onChange={(e) => updateBatchInvoice(idx, 'amount', Number(e.target.value))} 
-                              className="w-28 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 outline-none py-1 text-sm text-right font-semibold"
-                            />
-                          </td>
-                          <td className="py-3 px-4 text-center">
-                            {inv.status === 'ok' ? (
-                              <span className="inline-flex items-center gap-1 text-emerald-600 text-xs font-bold"><CheckCircle className="w-4 h-4" /> OK</span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 text-rose-500 text-xs font-bold" title={inv.error}><AlertCircle className="w-4 h-4" /> Error</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+
+                    <button 
+                        onClick={() => generatePDF({
+                            ...clientData,
+                            issueDate: invoiceDate,
+                            totalAmount: totalInvoice,
+                            glosa: glosa
+                        }, expenses.filter(e => selectedExpenses.includes(e.id)).map(e => ({
+                            ...e,
+                            projectName: projects.find(p => p.id === e.projectId)?.name
+                        })), customItems)}
+                        disabled={totalInvoice <= 0}
+                        className={`w-full py-4 rounded-2xl font-black text-lg shadow-xl transition-all flex justify-center items-center gap-2 bg-white border-2 border-indigo-600 text-indigo-700 hover:bg-indigo-50 active:scale-[0.98] ${
+                            totalInvoice <= 0 ? 'opacity-50 cursor-not-allowed' : ''
+                        }`}
+                    >
+                        <FileText className="w-6 h-6" /> Exportar PDF
+                    </button>
+                  </div>
               </div>
 
-              {/* Batch Summary & Generate */}
-              <div className="relative rounded-[2rem] overflow-hidden">
-                  <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950" />
-                  <div className="absolute top-0 right-0 w-96 h-96 bg-violet-600/20 rounded-full blur-[80px] -z-0" />
-                  <div className="relative z-10 p-8">
-                      <div className="flex justify-between items-center mb-6">
-                          <div>
-                              <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Resumen del Lote</p>
-                              <p className="text-sm text-slate-500 mt-1">
-                                  {batchInvoices.filter(i => i.include).length} documentos seleccionados
-                              </p>
-                          </div>
-                          <div className="text-right">
-                              <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Total a Facturar</p>
-                              <p className="text-4xl font-black text-white mt-1">
-                                  {formatCurrency(batchInvoices.filter(i => i.include).reduce((sum, i) => sum + (Number(i.amount) || 0), 0))}
-                              </p>
-                          </div>
-                      </div>
+          </div>
+        </div>
+      </>
+    ) : (
+      /* ======================== */
+      /* BATCH MODE VIEW */
+      /* ======================== */
+      <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
 
-                      <button 
-                          onClick={handleBatchGenerate}
-                          disabled={batchSaving || batchInvoices.filter(i => i.include).length === 0}
-                          className={`w-full py-4 rounded-2xl font-black text-lg shadow-xl transition-all flex justify-center items-center gap-2 ${
-                              batchSaving || batchInvoices.filter(i => i.include).length === 0
-                              ? 'bg-slate-800/80 text-slate-500 cursor-not-allowed border border-slate-700/50'
-                              : 'bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white hover:scale-[1.02] active:scale-[0.98] shadow-violet-900/50'
-                          }`}
+            {/* Batch Dropzone */}
+            {batchInvoices.length === 0 && !batchProcessing && (
+              <div className="relative overflow-hidden rounded-3xl">
+                <div className="absolute inset-0 bg-gradient-to-br from-violet-50/50 to-indigo-50/50 -z-10" />
+                <div {...getBatchRootProps()} className={`
+                    border-2 border-dashed rounded-3xl p-16 text-center transition-all duration-300 cursor-pointer outline-none
+                    ${isBatchDragActive ? 'border-violet-500 bg-violet-50/80 scale-[1.01] shadow-lg shadow-violet-100' : 'border-violet-200 hover:border-violet-400 hover:bg-white'}
+                `}>
+                    <input {...getBatchInputProps()} />
+                    <div className={`
+                        w-24 h-24 mx-auto mb-6 rounded-2xl flex items-center justify-center transition-all duration-300
+                        ${isBatchDragActive ? 'bg-violet-600 text-white scale-110 shadow-lg shadow-violet-200' : 'bg-violet-100 text-violet-500'}
+                    `}>
+                        <Upload className="w-12 h-12" />
+                    </div>
+                    <h3 className="text-2xl font-black text-slate-800 mb-2">
+                        {isBatchDragActive ? '¡Suelta los archivos aquí!' : 'Arrastra múltiples PDFs'}
+                    </h3>
+                    <p className="text-slate-500 text-sm max-w-md mx-auto font-medium">
+                        Sube varios documentos PDF a la vez. Extraeremos RUT, Proyecto y Montos de cada uno 
+                        <strong className="text-violet-600"> sin almacenar los archivos</strong> para optimizar espacio.
+                    </p>
+                </div>
+              </div>
+            )}
+
+            {/* Processing Indicator */}
+            {batchProcessing && (
+              <div className="bg-white border border-violet-100 shadow-xl shadow-violet-100/50 rounded-3xl p-10 text-center">
+                  <div className="w-20 h-20 mx-auto bg-violet-50 rounded-2xl flex items-center justify-center mb-6 relative">
+                      <div className="absolute inset-0 border-4 border-violet-100 rounded-2xl animate-pulse"></div>
+                      <Loader className="w-10 h-10 text-violet-600 animate-spin" />
+                  </div>
+                  <h3 className="text-xl font-black text-slate-800 mb-2">Procesando PDFs en Lote</h3>
+                  <p className="text-slate-500 font-medium">Analizando {batchProgress.current} de {batchProgress.total} documentos...</p>
+                  <div className="mt-4 w-full max-w-xs mx-auto bg-slate-200 rounded-full h-2">
+                      <div 
+                        className="bg-violet-600 h-2 rounded-full transition-all duration-300" 
+                        style={{ width: `${batchProgress.total > 0 ? (batchProgress.current / batchProgress.total) * 100 : 0}%` }}
+                      />
+                  </div>
+              </div>
+            )}
+
+            {/* Results Table */}
+            {batchInvoices.length > 0 && !batchProcessing && (
+              <>
+                <div className="bg-white border border-slate-200/60 rounded-[2rem] shadow-lg shadow-slate-200/40 overflow-hidden">
+                  <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+                      <div>
+                          <h2 className="text-lg font-black text-slate-800">Resultados de Extracción</h2>
+                          <p className="text-xs text-slate-500 mt-1">
+                              {batchInvoices.filter(i => i.include).length} de {batchInvoices.length} documentos seleccionados
+                          </p>
+                      </div>
+                      <button
+                          onClick={() => setBatchInvoices([])}
+                          className="text-xs font-bold text-slate-400 hover:text-rose-500 px-3 py-1.5 rounded-lg hover:bg-rose-50 transition-all"
                       >
-                          {batchSaving ? <Loader className="w-6 h-6 animate-spin" /> : <Save className="w-6 h-6" />}
-                          {batchSaving ? 'Generando Registros...' : `Generar ${batchInvoices.filter(i => i.include).length} Registros`}
+                          <RefreshCw className="w-4 h-4 inline mr-1" /> Reiniciar
                       </button>
                   </div>
-              </div>
-            </>
-          )}
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-100 bg-slate-50/50">
+                          <th className="text-left py-3 px-4 font-bold text-slate-500 text-xs uppercase tracking-wider">Incluir</th>
+                          <th className="text-left py-3 px-4 font-bold text-slate-500 text-xs uppercase tracking-wider">Archivo</th>
+                          <th className="text-left py-3 px-4 font-bold text-slate-500 text-xs uppercase tracking-wider">RUT</th>
+                          <th className="text-left py-3 px-4 font-bold text-slate-500 text-xs uppercase tracking-wider">Razón Social</th>
+                          <th className="text-left py-3 px-4 font-bold text-slate-500 text-xs uppercase tracking-wider">Proyecto</th>
+                          <th className="text-right py-3 px-4 font-bold text-slate-500 text-xs uppercase tracking-wider">Monto</th>
+                          <th className="text-center py-3 px-4 font-bold text-slate-500 text-xs uppercase tracking-wider">Estado</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {batchInvoices.map((inv, idx) => (
+                          <tr key={idx} className={`border-b border-slate-50 transition-colors ${
+                            inv.status === 'error' ? 'bg-rose-50/50' : inv.include ? 'bg-indigo-50/30 hover:bg-indigo-50/50' : 'hover:bg-slate-50'
+                          }`}>
+                            <td className="py-3 px-4">
+                              <input 
+                                type="checkbox" 
+                                checked={inv.include} 
+                                disabled={inv.status === 'error'}
+                                onChange={() => updateBatchInvoice(idx, 'include', !inv.include)}
+                                className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                              />
+                            </td>
+                            <td className="py-3 px-4 font-medium text-slate-700 max-w-[200px] truncate">{inv.fileName}</td>
+                            <td className="py-3 px-4">
+                              <input 
+                                type="text" value={inv.rut} 
+                                onChange={(e) => updateBatchInvoice(idx, 'rut', e.target.value)} 
+                                className="w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 outline-none py-1 text-sm"
+                                placeholder="—"
+                              />
+                            </td>
+                            <td className="py-3 px-4">
+                              <input 
+                                type="text" value={inv.razonSocial} 
+                                onChange={(e) => updateBatchInvoice(idx, 'razonSocial', e.target.value)} 
+                                className="w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 outline-none py-1 text-sm"
+                                placeholder="—"
+                              />
+                            </td>
+                            <td className="py-3 px-4 text-slate-600">{inv.project || <span className="text-slate-400 italic">Sin proyecto</span>}</td>
+                            <td className="py-3 px-4 text-right">
+                              <input 
+                                type="number" value={inv.amount} 
+                                onChange={(e) => updateBatchInvoice(idx, 'amount', Number(e.target.value))} 
+                                className="w-28 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 outline-none py-1 text-sm text-right font-semibold"
+                              />
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              {inv.status === 'ok' ? (
+                                <span className="inline-flex items-center gap-1 text-emerald-600 text-xs font-bold"><CheckCircle className="w-4 h-4" /> OK</span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-rose-500 text-xs font-bold" title={inv.error}><AlertCircle className="w-4 h-4" /> Error</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Batch Summary & Generate */}
+                <div className="relative rounded-[2rem] overflow-hidden">
+                    <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950" />
+                    <div className="absolute top-0 right-0 w-96 h-96 bg-violet-600/20 rounded-full blur-[80px] -z-0" />
+                    <div className="relative z-10 p-8">
+                        <div className="flex justify-between items-center mb-6">
+                            <div>
+                                <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Resumen del Lote</p>
+                                <p className="text-sm text-slate-500 mt-1">
+                                    {batchInvoices.filter(i => i.include).length} documentos seleccionados
+                                </p>
+                            </div>
+                            <div className="text-right">
+                                <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Total a Facturar</p>
+                                <p className="text-4xl font-black text-white mt-1">
+                                    {formatCurrency(batchInvoices.filter(i => i.include).reduce((sum, i) => sum + (Number(i.amount) || 0), 0))}
+                                </p>
+                            </div>
+                        </div>
+
+                        <button 
+                            onClick={handleBatchGenerate}
+                            disabled={batchSaving || batchInvoices.filter(i => i.include).length === 0}
+                            className={`w-full py-4 rounded-2xl font-black text-lg shadow-xl transition-all flex justify-center items-center gap-2 ${
+                                batchSaving || batchInvoices.filter(i => i.include).length === 0
+                                ? 'bg-slate-800/80 text-slate-500 cursor-not-allowed border border-slate-700/50'
+                                : 'bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white hover:scale-[1.02] active:scale-[0.98] shadow-violet-900/50'
+                            }`}
+                        >
+                            {batchSaving ? <Loader className="w-6 h-6 animate-spin" /> : <Save className="w-6 h-6" />}
+                            {batchSaving ? 'Generando Registros...' : `Generar ${batchInvoices.filter(i => i.include).length} Registros`}
+                        </button>
+                    </div>
+                </div>
+              </>
+            )}
         </div>
       )}
-
+      </div>
     </Layout>
   );
 }

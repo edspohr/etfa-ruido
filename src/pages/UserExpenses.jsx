@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/useAuth';
 import { db } from '../lib/firebase';
 import { collection, query, where, getDocs, deleteDoc, doc, updateDoc, increment } from 'firebase/firestore';
 import { formatCurrency } from '../utils/format';
-import { Trash2, AlertCircle } from 'lucide-react';
+import { Trash2, AlertCircle, Copy } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function UserExpenses() {
+  const navigate = useNavigate();
   const { currentUser } = useAuth();
   const [expenses, setExpenses] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -88,11 +90,11 @@ export default function UserExpenses() {
                         <td className="px-6 py-4 font-medium">{formatCurrency(e.amount)}</td>
                         <td className="px-6 py-4">
                             <div className="flex items-center gap-2">
-                                <span className={`px-2 py-1 rounded-full text-xs font-semibold 
-                                    ${e.status === 'approved' ? 'bg-green-100 text-green-800' : 
-                                      e.status === 'pending' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>
-                                    {e.status === 'approved' ? 'Aprobado' : e.status === 'pending' ? 'Pendiente' : 'Rechazado'}
-                                </span>
+                                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${
+                                      e.status === 'approved' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 
+                                      e.status === 'pending' ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-rose-100 text-rose-700 border-rose-200'}`}>
+                                      {e.status === 'approved' ? 'Aprobado' : e.status === 'pending' ? 'Pendiente' : 'Rechazado'}
+                                    </span>
                                 {e.status === 'rejected' && e.rejectionReason && (
                                     <div className="group relative">
                                         <AlertCircle className="w-4 h-4 text-red-500 cursor-help" />
@@ -105,15 +107,24 @@ export default function UserExpenses() {
                             </div>
                         </td>
                         <td className="px-6 py-4">
-                            {e.status === 'pending' && (
+                            <div className="flex items-center gap-2">
                                 <button 
-                                    onClick={() => handleDelete(e)}
-                                    className="p-2 text-gray-400 hover:text-red-500 transition rounded-full hover:bg-red-50"
-                                    title="Eliminar Rendición"
+                                    onClick={() => navigate('/dashboard/new-expense', { state: { duplicate: e } })}
+                                    className="p-2 text-gray-400 hover:text-blue-500 transition rounded-full hover:bg-blue-50"
+                                    title="Duplicar Rendición"
                                 >
-                                    <Trash2 className="w-5 h-5" />
+                                    <Copy className="w-5 h-5" />
                                 </button>
-                            )}
+                                {e.status === 'pending' && (
+                                    <button 
+                                        onClick={() => handleDelete(e)}
+                                        className="p-2 text-gray-400 hover:text-red-500 transition rounded-full hover:bg-red-50"
+                                        title="Eliminar Rendición"
+                                    >
+                                        <Trash2 className="w-5 h-5" />
+                                    </button>
+                                )}
+                            </div>
                         </td>
                     </tr>
                 ))}

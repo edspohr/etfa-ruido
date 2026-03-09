@@ -299,8 +299,8 @@ export default function AdminApprovals() {
                                 <td className="px-6 py-4 font-semibold">{formatCurrency(e.amount)}</td>
                                 {viewMode === 'history' && (
                                     <td className="px-6 py-4">
-                                        <span className={`px-2 py-1 rounded-full text-xs font-bold ${
-                                            e.status === 'approved' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                                            e.status === 'approved' ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : 'bg-rose-100 text-rose-700 border border-rose-200'
                                         }`}>
                                             {e.status === 'approved' ? 'Aprobado' : 'Rechazado'}
                                         </span>
