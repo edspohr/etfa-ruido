@@ -1,20 +1,41 @@
 import { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
-import { Upload, FileSpreadsheet, CheckCircle, AlertTriangle, ArrowRight, Save, RefreshCw, Search, X, Link } from 'lucide-react';
+import { Upload, FileSpreadsheet, CheckCircle, AlertTriangle, ArrowRight, Save, RefreshCw, Search, X, Link, ChevronDown, ChevronUp } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { collection, query, where, getDocs, writeBatch, doc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, getDocs, writeBatch, doc, serverTimestamp, setDoc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { formatCurrency } from '../utils/format';
 import InvoiceDetailModal from '../components/InvoiceDetailModal';
 import { toast } from 'sonner';
 
+// Helper: generate a deterministic document ID for a bank movement
+const generateMovementId = (bankName, date, amount, description, index) => {
+  const sanitize = (s) => String(s || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase().substring(0, 40);
+  return `${sanitize(bankName)}_${sanitize(date)}_${Math.round(Math.abs(amount))}_${sanitize(description).substring(0, 20)}_${index}`;
+};
+
+// Helper: parse DD/MM/YYYY string to Date object
+const parseDate = (dateStr) => {
+  if (!dateStr || dateStr === 'S/F') return null;
+  const parts = dateStr.split('/');
+  if (parts.length !== 3) return null;
+  const [dd, mm, yyyy] = parts.map(Number);
+  const d = new Date(yyyy, mm - 1, dd);
+  return isNaN(d.getTime()) ? null : d;
+};
+
 export default function AdminInvoicingReconciliation() {
   const [movements, setMovements] = useState([]);
-  const [matches, setMatches] = useState([]);
+  const [matches, setMatches] = useState([]); // confirmed/selected matches
   const [pendingInvoices, setPendingInvoices] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [loadingMovements, setLoadingMovements] = useState(true);
   const [processing, setProcessing] = useState(false);
   
+  // Smart matching: scored suggestions per movement
+  const [suggestions, setSuggestions] = useState({}); // { movementId: [{ invoice, score, reasons }] }
+  const [expandedMovement, setExpandedMovement] = useState(null); // which movement shows its suggestions
+
   // Modal State
   const [selectedInvoice, setSelectedInvoice] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -22,6 +43,9 @@ export default function AdminInvoicingReconciliation() {
   // Manual Match State
   const [manualMatchOpen, setManualMatchOpen] = useState(false);
   const [activeMovement, setActiveMovement] = useState(null);
+
+  // Fetch projects for text matching
+  const [projects, setProjects] = useState([]);
 
   const startManualMatch = (mov) => {
       setActiveMovement(mov);
@@ -47,33 +71,125 @@ export default function AdminInvoicingReconciliation() {
       cancelManualMatch();
   };
 
-  // 1. Fetch Pending Invoices
+  // Confirm a suggestion as a match
+  const confirmSuggestion = (movement, invoice) => {
+    const newMatch = {
+      movement,
+      invoice,
+      confidence: 'smart',
+      reason: 'Coincidencia Inteligente'
+    };
+    setMatches(prev => [...prev, newMatch]);
+    setExpandedMovement(null);
+  };
+
+  // 1. Fetch Pending Invoices & Projects
   const fetchPending = async () => {
       const q = query(collection(db, "invoices"), where("paymentStatus", "==", "pending"));
       const snapshot = await getDocs(q);
       setPendingInvoices(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
   };
 
+  // 2. Fetch persisted movements from Firestore
+  const fetchMovements = async () => {
+    setLoadingMovements(true);
+    try {
+      const snapshot = await getDocs(collection(db, "bank_movements"));
+      const movs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      // Sort by date descending
+      movs.sort((a, b) => {
+        const dateA = parseDate(a.date);
+        const dateB = parseDate(b.date);
+        if (!dateA || !dateB) return 0;
+        return dateB - dateA;
+      });
+      setMovements(movs);
+    } catch (e) {
+      console.error("Error fetching movements:", e);
+      toast.error("Error al cargar movimientos bancarios.");
+    } finally {
+      setLoadingMovements(false);
+    }
+  };
+
   useEffect(() => {
-    fetchPending();
+    const init = async () => {
+      await fetchPending();
+      await fetchMovements();
+      // Also fetch projects for text matching
+      try {
+        const qProj = query(collection(db, "projects"), where("status", "!=", "deleted"));
+        const snapProj = await getDocs(qProj);
+        setProjects(snapProj.docs.map(d => ({ id: d.id, ...d.data() })));
+      } catch (e) { console.error("Error fetching projects:", e); }
+    };
+    init();
   }, []);
+
+  // Re-run smart matching whenever movements or invoices change
+  useEffect(() => {
+    if (movements.length > 0 && pendingInvoices.length > 0) {
+      runSmartMatching(movements, pendingInvoices);
+    }
+  }, [movements, pendingInvoices]);
 
   const openInvoiceDetail = (inv) => {
       setSelectedInvoice(inv);
       setIsModalOpen(true);
   };
 
-  // 2. Handle File Upload & Parsing
+  // ========================
+  // PERSIST MOVEMENTS TO FIRESTORE
+  // ========================
+  const persistMovements = async (parsedMovements, bankName) => {
+    const batch = writeBatch(db);
+    let newCount = 0;
+    let dupeCount = 0;
+    const newMovs = [];
+
+    for (let i = 0; i < parsedMovements.length; i++) {
+      const mov = parsedMovements[i];
+      const docId = generateMovementId(bankName, mov.date, mov.amount, mov.description, i);
+      const docRef = doc(db, "bank_movements", docId);
+
+      // Check if already exists
+      const existing = await getDoc(docRef);
+      if (existing.exists()) {
+        dupeCount++;
+        continue;
+      }
+
+      const movData = {
+        date: mov.date,
+        description: String(mov.description || ''),
+        amount: mov.amount,
+        bank: bankName,
+        createdAt: serverTimestamp(),
+        reconciled: false,
+      };
+
+      batch.set(docRef, movData);
+      newMovs.push({ id: docId, ...movData });
+      newCount++;
+    }
+
+    if (newCount > 0) {
+      await batch.commit();
+    }
+
+    return { newCount, dupeCount, newMovs };
+  };
+
+  // 3. Handle File Upload & Parsing
   const handleFileUpload = (e, bankName) => {
       const selectedFile = e.target.files[0];
       if (!selectedFile) return;
-      
 
       setLoading(true);
 
       const reader = new FileReader();
       
-      reader.onload = (evt) => {
+      reader.onload = async (evt) => {
           try {
               const arrayBuffer = evt.target.result;
 
@@ -85,14 +201,12 @@ export default function AdminInvoicingReconciliation() {
                   const isHtml = headerStr.includes('<html') || headerStr.includes('<table') || headerStr.includes('<!doctype');
 
                   if (isHtml) {
-                      // Parse as HTML table
                       workbook = XLSX.read(arrayBuffer, { type: 'array', raw: true });
                   } else {
                       workbook = XLSX.read(arrayBuffer, { type: 'array' });
                   }
               } catch (xlsxErr) {
                   console.error('XLSX.read failed, trying raw mode:', xlsxErr);
-                  // Last resort: try raw mode
                   try {
                       workbook = XLSX.read(arrayBuffer, { type: 'array', raw: true });
                   } catch (rawErr) {
@@ -116,28 +230,18 @@ export default function AdminInvoicingReconciliation() {
               // Parsing Logic
               const parsedMovements = parseBankData(data, bankName);
               
-              setMovements(prev => {
-                  const combined = [...prev, ...parsedMovements];
-                  return combined.sort((a, b) => {
-                      try {
-                          if (!a.date || !b.date) return 0;
-                          const [da, ma, ya] = a.date.split('/').map(Number);
-                          const [db2, mb, yb] = b.date.split('/').map(Number);
-                          const dateA = new Date(ya, ma - 1, da);
-                          const dateB = new Date(yb, mb - 1, db2);
-                          if (isNaN(dateA.getTime()) || isNaN(dateB.getTime())) return 0;
-                          return dateB - dateA;
-                      } catch {
-                          return 0;
-                      }
-                  });
-              });
-              
-              const newMovements = [...movements, ...parsedMovements];
-              runMatching(newMovements, pendingInvoices);
-
               if (parsedMovements.length > 0) {
-                  toast.success(`${parsedMovements.length} movimientos cargados de ${bankName}.`);
+                  // Persist to Firestore (with duplicate detection)
+                  const { newCount, dupeCount } = await persistMovements(parsedMovements, bankName);
+                  
+                  if (newCount > 0) {
+                    toast.success(`${newCount} movimientos nuevos guardados de ${bankName}.${dupeCount > 0 ? ` (${dupeCount} duplicados omitidos)` : ''}`);
+                  } else if (dupeCount > 0) {
+                    toast.info(`Todos los ${dupeCount} movimientos de ${bankName} ya fueron cargados previamente.`);
+                  }
+                  
+                  // Reload from Firestore to get consistent state
+                  await fetchMovements();
               } else {
                   toast.warning(`No se encontraron movimientos de ingreso en el archivo de ${bankName}.`);
               }
@@ -171,10 +275,8 @@ export default function AdminInvoicingReconciliation() {
           return [];
       }
 
-      // Helper to clean strings
       const cleanStr = (val) => String(val || '').toLowerCase().trim();
 
-      // Helper to find column index
       const findCol = (row, keywords) => {
           if (!row) return -1;
           return row.findIndex(cell => {
@@ -189,34 +291,24 @@ export default function AdminInvoicingReconciliation() {
       let abonoIdx = -1;
       let montoIdx = -1;
 
-
-      // 1. Scan for Header Row (up to 50 rows, common in messy bank files)
+      // 1. Scan for Header Row
       for (let i = 0; i < Math.min(rows.length, 50); i++) {
           const row = rows[i];
           if (!row || row.length === 0) continue;
 
           const dIdx = findCol(row, ['fecha', 'date']);
           const descI = findCol(row, ['descrip', 'detalle', 'concepto', 'movimiento', 'glosa']);
-          
-          // Extended Checks for Santander / Other Formats
           const aIdx = findCol(row, ['abono', 'deposito', 'credit', 'crédito']);
-          // FIX: Removed 'saldo' from keywords to avoid capturing balance. Added safety check below.
           let mIdx = findCol(row, ['monto', 'importe', 'valor']); 
           
-          // Safety: If column header explicitly says "Saldo" or "Balance", ignore it.
           if (mIdx !== -1) {
               const headerVal = cleanStr(row[mIdx]);
               if (headerVal.includes('saldo') || headerVal.includes('balance') || headerVal.includes('acumulado')) {
                   mIdx = -1;
               }
           }
-          
-          // Debug scan
-          // console.log(`Row ${i} scan: Date=${dIdx}, Desc=${descI}, Abono=${aIdx}, Monto=${mIdx}`);
 
           if (dIdx !== -1 && (descI !== -1)) {
-              // Found Date and Description, likely the header
-              // Now check if we have ANY numeric value column
               if (aIdx !== -1 || mIdx !== -1) {
                   headerRowIndex = i;
                   dateIdx = dIdx;
@@ -228,24 +320,16 @@ export default function AdminInvoicingReconciliation() {
           }
       }
 
-      // STRATEGY B: "Find Header" Scan (Specific for Santander)
-      // Santander often has headers around row 10+ with "FECHA", "MONTO", "DESCRIPCIÓN" in weird orders.
-      // We will SCAN specifically for a row that has these headers.
+      // STRATEGY B: Santander-specific
       if (bankName === 'Santander') {
-          console.log(`[${bankName}] Using Strategy B (Find Header by Keywords in first 20 rows)...`);
-          
           let santanderHeaderRowIndex = -1;
           let sDateIdx = -1;
           let sMontoIdx = -1;
           let sDescIdx = -1;
 
-          // 1. Find the Header Row
-          for (let i = 0; i < Math.min(rows.length, 25); i++) { // Scan up to 25 rows
+          for (let i = 0; i < Math.min(rows.length, 25); i++) {
              const row = rows[i];
              if (!row) continue;
-             
-             // Check if this row looks like a header (Must have FECHA and (MONTO or IMPORTE))
-             // Use exact string matching or includes?
              const dI = findCol(row, ['fecha']);
              const mI = findCol(row, ['monto', 'importe']);
              const descI = findCol(row, ['descripción', 'descripcion', 'detalle', 'movimiento']);
@@ -260,27 +344,17 @@ export default function AdminInvoicingReconciliation() {
           }
 
           if (santanderHeaderRowIndex !== -1) {
-              console.log(`[Santander] Found headers at row ${santanderHeaderRowIndex}. Date:${sDateIdx}, Monto:${sMontoIdx}`);
-              
               const parsedSantander = [];
               
-              // Iterate rows AFTER header
               for (let i = santanderHeaderRowIndex + 1; i < rows.length; i++) {
                   const row = rows[i];
                   if (!row || row.length === 0) continue;
-                  
-                  // Extract Amount (Monto/Importe)
-                  // Santander often provides negative for charges, positive/negative for payments?
-                  // Usually: Cargos are Negative. Abonos are Positive. 
-                  // But sometimes they are in different columns.
-                  // If we found a "Monto" column, use it.
-                  
+
                   let rawAmount = 0;
                   if (sMontoIdx !== -1 && row[sMontoIdx] !== undefined) {
                       rawAmount = row[sMontoIdx];
                   }
                   
-                  // Parse
                   let finalAmount = 0;
                    if (typeof rawAmount === 'number') {
                       finalAmount = rawAmount;
@@ -292,10 +366,8 @@ export default function AdminInvoicingReconciliation() {
                       if (isNegative) finalAmount = -Math.abs(finalAmount);
                   }
 
-                  // FILTER: Only Positive Amounts (Ingresos)
                   if (!finalAmount || isNaN(finalAmount) || finalAmount <= 0) continue;
 
-                  // Extract Date
                   let rawDate = sDateIdx !== -1 ? row[sDateIdx] : null;
                   let finalDate = 'S/F';
                   
@@ -308,7 +380,6 @@ export default function AdminInvoicingReconciliation() {
                                finalDate = `${dd}/${mm}/${dateObj.y}`;
                            } catch { finalDate = 'Error Fecha'; }
                       } else {
-                          // String: DD/MM/AAAA or DD-MM-AAAA
                           const sDate = String(rawDate).trim();
                           if (sDate.match(/^\d{1,2}[/-]\d{1,2}[/-]\d{2,4}$/)) {
                               finalDate = sDate.replace(/-/g, '/');
@@ -316,19 +387,16 @@ export default function AdminInvoicingReconciliation() {
                       }
                   }
 
-                   // Description
                   let desc = 'Sin descripción';
                   if (sDescIdx !== -1 && row[sDescIdx]) {
                       desc = String(row[sDescIdx]).trim();
                   }
 
                   parsedSantander.push({
-                       id: `mov-santander-${i}-${Date.now()}`,
                        date: finalDate,
                        description: desc,
                        amount: finalAmount,
                        bank: bankName,
-                       originalRow: row
                   });
               }
               
@@ -338,17 +406,12 @@ export default function AdminInvoicingReconciliation() {
 
       if (headerRowIndex === -1) {
           // FALLBACK: Index-based column detection
-          // Try to find first row with at least 3 non-empty cells and assume:
-          // Col 0 = Date, Col 1 = Description, Col 2+ = Amount
-          console.warn(`[${bankName}] Keyword header detection failed. Trying index-based fallback...`);
-
           let fallbackHeaderIdx = -1;
           for (let i = 0; i < Math.min(rows.length, 30); i++) {
               const row = rows[i];
               if (!row) continue;
               const nonEmpty = row.filter(cell => cell !== null && cell !== undefined && String(cell).trim() !== '');
               if (nonEmpty.length >= 3) {
-                  // Check if first cell looks like a date or date header
                   const firstCell = String(row[0] || '').toLowerCase().trim();
                   const looksLikeHeader = firstCell.includes('fecha') || firstCell.includes('date');
                   const looksLikeDate = /^\d{1,2}[/-]/.test(firstCell) || typeof row[0] === 'number';
@@ -357,7 +420,6 @@ export default function AdminInvoicingReconciliation() {
                       fallbackHeaderIdx = i;
                       dateIdx = 0;
                       descIdx = 1;
-                      // Find a numeric column for amount (prefer last columns)
                       for (let c = row.length - 1; c >= 2; c--) {
                           const hdr = cleanStr(row[c]);
                           if (hdr.includes('abono') || hdr.includes('credit') || hdr.includes('monto') || hdr.includes('importe')) {
@@ -369,7 +431,6 @@ export default function AdminInvoicingReconciliation() {
                       headerRowIndex = fallbackHeaderIdx;
                       break;
                   } else if (looksLikeDate && i > 0) {
-                      // Previous row might be the header
                       fallbackHeaderIdx = i - 1;
                       dateIdx = 0;
                       descIdx = Math.min(1, row.length - 1);
@@ -382,12 +443,9 @@ export default function AdminInvoicingReconciliation() {
       }
 
       if (headerRowIndex === -1) {
-          console.warn(`Could not find headers in ${bankName} file.`);
           toast.error(`No se detectaron las columnas 'Fecha', 'Descripción' y 'Abono/Monto' en el archivo de ${bankName}. Verifica que el archivo sea correcto.`);
           return [];
       }
-
-      console.log(`[${bankName}] Headers found at row ${headerRowIndex}. Date:${dateIdx}, Desc:${descIdx}, Abono:${abonoIdx}, Monto:${montoIdx}`);
 
       const cleanMovements = [];
       
@@ -395,72 +453,48 @@ export default function AdminInvoicingReconciliation() {
           const row = rows[i];
           if (!row || row.length === 0) continue;
 
-          // --- 1. AMOUNT PARSING ---
           let rawAmount = 0;
-          
-          // Strategy: Try Abono, then Monto
           if (abonoIdx !== -1 && row[abonoIdx]) {
               rawAmount = row[abonoIdx];
           } 
-          
-          // Fallback: If no Abono value found (or Abono column missing), check Monto/Importe
           if (!rawAmount && montoIdx !== -1 && row[montoIdx]) {
              rawAmount = row[montoIdx];
           }
 
-          // Parse the number
           let finalAmount = 0;
           if (typeof rawAmount === 'number') {
               finalAmount = rawAmount;
           } else if (typeof rawAmount === 'string') {
               let s = rawAmount.trim();
-              
-              // Check for negative signs before cleaning
-              // Parentheses (100) or leading/trailing minus -100, 100-
               const isNegative = s.includes('(') || s.includes('-');
-
-              // CLEANUP: Chilean format "1.000.000" or "1.000.000,00"
-              // Remove dots (thousand sep)
               s = s.replace(/\./g, '');
-              // Replace comma with dot (decimal)
               s = s.replace(',', '.');
-              // Remove non-numeric (except dot)
               s = s.replace(/[^0-9.]/g, '');
-              
               finalAmount = parseFloat(s);
-              
               if (isNegative) {
                   finalAmount = -Math.abs(finalAmount);
               }
           }
 
-          // Filter: Must be valid number and Positive (we only reconcile Income)
           if (!finalAmount || isNaN(finalAmount) || finalAmount <= 0) continue;
 
-          // --- 2. DATE PARSING ---
           let rawDate = row[dateIdx];
           let finalDate = 'S/F';
 
           if (typeof rawDate === 'number') {
-              // Excel Serial Date
               try {
                   const dateObj = XLSX.SSF.parse_date_code(rawDate);
-                  // Pad with leading zeros
                   const dd = String(dateObj.d).padStart(2, '0');
                   const mm = String(dateObj.m).padStart(2, '0');
                   finalDate = `${dd}/${mm}/${dateObj.y}`;
               } catch {
-                  console.warn("Date parse error", rawDate);
                   finalDate = 'Error Fecha';
               }
           } else if (typeof rawDate === 'string') {
-               // Try identifying DD/MM/YYYY or DD-MM-YYYY
                rawDate = rawDate.trim();
-               // Regex for DD/MM/YYYY
                if (rawDate.match(/^\d{1,2}[/-]\d{1,2}[/-]\d{2,4}$/)) {
-                   finalDate = rawDate.replace(/-/g, '/'); // normalize to slash
+                   finalDate = rawDate.replace(/-/g, '/');
                } else {
-                   // Try native Date parse?
                    const d = new Date(rawDate);
                    if (!isNaN(d.getTime())) {
                        finalDate = d.toLocaleDateString('es-CL');
@@ -469,48 +503,136 @@ export default function AdminInvoicingReconciliation() {
           }
 
           cleanMovements.push({
-              id: `mov-${bankName}-${i}-${Date.now()}`, 
-              date: finalDate, // Now strictly DD/MM/YYYY
+              date: finalDate,
               description: row[descIdx] || 'Sin descripción',
               amount: finalAmount,
               bank: bankName,
-              originalRow: row
           });
       }
 
-      console.log(`[${bankName}] Parsed ${cleanMovements.length} valid incoming movements.`);
-      if (cleanMovements.length === 0) {
-          console.warn(`Se encontraron columnas pero no movimientos de ingreso (Abonos) válidos en ${bankName}.`);
-      }
       return cleanMovements;
   };
 
-  const runMatching = (bankMovements, invoices) => {
-      const foundMatches = [];
+  // ========================
+  // SMART MATCHING ALGORITHM
+  // ========================
+  const runSmartMatching = (bankMovements, invoices) => {
+    const newSuggestions = {};
+    const autoMatches = [];
 
-      bankMovements.forEach(mov => {
-          // 1. Exact Amount Match
-          const amountMatch = invoices.find(inv => Math.abs(Number(inv.totalAmount) - mov.amount) < 10); // tolerance of $10
+    bankMovements.forEach(mov => {
+      // Skip already confirmed matches
+      if (matches.some(m => m.movement.id === mov.id)) return;
 
-          if (amountMatch) {
-              foundMatches.push({
-                  movement: mov,
-                  invoice: amountMatch,
-                  confidence: 'high',
-                  reason: 'Monto exacto'
-              });
-          } else {
-              // 2. Try Partial Description Match (if Amount didn't match perfectly, maybe verify?)
-              // For now, let's keep it simple: Matching by Amount is strongest for simple reconciliation
+      const scored = [];
+
+      invoices.forEach(inv => {
+        // Skip already matched invoices
+        if (matches.some(m => m.invoice.id === inv.id)) return;
+
+        let score = 0;
+        const reasons = [];
+
+        // 1. AMOUNT: Exact match (+50 points, tolerance $10)
+        const amountDiff = Math.abs(Number(inv.totalAmount) - mov.amount);
+        if (amountDiff < 10) {
+          score += 50;
+          reasons.push('Monto exacto');
+        } else if (amountDiff < 100) {
+          score += 25;
+          reasons.push('Monto similar');
+        }
+
+        // 2. DATE: Proximity within 5 days (+20 points)
+        const movDate = parseDate(mov.date);
+        let invDateStr = inv.issueDate || '';
+        // invoices may store issueDate as "YYYY-MM-DD"
+        let invDate = null;
+        if (invDateStr) {
+          const parts = invDateStr.split('-');
+          if (parts.length === 3) {
+            invDate = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
           }
+        }
+        // Fallback to createdAt
+        if (!invDate && inv.createdAt?.seconds) {
+          invDate = new Date(inv.createdAt.seconds * 1000);
+        }
+
+        if (movDate && invDate && !isNaN(movDate.getTime()) && !isNaN(invDate.getTime())) {
+          const daysDiff = Math.abs((movDate - invDate) / (1000 * 60 * 60 * 24));
+          if (daysDiff <= 5) {
+            score += 20;
+            reasons.push(`Fecha cercana (${Math.round(daysDiff)}d)`);
+          } else if (daysDiff <= 15) {
+            score += 10;
+            reasons.push(`Fecha próxima (${Math.round(daysDiff)}d)`);
+          }
+        }
+
+        // 3. TEXT: Description contains Client Name or Project Code (+30 points)
+        const descLower = String(mov.description || '').toLowerCase();
+        const clientName = String(inv.clientName || '').toLowerCase();
+        const projectName = String(inv.projectName || '').toLowerCase();
+        
+        // Find the project code from the projects array
+        let projectCode = '';
+        if (inv.projectId) {
+          const proj = projects.find(p => p.id === inv.projectId);
+          if (proj?.code) projectCode = proj.code.toLowerCase();
+        }
+
+        if (clientName && clientName.length > 2 && descLower.includes(clientName)) {
+          score += 30;
+          reasons.push('Nombre cliente en descripción');
+        } else if (projectCode && projectCode.length > 2 && descLower.includes(projectCode)) {
+          score += 30;
+          reasons.push('Código proyecto en descripción');
+        } else if (projectName && projectName.length > 3 && descLower.includes(projectName)) {
+          score += 20;
+          reasons.push('Nombre proyecto en descripción');
+        }
+
+        if (score > 0) {
+          scored.push({ invoice: inv, score, reasons });
+        }
       });
-      
-      setMatches(foundMatches);
+
+      // Sort by score descending
+      scored.sort((a, b) => b.score - a.score);
+
+      if (scored.length > 0) {
+        // If top match is definitive (score >= 70 and clearly best)
+        if (scored[0].score >= 70 && (scored.length === 1 || scored[0].score > scored[1].score + 20)) {
+          autoMatches.push({
+            movement: mov,
+            invoice: scored[0].invoice,
+            confidence: 'high',
+            reason: scored[0].reasons.join(' + ')
+          });
+        }
+        
+        // Store all suggestions with score > 30 for the UI
+        const relevant = scored.filter(s => s.score > 30);
+        if (relevant.length > 0) {
+          newSuggestions[mov.id] = relevant;
+        }
+      }
+    });
+
+    setSuggestions(newSuggestions);
+    
+    // Only auto-add matches that aren't already confirmed
+    if (autoMatches.length > 0) {
+      setMatches(prev => {
+        const existingIds = new Set(prev.map(m => m.movement.id));
+        const newOnes = autoMatches.filter(m => !existingIds.has(m.movement.id));
+        return [...prev, ...newOnes];
+      });
+    }
   };
 
-
-
-  // 3. Confirm Matches
+  // 4. Confirm Matches
   const handleConfirmMatches = async () => {
       setProcessing(true);
       try {
@@ -527,12 +649,11 @@ export default function AdminInvoicingReconciliation() {
                       bank: m.movement.bank,
                       transactionDate: m.movement.date,
                       transactionDescription: m.movement.description,
-                      originalRow: m.movement.originalRow,
                       reconciledAt: new Date().toISOString()
                   }
               });
 
-              // [NEW] Update Project Billing Status to 'paid'
+              // Update Project Billing Status to 'paid'
               if (m.invoice.projectId) {
                   const projRef = doc(db, "projects", m.invoice.projectId);
                   batch.update(projRef, {
@@ -540,16 +661,26 @@ export default function AdminInvoicingReconciliation() {
                       lastPaymentDate: serverTimestamp()
                   });
               }
+
+              // Mark the bank movement as reconciled
+              if (m.movement.id) {
+                const movRef = doc(db, "bank_movements", m.movement.id);
+                batch.update(movRef, {
+                  reconciled: true,
+                  reconciledInvoiceId: m.invoice.id,
+                  reconciledAt: serverTimestamp()
+                });
+              }
           });
 
           await batch.commit();
           toast.success(`${matches.length} facturas conciliadas exitosamente.`);
-          setMovements([]);
           setMatches([]);
+          setSuggestions({});
           
-          // Remove reconciled invoices from pending list
-          const matchedIds = matches.map(m => m.invoice.id);
-          setPendingInvoices(prev => prev.filter(inv => !matchedIds.includes(inv.id)));
+          // Reload data
+          await fetchPending();
+          await fetchMovements();
 
       } catch (e) {
           console.error("Error confirming matches:", e);
@@ -564,8 +695,6 @@ export default function AdminInvoicingReconciliation() {
       newMatches.splice(index, 1);
       setMatches(newMatches);
   };
-
-
 
   return (
     <Layout title="Cuenta Corriente Unificada" isFullWidth={true}>
@@ -594,7 +723,7 @@ export default function AdminInvoicingReconciliation() {
                               {movements.some(m => m.bank === 'Itaú') ? (
                                   <>
                                       <CheckCircle className="w-5 h-5 text-orange-600" />
-                                      <span className="font-bold text-orange-700 text-sm">Itaú Listo</span>
+                                      <span className="font-bold text-orange-700 text-sm">Itaú Listo ({movements.filter(m => m.bank === 'Itaú').length} mov.)</span>
                                   </>
                               ) : (
                                   <>
@@ -618,7 +747,7 @@ export default function AdminInvoicingReconciliation() {
                               {movements.some(m => m.bank === 'Santander') ? (
                                   <>
                                       <CheckCircle className="w-5 h-5 text-red-600" />
-                                      <span className="font-bold text-red-700 text-sm">Santander Listo</span>
+                                      <span className="font-bold text-red-700 text-sm">Santander Listo ({movements.filter(m => m.bank === 'Santander').length} mov.)</span>
                                   </>
                               ) : (
                                   <>
@@ -645,9 +774,13 @@ export default function AdminInvoicingReconciliation() {
                           <span className="text-slate-500">Movimientos:</span>
                           <span className="font-bold">{movements.length}</span>
                       </div>
-                      <div className="flex justify-between">
+                      <div className="flex justify-between border-b border-slate-50 pb-2">
                           <span className="text-slate-500">Coincidencias:</span>
                           <span className="font-bold text-green-600">{matches.length}</span>
+                      </div>
+                      <div className="flex justify-between">
+                          <span className="text-slate-500">Sugerencias:</span>
+                          <span className="font-bold text-amber-600">{Object.keys(suggestions).length}</span>
                       </div>
                   </div>
               </div>
@@ -693,7 +826,16 @@ export default function AdminInvoicingReconciliation() {
                                   <p className="text-xs text-slate-400 mt-1">{match.movement.date}</p>
                               </div>
 
-                              <ArrowRight className="text-slate-300 w-5 h-5 flex-shrink-0" />
+                              <div className="flex flex-col items-center gap-1 flex-shrink-0">
+                                  <ArrowRight className="text-slate-300 w-5 h-5" />
+                                  <span className={`text-[9px] uppercase font-bold px-2 py-0.5 rounded-full ${
+                                    match.confidence === 'high' ? 'bg-green-100 text-green-700' : 
+                                    match.confidence === 'smart' ? 'bg-blue-100 text-blue-700' : 
+                                    'bg-slate-100 text-slate-600'
+                                  }`}>
+                                    {match.reason || match.confidence}
+                                  </span>
+                              </div>
 
                               {/* Invoice Side */}
                               <div className="flex-1 min-w-0">
@@ -722,16 +864,15 @@ export default function AdminInvoicingReconciliation() {
           )}
 
           {/* BOTTOM SECTION: Data Workspaces (Side-by-Side) */}
-          {/* Use calc height to ensure it fills existing screen but allows scrolling */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 h-[calc(100vh-320px)] min-h-[600px]">
               
               {/* Unified Movements Table */}
               <div className="bg-white rounded-2xl shadow-soft border border-slate-100 overflow-hidden flex flex-col h-full">
                   <div className="p-4 border-b border-slate-100 bg-slate-50 sticky top-0 z-10">
                       <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                          <FileSpreadsheet className="w-4 h-4 text-slate-500" /> Movimientos Unificados
+                          <FileSpreadsheet className="w-4 h-4 text-slate-500" /> Movimientos Bancarios
                       </h3>
-                      <p className="text-xs text-slate-500">Itaú y Santander (Ordenados por fecha)</p>
+                      <p className="text-xs text-slate-500">Persistidos en Firestore · Itaú y Santander</p>
                   </div>
                   <div className="overflow-auto flex-1">
                       <table className="w-full text-left text-sm whitespace-nowrap">
@@ -746,7 +887,13 @@ export default function AdminInvoicingReconciliation() {
                               </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
-                              {movements.length === 0 ? (
+                              {loadingMovements ? (
+                                  <tr>
+                                      <td colSpan="6" className="px-4 py-10 text-center text-slate-400 text-sm animate-pulse">
+                                          Cargando movimientos...
+                                      </td>
+                                  </tr>
+                              ) : movements.length === 0 ? (
                                   <tr>
                                       <td colSpan="6" className="px-4 py-10 text-center text-slate-400">
                                           Sube archivos para ver movimientos.
@@ -754,44 +901,100 @@ export default function AdminInvoicingReconciliation() {
                                   </tr>
                               ) : (
                                   movements.map((mov, i) => {
-                                      const isMatched = matches.some(m => m.movement.id === mov.id);
+                                      const isMatched = matches.some(m => m.movement.id === mov.id) || mov.reconciled;
+                                      const movSuggestions = suggestions[mov.id] || [];
+                                      const isExpanded = expandedMovement === mov.id;
+
                                       return (
-                                          <tr key={i} className={`transition ${
-                                              // Visual States
-                                              manualMatchOpen && activeMovement && activeMovement.id === mov.id
-                                                ? 'bg-indigo-50 border-l-4 border-indigo-600 shadow-inner' // Active Selection
-                                                : manualMatchOpen
-                                                    ? 'opacity-40 grayscale' // Faded when selecting
-                                                    : isMatched 
-                                                        ? 'bg-green-50/50' // Matched
-                                                        : 'hover:bg-slate-50' // Default hover
-                                          }`}>
-                                              <td className="px-4 py-3">
-                                                  <span className={`text-[10px] uppercase font-bold px-2 py-1 rounded-full ${mov.bank === 'Itaú' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'}`}>
-                                                      {mov.bank || 'Banco'}
-                                                  </span>
-                                              </td>
-                                              <td className="px-4 py-3 text-slate-600">{mov.date}</td>
-                                              <td className="px-4 py-3 text-slate-700 max-w-[200px] truncate" title={mov.description}>
-                                                  {mov.description}
-                                              </td>
-                                              <td className="px-4 py-3 text-right font-bold text-green-600 font-mono">
-                                                  + {formatCurrency(mov.amount)}
-                                              </td>
-                                              <td className="px-4 py-3 text-center">
-                                                  {isMatched && <CheckCircle className="w-4 h-4 text-green-500 mx-auto" />}
-                                              </td>
-                                              <td className="px-4 py-3 text-center">
-                                                  {!isMatched && (
-                                                      <button 
-                                                        onClick={() => startManualMatch(mov)}
-                                                        className="text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50 p-1.5 rounded-full transition"
-                                                        title="Enlazar Manualmente"
-                                                      >
-                                                        <Link className="w-4 h-4" />
-                                                      </button>
-                                                  )}
-                                              </td>
+                                          <tr key={mov.id || i} className="group">
+                                            <td colSpan="6" className="p-0">
+                                              {/* Main Row */}
+                                              <div className={`flex items-center transition ${
+                                                  manualMatchOpen && activeMovement && activeMovement.id === mov.id
+                                                    ? 'bg-indigo-50 border-l-4 border-indigo-600 shadow-inner'
+                                                    : manualMatchOpen
+                                                        ? 'opacity-40 grayscale'
+                                                        : isMatched 
+                                                            ? 'bg-green-50/50'
+                                                            : 'hover:bg-slate-50'
+                                              }`}>
+                                                  <div className="px-4 py-3 w-24 shrink-0">
+                                                      <span className={`text-[10px] uppercase font-bold px-2 py-1 rounded-full ${mov.bank === 'Itaú' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'}`}>
+                                                          {mov.bank || 'Banco'}
+                                                      </span>
+                                                  </div>
+                                                  <div className="px-4 py-3 text-slate-600 w-24 shrink-0">{mov.date}</div>
+                                                  <div className="px-4 py-3 text-slate-700 flex-1 min-w-0 truncate" title={mov.description}>
+                                                      {mov.description}
+                                                  </div>
+                                                  <div className="px-4 py-3 text-right font-bold text-green-600 font-mono w-32 shrink-0">
+                                                      + {formatCurrency(mov.amount)}
+                                                  </div>
+                                                  <div className="px-4 py-3 text-center w-20 shrink-0">
+                                                      {isMatched && <CheckCircle className="w-4 h-4 text-green-500 mx-auto" />}
+                                                  </div>
+                                                  <div className="px-4 py-3 text-center w-24 shrink-0 flex items-center justify-center gap-1">
+                                                      {!isMatched && (
+                                                        <>
+                                                          <button 
+                                                            onClick={() => startManualMatch(mov)}
+                                                            className="text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50 p-1.5 rounded-full transition"
+                                                            title="Enlazar Manualmente"
+                                                          >
+                                                            <Link className="w-4 h-4" />
+                                                          </button>
+                                                          {movSuggestions.length > 0 && (
+                                                            <button 
+                                                              onClick={() => setExpandedMovement(isExpanded ? null : mov.id)}
+                                                              className={`p-1.5 rounded-full transition ${isExpanded ? 'bg-amber-100 text-amber-700' : 'text-amber-500 hover:text-amber-700 hover:bg-amber-50'}`}
+                                                              title={`${movSuggestions.length} facturas sugeridas`}
+                                                            >
+                                                              {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                                                            </button>
+                                                          )}
+                                                        </>
+                                                      )}
+                                                  </div>
+                                              </div>
+                                              
+                                              {/* Expanded Suggestions */}
+                                              {isExpanded && movSuggestions.length > 0 && (
+                                                <div className="bg-amber-50/50 border-t border-amber-100 px-6 py-3 animate-in fade-in slide-in-from-top-1 duration-200">
+                                                  <p className="text-[10px] uppercase font-bold text-amber-700 tracking-wider mb-2">
+                                                    Facturas Sugeridas ({movSuggestions.length})
+                                                  </p>
+                                                  <div className="space-y-2">
+                                                    {movSuggestions.map((sug, sIdx) => (
+                                                      <div key={sIdx} className="flex items-center justify-between bg-white p-3 rounded-xl border border-amber-200 hover:border-indigo-300 hover:shadow-sm transition">
+                                                        <div className="flex-1 min-w-0">
+                                                          <p className="font-bold text-sm text-slate-800 truncate">{sug.invoice.clientName}</p>
+                                                          <p className="text-xs text-slate-500 truncate">{sug.invoice.projectName}</p>
+                                                          <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                                            <span className="font-bold text-sm text-slate-700">{formatCurrency(sug.invoice.totalAmount)}</span>
+                                                            <span className={`text-[9px] uppercase font-bold px-2 py-0.5 rounded-full ${
+                                                              sug.score >= 70 ? 'bg-green-100 text-green-700' : 
+                                                              sug.score >= 50 ? 'bg-amber-100 text-amber-700' : 
+                                                              'bg-slate-100 text-slate-600'
+                                                            }`}>
+                                                              {sug.score} pts
+                                                            </span>
+                                                            {sug.reasons.map((r, ri) => (
+                                                              <span key={ri} className="text-[9px] text-slate-400">{r}</span>
+                                                            ))}
+                                                          </div>
+                                                        </div>
+                                                        <button
+                                                          onClick={() => confirmSuggestion(mov, sug.invoice)}
+                                                          className="bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-indigo-700 transition shrink-0 ml-3"
+                                                        >
+                                                          Vincular
+                                                        </button>
+                                                      </div>
+                                                    ))}
+                                                  </div>
+                                                </div>
+                                              )}
+                                            </td>
                                           </tr>
                                       );
                                   })
@@ -834,22 +1037,17 @@ export default function AdminInvoicingReconciliation() {
                       ) : (
                           [...pendingInvoices]
                           .sort((a,b) => {
-                              // SMART SORT: If selecting, put closest amount match first
                               if (manualMatchOpen && activeMovement) {
                                   const diffA = Math.abs(Number(a.totalAmount) - activeMovement.amount);
                                   const diffB = Math.abs(Number(b.totalAmount) - activeMovement.amount);
                                   return diffA - diffB;
                               }
-                              return 0; // Default order
+                              return 0;
                           })
                           .map((inv, i) => {
-                              // Check if this invoice is already matched
                               const isMatched = matches.some(m => m.invoice.id === inv.id);
-                              
-                              // Visual Logic for Manual Match Mode
                               const isExactMatchCandidate = manualMatchOpen && activeMovement && Math.abs(Number(inv.totalAmount) - activeMovement.amount) < 100;
                               
-                              // Determine Class
                               let containerClass = "p-3 rounded-lg border transition duration-200 relative ";
                               
                               if (manualMatchOpen) {
@@ -860,7 +1058,6 @@ export default function AdminInvoicingReconciliation() {
                                       containerClass += "bg-white border-slate-200 opacity-90 ";
                                   }
                               } else {
-                                  // Normal Mode
                                   if (isMatched) {
                                       containerClass += "bg-green-50 border-green-200 opacity-60 cursor-default ";
                                   } else {
@@ -874,7 +1071,6 @@ export default function AdminInvoicingReconciliation() {
                                       className={containerClass}
                                       onClick={() => manualMatchOpen ? confirmManualMatch(inv) : openInvoiceDetail(inv)}
                                   >
-                                      {/* Logic to show 'Recomendado' Badge if detected */}
                                       {isExactMatchCandidate && (
                                           <span className="absolute -top-2 -right-2 bg-indigo-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm animate-bounce">
                                               Coincidencia

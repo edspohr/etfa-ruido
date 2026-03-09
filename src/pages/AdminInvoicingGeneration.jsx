@@ -53,6 +53,7 @@ export default function AdminInvoicingGeneration() {
   const [selectedExpenses, setSelectedExpenses] = useState([]);
   const [customItems, setCustomItems] = useState([]);
   const [glosa, setGlosa] = useState('');
+  const [observaciones, setObservaciones] = useState('');
 
   // Direct Net Amount Input (Task 1 — simplified billing)
   const [montoNeto, setMontoNeto] = useState('');
@@ -397,6 +398,7 @@ export default function AdminInvoicingGeneration() {
               
               expenseIds: selectedExpenses,
               customItems: customItems,
+              observaciones: observaciones,
               
               itemCount: selectedExpenses.length + customItems.length,
               source: 'manual_generation'
@@ -588,6 +590,7 @@ export default function AdminInvoicingGeneration() {
           project: matchedProject ? matchedProject.name : '',
           projectId: matchedProject ? matchedProject.id : '',
           amount: extractedAmount,
+          observaciones: '',
           include: extractedAmount > 0
         });
       } catch (e) {
@@ -635,6 +638,7 @@ export default function AdminInvoicingGeneration() {
           projectId: inv.projectId || 'manual',
           projectName: inv.project || 'Varios / Sin Proyecto',
           glosa: `Generado desde: ${inv.fileName}`,
+          observaciones: inv.observaciones || '',
           documentType: 'electronic_invoice',
           createdAt: serverTimestamp(),
           issueDate: new Date().toISOString().split('T')[0],
@@ -679,30 +683,28 @@ export default function AdminInvoicingGeneration() {
               <div className="absolute top-0 right-0 w-96 h-96 bg-indigo-500/10 rounded-full blur-[100px] -z-0" />
               <div className="absolute -bottom-20 -left-20 w-80 h-80 bg-blue-500/10 rounded-full blur-[80px] -z-0" />
               
-              <div className="relative z-10 flex flex-col md:flex-row justify-between items-center gap-8">
+              <div className="relative z-10 flex flex-col md:flex-row justify-between items-start gap-8">
                   <div className="text-center md:text-left">
                       <h1 className="text-4xl md:text-5xl font-black text-white mb-4 tracking-tight">
                           Registro de <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-blue-300">Facturas</span>
                       </h1>
                       <p className="text-slate-400 text-lg font-medium max-w-xl">
-                          Carga masiva de documentos PDF para registrar facturas rápidamente o gestiona registros individuales.
+                          {generationMode === 'batch'
+                            ? 'Carga masiva de documentos PDF para registrar facturas rápidamente.'
+                            : 'Registro individual de factura con datos manuales o extracción PDF.'}
                       </p>
                   </div>
                   
-                  <div className="flex bg-slate-800/50 p-1.5 rounded-2xl border border-slate-700/50 backdrop-blur-md">
-                      <button 
-                          onClick={() => setGenerationMode('batch')}
-                          className={`px-8 py-3 rounded-xl font-bold transition-all text-sm flex items-center gap-2 ${generationMode === 'batch' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/50' : 'text-slate-400 hover:text-white'}`}
-                      >
-                          <Upload className="w-4 h-4" /> Carga Masiva (PDF)
-                      </button>
-                      <button 
-                          onClick={() => setGenerationMode('individual')}
-                          className={`px-8 py-3 rounded-xl font-bold transition-all text-sm flex items-center gap-2 ${generationMode === 'individual' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/50' : 'text-slate-400 hover:text-white'}`}
-                      >
-                          <Plus className="w-4 h-4" /> Registro Manual
-                      </button>
-                  </div>
+                  <button 
+                      onClick={() => setGenerationMode(generationMode === 'batch' ? 'individual' : 'batch')}
+                      className="text-slate-500 hover:text-indigo-300 text-xs font-medium transition-all mt-2 flex items-center gap-1.5 shrink-0"
+                  >
+                      {generationMode === 'batch' ? (
+                        <><Plus className="w-3.5 h-3.5" /> Cambiar a Registro Manual</>
+                      ) : (
+                        <><Upload className="w-3.5 h-3.5" /> Cambiar a Carga Masiva</>
+                      )}
+                  </button>
               </div>
           </div>
 
@@ -1114,13 +1116,23 @@ export default function AdminInvoicingGeneration() {
                       </div>
                   </div>
                   
-                  <div className="mb-8 relative z-10">
+                  <div className="mb-6 relative z-10">
                       <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Glosa Pública (Opcional)</label>
                       <textarea 
                           className="w-full bg-slate-950/50 border border-slate-700/50 rounded-xl p-4 text-sm focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 outline-none h-24 resize-none transition-all placeholder:text-slate-600 text-slate-200"
                           placeholder="Este mensaje descriptivo se incluirá en el PDF de la factura..."
                           value={glosa}
                           onChange={e => setGlosa(e.target.value)}
+                      />
+                  </div>
+
+                  <div className="mb-8 relative z-10">
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Observaciones Internas (Opcional)</label>
+                      <textarea 
+                          className="w-full bg-slate-950/50 border border-slate-700/50 rounded-xl p-4 text-sm focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 outline-none h-20 resize-none transition-all placeholder:text-slate-600 text-slate-200"
+                          placeholder="Notas internas sobre esta factura (no se incluyen en el PDF)..."
+                          value={observaciones}
+                          onChange={e => setObservaciones(e.target.value)}
                       />
                   </div>
 
@@ -1239,6 +1251,7 @@ export default function AdminInvoicingGeneration() {
                           <th className="text-left py-3 px-4 font-bold text-slate-500 text-xs uppercase tracking-wider">Razón Social</th>
                           <th className="text-left py-3 px-4 font-bold text-slate-500 text-xs uppercase tracking-wider">Proyecto</th>
                           <th className="text-right py-3 px-4 font-bold text-slate-500 text-xs uppercase tracking-wider">Monto</th>
+                          <th className="text-left py-3 px-4 font-bold text-slate-500 text-xs uppercase tracking-wider">Observaciones</th>
                           <th className="text-center py-3 px-4 font-bold text-slate-500 text-xs uppercase tracking-wider">Estado</th>
                         </tr>
                       </thead>
@@ -1279,6 +1292,14 @@ export default function AdminInvoicingGeneration() {
                                 type="number" value={inv.amount} 
                                 onChange={(e) => updateBatchInvoice(idx, 'amount', Number(e.target.value))} 
                                 className="w-28 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 outline-none py-1 text-sm text-right font-semibold"
+                              />
+                            </td>
+                            <td className="py-3 px-4">
+                              <input 
+                                type="text" value={inv.observaciones || ''} 
+                                onChange={(e) => updateBatchInvoice(idx, 'observaciones', e.target.value)} 
+                                className="w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 outline-none py-1 text-sm"
+                                placeholder="—"
                               />
                             </td>
                             <td className="py-3 px-4 text-center">

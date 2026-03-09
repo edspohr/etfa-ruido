@@ -6,6 +6,7 @@ import { formatCurrency } from '../utils/format';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Download } from 'lucide-react';
+import { toast } from 'sonner';
 
 export default function InvoiceDetailModal({ invoice, isOpen, onClose, onUpdate }) {
     const [expenses, setExpenses] = useState([]);
@@ -130,6 +131,42 @@ export default function InvoiceDetailModal({ invoice, isOpen, onClose, onUpdate 
         }
 
         doc.save(`Registro_${invoice.id}.pdf`);
+    };
+
+    const handleVoidInvoice = async () => {
+        if (!window.confirm("¿Seguro que desea anular este registro de factura?")) return;
+        setProcessing(true);
+        try {
+            const batch = writeBatch(db);
+            const invRef = doc(db, "invoices", invoice.id);
+            batch.update(invRef, { 
+                status: 'void', 
+                paymentStatus: 'void',
+                updatedAt: serverTimestamp() 
+            });
+
+            // If there were expenses, unlink them
+            if (expenses.length > 0) {
+                expenses.forEach(exp => {
+                    const expRef = doc(db, "expenses", exp.id);
+                    batch.update(expRef, { 
+                        invoiceId: null, 
+                        invoiceStatus: null,
+                        billingStatus: 'approved'
+                    });
+                });
+            }
+
+            await batch.commit();
+            toast.success("Factura anulada correctamente");
+            if (onUpdate) onUpdate();
+            onClose();
+        } catch (e) {
+            console.error("Error voiding invoice:", e);
+            toast.error("Error al anular la factura.");
+        } finally {
+            setProcessing(false);
+        }
     };
 
     if (!isOpen || !invoice) return null;

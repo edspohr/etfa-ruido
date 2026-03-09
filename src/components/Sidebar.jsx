@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 
 export default function Sidebar({ isOpen, setIsOpen }) {
-  const { userRole, logout, currentUser } = useAuth();
+  const { currentUser, userRole, logout } = useAuth();
   const location = useLocation();
 
   const isActive = (path) => location.pathname === path;
@@ -28,71 +28,72 @@ export default function Sidebar({ isOpen, setIsOpen }) {
       md:relative md:translate-x-0 transition duration-300 ease-in-out z-30 shadow-2xl border-r border-slate-800
       overflow-y-auto scrollbar-hide
     `}>
-      <div className="flex items-center justify-center px-6 mb-2 mt-6 shrink-0">
-        <div className="bg-white p-3 rounded-2xl shadow-xl shadow-blue-900/40 w-full flex justify-center items-center overflow-hidden h-24">
-            <img src="/logo.png" alt="ETFA Ruido" className="h-20 w-auto object-contain scale-110" />
+      <div className="flex items-center justify-center px-5 mb-6 mt-6 shrink-0">
+        <div className="bg-white p-4 rounded-2xl shadow-xl shadow-blue-900/40 w-full flex justify-center items-center overflow-hidden h-32">
+            <img src="/logo.png" alt="ETFA Ruido" className="h-28 w-auto object-contain" />
         </div>
       </div>
 
-      <div className="px-4 mb-6 pt-4 text-center shrink-0">
-        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] mb-0.5">Usuario Activo</p>
-        <p className="text-sm font-bold text-white tracking-wide truncate">{currentUser?.displayName || 'Usuario'}</p>
-        <p className="text-[9px] bg-indigo-500/10 text-indigo-400 inline-block px-3 py-0.5 rounded-full mt-2 uppercase font-black tracking-tighter border border-indigo-500/20">
-            {userRole === 'admin' ? 'Administrador' : 'Profesional'}
-        </p>
-      </div>
-
       <nav className="flex-1 space-y-1 pb-10">
+        
+        {/* User Profile Block */}
+        <div className="px-4 mb-6">
+            <div className="bg-slate-800/50 p-4 rounded-xl flex items-center border border-slate-700/50">
+                <div className="w-10 h-10 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold text-lg mr-3 shadow-inner">
+                    {currentUser?.displayName?.substring(0, 2).toUpperCase() || 'U'}
+                </div>
+                <div className="overflow-hidden">
+                    <p className="text-sm font-bold text-white truncate">{currentUser?.displayName || 'Usuario'}</p>
+                    <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider mt-0.5">
+                        {userRole === 'admin' ? 'Administrador' : 'Profesional'}
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        {/* Mi Espacio (Always visible) */}
+        <p className={groupTitleClass}>Mi Espacio</p>
+        <Link to="/dashboard" className={linkClass('/dashboard')} onClick={() => setIsOpen(false)}>
+            <UserCircle className="w-4 h-4 mr-3" />
+            Mi Resumen
+        </Link>
+        <Link to="/dashboard/expenses" className={linkClass('/dashboard/expenses')} onClick={() => setIsOpen(false)}>
+            <Receipt className="w-4 h-4 mr-3" />
+            Mis Rendiciones
+        </Link>
+        <Link to="/dashboard/reports" className={linkClass('/dashboard/reports')} onClick={() => setIsOpen(false)}>
+            <ClipboardList className="w-4 h-4 mr-3" />
+            Mis Mediciones
+        </Link>
+
         {userRole === 'admin' && (
             <>
-                <div className="px-4 mb-8">
+                {/* Active Module Indicator */}
+                <div className="px-4 mb-3 mt-8">
+                    {location.pathname !== '/admin/select-module' && (
+                        <div className="flex items-center justify-center py-2.5 px-3 rounded-xl bg-slate-900 border border-slate-800 shadow-inner">
+                            <span className="text-xs font-black text-slate-100 uppercase tracking-widest flex items-center justify-center">
+                                {(location.pathname.startsWith('/admin/expenses') || location.pathname.startsWith('/admin/approvals') || location.pathname.startsWith('/admin/projects') || location.pathname.startsWith('/admin/balances'))
+                                    ? <><div className="w-2.5 h-2.5 rounded-full mr-2.5 bg-indigo-400 shadow-[0_0_12px_rgba(129,140,248,0.8)] animate-pulse"></div> RENDICIONES</>
+                                    : location.pathname.startsWith('/admin/reports')
+                                    ? <><div className="w-2.5 h-2.5 rounded-full mr-2.5 bg-teal-400 shadow-[0_0_12px_rgba(45,212,191,0.8)] animate-pulse"></div> INFORMES</>
+                                    : (location.pathname === '/admin' || location.pathname.startsWith('/admin/invoicing') || location.pathname.startsWith('/admin/analytics'))
+                                    ? <><div className="w-2.5 h-2.5 rounded-full mr-2.5 bg-blue-400 shadow-[0_0_12px_rgba(96,165,250,0.8)] animate-pulse"></div> FINANCIERO</>
+                                    : 'MÓDULO'}
+                            </span>
+                        </div>
+                    )}
+                </div>
+
+                {/* Module Selector */}
+                <div className="px-4 mb-6">
                     <Link 
                         to="/admin/select-module" 
-                        className="flex items-center justify-center w-full py-3 px-4 bg-slate-800/50 hover:bg-slate-800 text-slate-400 hover:text-white rounded-xl border border-slate-700 transition-all text-xs font-bold group"
+                        className="flex items-center justify-center w-full py-3 px-4 bg-slate-800/80 hover:bg-slate-800 text-slate-300 hover:text-white rounded-xl border border-slate-700 transition-all text-sm font-bold group shadow-sm"
                         onClick={() => setIsOpen(false)}
                     >
                         <Grid className="w-4 h-4 mr-2 group-hover:rotate-90 transition-transform duration-300" />
                         Seleccionar Módulo
-                    </Link>
-                </div>
-
-                <div className="px-4 mb-2 space-y-1.5">
-                    <p className="text-[9px] font-bold text-slate-600 uppercase tracking-widest mb-2 pl-1">Módulos</p>
-                    
-                    <Link 
-                        to="/admin/expenses" 
-                        className={`w-full py-2 px-3.5 flex items-center rounded-xl transition-all border ${
-                            location.pathname.startsWith('/admin/expenses') || location.pathname.startsWith('/admin/approvals') || location.pathname.startsWith('/admin/projects') || location.pathname.startsWith('/admin/balances')
-                            ? 'bg-indigo-600 text-white border-indigo-500 shadow-lg shadow-indigo-900/20' 
-                            : 'bg-slate-800/20 text-slate-400 border-slate-800/50 hover:text-white hover:bg-slate-800'
-                        }`}
-                    >
-                        <Receipt className="w-3.5 h-3.5 mr-3 opacity-60"/>
-                        <span className="text-[11px] font-bold tracking-tight">Rendición</span>
-                    </Link>
-
-                    <Link 
-                        to="/admin/reports" 
-                        className={`w-full py-2 px-3.5 flex items-center rounded-xl transition-all border ${
-                            location.pathname.startsWith('/admin/reports')
-                            ? 'bg-teal-600 text-white border-teal-500 shadow-lg shadow-teal-900/20' 
-                            : 'bg-slate-800/20 text-slate-400 border-slate-800/50 hover:text-white hover:bg-slate-800'
-                        }`}
-                    >
-                        <ClipboardList className="w-3.5 h-3.5 mr-3 opacity-60"/>
-                        <span className="text-[11px] font-bold tracking-tight">Informes</span>
-                    </Link>
-
-                    <Link 
-                        to="/admin" 
-                        className={`w-full py-2 px-3.5 flex items-center rounded-xl transition-all border ${
-                            !location.pathname.startsWith('/admin/expenses') && !location.pathname.startsWith('/admin/approvals') && !location.pathname.startsWith('/admin/projects') && !location.pathname.startsWith('/admin/balances') && !location.pathname.startsWith('/admin/reports') && !location.pathname.startsWith('/dashboard')
-                            ? 'bg-blue-600 text-white border-blue-500 shadow-lg shadow-blue-900/20' 
-                            : 'bg-slate-800/20 text-slate-400 border-slate-800/50 hover:text-white hover:bg-slate-800'
-                        }`}
-                    >
-                        <FileText className="w-3.5 h-3.5 mr-3 opacity-60"/>
-                        <span className="text-[11px] font-bold tracking-tight">Financiero</span>
                     </Link>
                 </div>
 
@@ -156,33 +157,13 @@ export default function Sidebar({ isOpen, setIsOpen }) {
                         </Link>
                         <Link to="/admin/analytics" className={linkClass('/admin/analytics')} onClick={() => setIsOpen(false)}>
                             <BarChart3 className="w-4 h-4 mr-3" />
-                            Analítica BI
+                            Análisis de Datos
                         </Link>
                     </>
                 ) : null}
             </>
         )}
 
-        {/* User Space available everywhere except Invoicing */}
-        {!location.pathname.startsWith('/admin/invoicing') && !location.pathname.startsWith('/admin/reports') && (
-            <>
-                <p className={groupTitleClass}>Mi Espacio</p>
-                <Link to="/dashboard" className={linkClass('/dashboard')} onClick={() => setIsOpen(false)}>
-                    <UserCircle className="w-4 h-4 mr-3" />
-                    Mi Resumen
-                </Link>
-                <Link to="/dashboard/expenses" className={linkClass('/dashboard/expenses')} onClick={() => setIsOpen(false)}>
-                    <Receipt className="w-4 h-4 mr-3" />
-                    Mis Rendiciones
-                </Link>
-                <Link to="/dashboard/reports" className={linkClass('/dashboard/reports')} onClick={() => setIsOpen(false)}>
-                    <ClipboardList className="w-4 h-4 mr-3" />
-                    Mis Mediciones
-                </Link>
-            </>
-        )}
-
-        
         <div className="mt-auto pt-10">
             <button onClick={logout} className="w-full flex items-center py-3 px-4 rounded-xl text-slate-400 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/20 border border-transparent transition duration-200 group">
                 <LogOut className="w-4 h-4 mr-3 group-hover:rotate-180 transition-transform duration-300" />

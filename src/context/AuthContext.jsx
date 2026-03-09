@@ -207,7 +207,13 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider value={value}>
-      {!loading && children}
+      {loading ? (
+          <div className="min-h-screen flex flex-col items-center justify-center bg-gray-100 p-4">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+              <p className="text-gray-600 font-medium">Autenticando usuario...</p>
+              <p className="text-gray-400 text-xs mt-2">Si esta pantalla no desaparece, revisa tu conexión a internet o base de datos.</p>
+          </div>
+      ) : children}
     </AuthContext.Provider>
   );
 }

@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/useAuth';
 import { db } from '../lib/firebase';
-import { doc, getDoc, collection, getDocs, query, where } from 'firebase/firestore';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import { formatCurrency } from '../utils/format';
 import { PlusCircle, Wallet, FileText, ChevronDown, ChevronUp, MessageSquare } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -38,14 +38,7 @@ export default function UserDashboard() {
         
         try {
             setLoading(true);
-            // 1. Get Live Balance
-            const userRef = doc(db, "users", currentUser.uid);
-            const userSnap = await getDoc(userRef);
-            if (userSnap.exists()) {
-                setBalance(userSnap.data().balance || 0);
-            }
-
-            // 2. Get Expenses (for this user)
+            // 1. Get Expenses (for this user)
             const qExp = query(collection(db, "expenses"), where("userId", "==", currentUser.uid));
             const expSnap = await getDocs(qExp);
             const expData = expSnap.docs
@@ -53,13 +46,18 @@ export default function UserDashboard() {
                 .sort((a, b) => new Date(b.date) - new Date(a.date));
             setExpenses(expData);
 
-            // 3. Get Allocations (for this user)
+            // 2. Get Allocations (for this user)
             const qAlloc = query(collection(db, "allocations"), where("userId", "==", currentUser.uid));
             const allocSnap = await getDocs(qAlloc);
             const allocData = allocSnap.docs
                 .map((d) => ({ id: d.id, ...d.data() }))
                 .sort((a, b) => new Date(b.date) - new Date(a.date));
             setAllocations(allocData);
+
+            // 3. Calculate Live Balance
+            const totalAlloc = allocData.reduce((sum, a) => sum + (Number(a.amount) || 0), 0);
+            const totalExp = expData.filter(e => e.status === 'approved').reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+            setBalance(totalAlloc - totalExp);
 
             // 4. Fetch Projects Map (for correct names/codes)
             const pSnap = await getDocs(collection(db, "projects"));
@@ -164,8 +162,8 @@ export default function UserDashboard() {
                                const projectAllocations = allocations.filter(a => a.projectId === row.id || (!a.projectId && row.id === 'unknown'));
 
                                return (
-                                   <>
-                                   <tr key={row.id} className={`hover:bg-gray-50 transition cursor-pointer ${isExpanded ? 'bg-gray-50' : ''}`} onClick={() => toggleProject(row.id)}>
+                                   <React.Fragment key={row.id}>
+                                   <tr className={`hover:bg-gray-50 transition cursor-pointer ${isExpanded ? 'bg-gray-50' : ''}`} onClick={() => toggleProject(row.id)}>
                                        <td className="px-6 py-4">
                                            <span className="font-medium text-gray-800">
                                                 {row.code ? `[${row.code}] ` : ''}{row.name}
@@ -275,10 +273,11 @@ export default function UserDashboard() {
                                            </td>
                                        </tr>
                                    )}
-                                   </>
+                                   </React.Fragment>
                                );
                            });
                       })()}
+
                    </tbody>
                </table>
             </div>

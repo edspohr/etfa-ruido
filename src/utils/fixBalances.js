@@ -10,7 +10,15 @@
  * It uses console.log for output.
  */
 
-import { collection, getDocs, doc, writeBatch } from "firebase/firestore";
+import {
+  collection,
+  getDocs,
+  doc,
+  writeBatch,
+  query,
+  where,
+  deleteDoc,
+} from "firebase/firestore";
 import { db } from "../lib/firebase";
 
 export async function recalculateAllUserBalances() {
@@ -170,7 +178,12 @@ export async function recalculateAllUserBalances() {
 
     //   Update user.balance.
 
-    // 4. Fetch Manual Adjustments
+    // 4. Fetch All Expenses (Missing previously!)
+    const expSnap = await getDocs(collection(db, "expenses"));
+    const allExpenses = expSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    console.log(`Found ${allExpenses.length} expenses.`);
+
+    // 5. Fetch Manual Adjustments
     const adjustSnap = await getDocs(collection(db, "balance_adjustments"));
     const allAdjustments = adjustSnap.docs.map((d) => d.data());
     console.log(`Found ${allAdjustments.length} manual adjustments.`);
@@ -218,5 +231,88 @@ export async function recalculateAllUserBalances() {
     console.log(`Updated ${batchCount} users.`);
   } catch (e) {
     console.error("Migration Failed:", e);
+  }
+}
+
+export async function cleanTestData() {
+  console.log("Starting Test Data Cleanup...");
+  const targetUid = "4gejY0S5ZuStv4qnKx0mucX1Lrf2"; // edmundo@spohr.cl
+  const targetEmailToRemove = "espohr@gmail.com";
+
+  try {
+    // 1. Delete espohr@gmail.com user
+    const usersQ = query(
+      collection(db, "users"),
+      where("email", "==", targetEmailToRemove),
+    );
+    const usersSnap = await getDocs(usersQ);
+    for (const d of usersSnap.docs) {
+      await deleteDoc(doc(db, "users", d.id));
+      console.log(`Deleted user ${targetEmailToRemove}`);
+    }
+
+    const batch = writeBatch(db);
+    let opsCount = 0;
+
+    // Helper to commit batches of 500
+    const addOp = async () => {
+      opsCount++;
+      if (opsCount >= 490) {
+        await batch.commit();
+        opsCount = 0;
+        console.log("Committed a batch of deletions.");
+      }
+    };
+
+    // 2. Delete expenses for edmundo@spohr.cl
+    const expQ = query(
+      collection(db, "expenses"),
+      where("userId", "==", targetUid),
+    );
+    const expSnap = await getDocs(expQ);
+    expSnap.docs.forEach((d) => {
+      batch.delete(doc(db, "expenses", d.id));
+      opsCount++;
+    });
+    console.log(`Queued ${expSnap.docs.length} expenses for deletion.`);
+
+    // 3. Delete allocations for edmundo@spohr.cl
+    const allocQ = query(
+      collection(db, "allocations"),
+      where("userId", "==", targetUid),
+    );
+    const allocSnap = await getDocs(allocQ);
+    allocSnap.docs.forEach((d) => {
+      batch.delete(doc(db, "allocations", d.id));
+      opsCount++;
+    });
+    console.log(`Queued ${allocSnap.docs.length} allocations for deletion.`);
+
+    // 4. Delete balance adjustments for edmundo@spohr.cl
+    const adjQ = query(
+      collection(db, "balance_adjustments"),
+      where("userId", "==", targetUid),
+    );
+    const adjSnap = await getDocs(adjQ);
+    adjSnap.docs.forEach((d) => {
+      batch.delete(doc(db, "balance_adjustments", d.id));
+      opsCount++;
+    });
+    console.log(
+      `Queued ${adjSnap.docs.length} balance adjustments for deletion.`,
+    );
+
+    if (opsCount > 0) {
+      await batch.commit();
+    }
+
+    console.log(
+      "Cleanup completed successfully. Recalculating balances now...",
+    );
+    await recalculateAllUserBalances();
+    console.log("All done.");
+  } catch (e) {
+    console.error("Cleanup Failed:", e);
+    throw e;
   }
 }

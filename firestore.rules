@@ -48,5 +48,15 @@ service cloud.firestore {
     match /clients/{clientId} {
       allow read, write: if request.auth != null;
     }
+
+    // BALANCE ADJUSTMENTS: Allow All Auth
+    match /balance_adjustments/{adjustmentId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // BANK MOVEMENTS: Permitir lectura y escritura para la nueva conciliación
+    match /bank_movements/{movementId} {
+      allow read, write: if request.auth != null;
+    }
   }
 }

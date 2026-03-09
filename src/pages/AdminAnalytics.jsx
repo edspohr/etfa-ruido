@@ -33,7 +33,6 @@ export default function AdminAnalytics() {
     });
 
     const [clients, setClients] = useState([]);
-    const [filteredProjects, setFilteredProjects] = useState([]);
 
     const fetchData = async () => {
         setLoading(true);
@@ -41,12 +40,18 @@ export default function AdminAnalytics() {
             const [invSnap, expSnap, projSnap] = await Promise.all([
                 getDocs(query(collection(db, "invoices"), orderBy("createdAt", "desc"))),
                 getDocs(query(collection(db, "expenses"), where("status", "==", "approved"))),
-                getDocs(query(collection(db, "projects"), where("status", "!=", "deleted")))
+                getDocs(collection(db, "projects"))
             ]);
 
-            const invoices = invSnap.docs.map(d => ({ id: d.id, ...d.data(), date: d.data().createdAt?.toDate() }));
-            const expenses = expSnap.docs.map(d => ({ id: d.id, ...d.data(), date: d.data().createdAt ? d.data().createdAt.toDate() : new Date(d.data().date) }));
-            const projects = projSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+            const parseDocDate = (val) => {
+                if (!val) return new Date();
+                if (typeof val.toDate === 'function') return val.toDate();
+                return new Date(val);
+            };
+
+            const invoices = invSnap.docs.map(d => ({ id: d.id, ...d.data(), date: parseDocDate(d.data().createdAt) }));
+            const expenses = expSnap.docs.map(d => ({ id: d.id, ...d.data(), date: parseDocDate(d.data().createdAt || d.data().date) }));
+            const projects = projSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(p => p.status !== "deleted");
 
             setData({ invoices, expenses, projects: sortProjects(projects) });
             
@@ -105,12 +110,20 @@ export default function AdminAnalytics() {
     const totalCollected = filteredInvoices.filter(inv => inv.paymentStatus === 'paid').reduce((acc, inv) => acc + (Number(inv.totalAmount) || 0), 0);
     const totalExpenses = filteredExpenses.reduce((acc, exp) => acc + (Number(exp.amount) || 0), 0);
     
+    const parseDate = (val) => {
+        if (!val) return null;
+        if (val.toDate) return val.toDate();
+        if (val instanceof Date) return val;
+        try { return new Date(val); } catch { return null; }
+    };
+
     // Average Payment Days
     const paidInvoices = filteredInvoices.filter(inv => inv.paymentStatus === 'paid' && inv.paidAt && inv.createdAt);
     const avgPaymentDays = paidInvoices.length > 0 
         ? paidInvoices.reduce((acc, inv) => {
-            const created = inv.createdAt.toDate();
-            const paid = inv.paidAt.toDate();
+            const created = parseDate(inv.createdAt);
+            const paid = parseDate(inv.paidAt);
+            if (!created || !paid) return acc;
             return acc + (paid - created) / (1000 * 60 * 60 * 24);
         }, 0) / paidInvoices.length 
         : 0;
@@ -140,7 +153,7 @@ export default function AdminAnalytics() {
     const categoryData = Object.entries(expensesByCategory).map(([name, value]) => ({ name, value }));
 
     if (loading) return (
-        <Layout title="Analítica Avanzada">
+        <Layout title="Analítica de Datos">
             <div className="flex h-96 items-center justify-center">
                 <RefreshCcw className="w-8 h-8 text-indigo-600 animate-spin" />
             </div>
@@ -148,7 +161,7 @@ export default function AdminAnalytics() {
     );
 
     return (
-        <Layout title="Analítica e Inteligencia de Negocios" isFullWidth={true}>
+        <Layout title="Analítica de Datos" isFullWidth={true}>
             <div className="space-y-8 animate-in fade-in duration-500">
                 
                 {/* Filters Panel */}
@@ -220,28 +233,24 @@ export default function AdminAnalytics() {
                         value={formatCurrency(totalBilled)} 
                         icon={<TrendingUp className="w-6 h-6" />}
                         color="indigo"
-                        trend="+12%" // Placeholder
                     />
                     <KPICard 
                         title="Recaudación Real" 
                         value={formatCurrency(totalCollected)} 
                         icon={<DollarSign className="w-6 h-6" />}
                         color="emerald"
-                        subValue={`Efectividad: ${totalBilled > 0 ? Math.round((totalCollected/totalBilled)*100) : 0}%`}
                     />
                     <KPICard 
                         title="Gastos (OPEX)" 
                         value={formatCurrency(totalExpenses)} 
                         icon={<Activity className="w-6 h-6" />}
                         color="rose"
-                        trend="-4%"
                     />
                     <KPICard 
                         title="Tiempo Pago Prom." 
                         value={`${Math.round(avgPaymentDays)} días`} 
                         icon={<Clock className="w-6 h-6" />}
                         color="amber"
-                        subValue="Basado en facturas pagadas"
                     />
                 </div>
 
@@ -250,62 +259,76 @@ export default function AdminAnalytics() {
                     
                     {/* Revenue Evolution */}
                     <ChartContainer title="Evolución de Ingresos (Mensual)" icon={<BarChart3 className="w-5 h-5" />}>
-                        <ResponsiveContainer width="100%" height={300}>
-                            <AreaChart data={revenueData}>
-                                <defs>
-                                    <linearGradient id="colorBilled" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.1}/>
-                                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
-                                    </linearGradient>
-                                    <linearGradient id="colorCollected" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.1}/>
-                                        <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                                    </linearGradient>
-                                </defs>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} dy={10} />
-                                <YAxis hide />
-                                <Tooltip 
-                                    contentStyle={{ borderRadius: '1rem', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
-                                    formatter={(val) => formatCurrency(val)}
-                                />
-                                <Area type="monotone" dataKey="billed" name="Facturado" stroke="#6366f1" strokeWidth={3} fillOpacity={1} fill="url(#colorBilled)" />
-                                <Area type="monotone" dataKey="collected" name="Recaudado" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorCollected)" />
-                            </AreaChart>
-                        </ResponsiveContainer>
+                        {revenueData.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center h-[300px] text-slate-400">
+                                <BarChart3 className="w-12 h-12 mb-4 opacity-20" />
+                                <p className="font-medium text-sm border border-slate-200 px-4 py-2 rounded-xl bg-slate-50">No hay datos de ingresos para los filtros seleccionados</p>
+                            </div>
+                        ) : (
+                            <ResponsiveContainer width="100%" height={300}>
+                                <AreaChart data={revenueData}>
+                                    <defs>
+                                        <linearGradient id="colorBilled" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="5%" stopColor="#6366f1" stopOpacity={0.1}/>
+                                            <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                                        </linearGradient>
+                                        <linearGradient id="colorCollected" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="5%" stopColor="#10b981" stopOpacity={0.1}/>
+                                            <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                                        </linearGradient>
+                                    </defs>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} dy={10} />
+                                    <YAxis hide />
+                                    <Tooltip 
+                                        contentStyle={{ borderRadius: '1rem', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
+                                        formatter={(val) => formatCurrency(val)}
+                                    />
+                                    <Area type="monotone" dataKey="billed" name="Facturado" stroke="#6366f1" strokeWidth={3} fillOpacity={1} fill="url(#colorBilled)" />
+                                    <Area type="monotone" dataKey="collected" name="Recaudado" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorCollected)" />
+                                </AreaChart>
+                            </ResponsiveContainer>
+                        )}
                     </ChartContainer>
 
                     {/* Expenses by Category */}
                     <ChartContainer title="Distribución de Gastos por Categoría" icon={<PieIcon className="w-5 h-5" />}>
-                        <div className="flex flex-col md:flex-row items-center h-[300px]">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <PieChart>
-                                    <Pie
-                                        data={categoryData}
-                                        innerRadius={60}
-                                        outerRadius={80}
-                                        paddingAngle={5}
-                                        dataKey="value"
-                                    >
-                                        {categoryData.map((entry, index) => (
-                                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                        ))}
-                                    </Pie>
-                                    <Tooltip formatter={(val) => formatCurrency(val)} />
-                                </PieChart>
-                            </ResponsiveContainer>
-                            <div className="w-full md:w-1/2 space-y-2 overflow-y-auto max-h-full pr-4">
-                                {categoryData.map((item, idx) => (
-                                    <div key={idx} className="flex items-center justify-between group">
-                                        <div className="flex items-center gap-2">
-                                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[idx % COLORS.length] }}></div>
-                                            <span className="text-xs font-semibold text-slate-600 truncate max-w-[120px]">{item.name}</span>
-                                        </div>
-                                        <span className="text-xs font-bold text-slate-900">{formatCurrency(item.value)}</span>
-                                    </div>
-                                ))}
+                        {categoryData.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center h-[300px] text-slate-400">
+                                <PieIcon className="w-12 h-12 mb-4 opacity-20" />
+                                <p className="font-medium text-sm border border-slate-200 px-4 py-2 rounded-xl bg-slate-50">No hay datos de gastos para los filtros seleccionados</p>
                             </div>
-                        </div>
+                        ) : (
+                            <div className="flex flex-col md:flex-row items-center h-[300px]">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                        <Pie
+                                            data={categoryData}
+                                            innerRadius={60}
+                                            outerRadius={80}
+                                            paddingAngle={5}
+                                            dataKey="value"
+                                        >
+                                            {categoryData.map((entry, index) => (
+                                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                            ))}
+                                        </Pie>
+                                        <Tooltip formatter={(val) => formatCurrency(val)} />
+                                    </PieChart>
+                                </ResponsiveContainer>
+                                <div className="w-full md:w-1/2 space-y-2 overflow-y-auto max-h-full pr-4">
+                                    {categoryData.map((item, idx) => (
+                                        <div key={idx} className="flex items-center justify-between group">
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[idx % COLORS.length] }}></div>
+                                                <span className="text-xs font-semibold text-slate-600 truncate max-w-[120px]">{item.name}</span>
+                                            </div>
+                                            <span className="text-xs font-bold text-slate-900">{formatCurrency(item.value)}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                     </ChartContainer>
 
                 </div>
@@ -314,7 +337,7 @@ export default function AdminAnalytics() {
     );
 }
 
-function KPICard({ title, value, icon, color, trend, subValue }) {
+function KPICard({ title, value, icon, color }) {
     const colors = {
         indigo: 'text-indigo-600 bg-indigo-50 border-indigo-100',
         emerald: 'text-emerald-600 bg-emerald-50 border-emerald-100',
@@ -333,16 +356,6 @@ function KPICard({ title, value, icon, color, trend, subValue }) {
                 </div>
                 <p className="text-slate-500 font-bold text-xs uppercase tracking-widest mb-1">{title}</p>
                 <h3 className="text-3xl font-black text-slate-900 tracking-tight">{value}</h3>
-                
-                {trend && (
-                    <div className={`mt-2 flex items-center gap-1 text-xs font-bold ${trend.startsWith('+') ? 'text-emerald-500' : 'text-rose-500'}`}>
-                        {trend.startsWith('+') ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-                        {trend} vs mes anterior
-                    </div>
-                )}
-                {subValue && (
-                    <p className="mt-2 text-xs font-bold text-slate-400 italic">{subValue}</p>
-                )}
             </div>
         </div>
     );
