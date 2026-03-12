@@ -163,28 +163,40 @@ export default function SearchableSelect({
 
           {/* Options list */}
           <div className="max-h-52 overflow-y-auto">
-            {filtered.length === 0 ? (
+            {filtered.length === 0 && !search ? (
               <div className="px-4 py-6 text-center text-sm text-slate-400 italic">
-                Sin resultados para "{search}"
+                Sin resultados
               </div>
             ) : (
-              filtered.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => handleSelect(option.value)}
-                  className={`
-                    w-full text-left px-4 py-2.5 text-sm transition-colors
-                    ${
-                      option.value === value
-                        ? "bg-indigo-50 text-indigo-700 font-semibold"
-                        : "text-slate-700 hover:bg-slate-50"
-                    }
-                  `}
-                >
-                  {option.label}
-                </button>
-              ))
+              <>
+                {filtered.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => handleSelect(option.value)}
+                    className={`
+                      w-full text-left px-4 py-2.5 text-sm transition-colors
+                      ${
+                        option.value === value
+                          ? "bg-indigo-50 text-indigo-700 font-semibold"
+                          : "text-slate-700 hover:bg-slate-50"
+                      }
+                    `}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+                
+                {search && !options.some(o => o.label.toLowerCase() === search.toLowerCase()) && (
+                  <button
+                    type="button"
+                    onClick={() => handleSelect(search)}
+                    className="w-full text-left px-4 py-2.5 text-sm transition-colors text-indigo-600 hover:bg-indigo-50 font-medium border-t border-slate-100 flex items-center gap-2"
+                  >
+                    Usar "{search}"
+                  </button>
+                )}
+              </>
             )}
           </div>
         </div>

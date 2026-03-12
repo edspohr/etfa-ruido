@@ -59,6 +59,21 @@ export default function AdminProjects() {
             value: d.data().razonSocial || d.data().name || 'Sin Nombre',
             ...d.data()
         }));
+
+        // Also extract existing unique clients from projects
+        const existingClientsFromProjects = [...new Set(pData.map(p => p.client).filter(Boolean))];
+        const uniqueValues = new Set(cData.map(c => c.value.toLowerCase()));
+        
+        existingClientsFromProjects.forEach(c => {
+           if (!uniqueValues.has(c.toLowerCase())) {
+               cData.push({ id: c, label: c, value: c });
+               uniqueValues.add(c.toLowerCase());
+           }
+        });
+
+        // Sort alphabetically
+        cData.sort((a,b) => a.label.localeCompare(b.label));
+
         setClients(cData);
     } catch (e) {
         console.error("Error fetching admin data:", e);
