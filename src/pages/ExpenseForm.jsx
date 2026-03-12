@@ -181,12 +181,19 @@ export default function ExpenseForm() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!currentUser || loading) return;
+    if (loading) return;
+    setLoading(true);
+
+    if (!currentUser) {
+        setLoading(false);
+        return;
+    }
 
     // Common Validation
     const totalAmount = Number(formData.amount);
     if (isNaN(totalAmount) || totalAmount === 0) {
         toast.error("Ingrese un monto válido (puede ser negativo para devoluciones/correcciones).");
+        setLoading(false);
         return;
     }
 
@@ -194,26 +201,41 @@ export default function ExpenseForm() {
         const sumSplits = splitRows.reduce((acc, row) => acc + (Number(row.amount) || 0), 0);
         if (Math.abs(sumSplits - totalAmount) > 1) { // 1 peso tolerance
             toast.error(`La suma de la distribución (${sumSplits}) no coincide con el total (${totalAmount}). Diferencia: ${totalAmount - sumSplits}`);
+            setLoading(false);
             return;
         }
         if (splitRows.some(r => !r.projectId)) {
             toast.error("Seleccione proyecto para todas las filas.");
+            setLoading(false);
             return;
+        }
+
+        // Task 4: Fix "Caja Chica" Security Bypass in split mode
+        if (userRole !== 'admin') {
+            const hasCajaChica = splitRows.some(row => {
+                const p = projects.find(proj => proj.id === row.projectId);
+                return p?.type === 'petty_cash' || p?.name.toLowerCase().includes('caja chica');
+            });
+            if (hasCajaChica) {
+                toast.error("No tienes permisos para rendir en 'Caja Chica'.");
+                setLoading(false);
+                return;
+            }
         }
     } else {
         if (!formData.projectId) {
             toast.error("Por favor selecciona un proyecto.");
+            setLoading(false);
             return;
         }
-    }
         
-    if (!isSplitMode) {
         const selectedProject = projects.find(p => p.id === formData.projectId);
         // RELIABLE CHECK: Use 'type' property first
-        const isCajaChica = selectedProject?.type === 'petty_cash';
+        const isCajaChica = selectedProject?.type === 'petty_cash' || selectedProject?.name.toLowerCase().includes('caja chica');
         
         if (isCajaChica && userRole !== 'admin') {
             toast.error("No tienes permisos para rendir en 'Caja Chica'.");
+            setLoading(false);
             return;
         }
     }
@@ -235,6 +257,7 @@ export default function ExpenseForm() {
 
     if (expenseDate < today && diffDays > MAX_DAYS_OLD) {
         toast.error(`La fecha del gasto no puede tener más de ${MAX_DAYS_OLD} días de antigüedad.`);
+        setLoading(false);
         return;
     }
 
@@ -255,6 +278,7 @@ export default function ExpenseForm() {
         const dupSnap = await getDocs(dupQuery);
         if (!dupSnap.empty) {
             if (!confirm("Parece que ya existe un gasto con esta fecha y monto para este usuario. ¿Estás seguro de que no es un duplicado?")) {
+                setLoading(false);
                 return;
             }
         }
@@ -262,7 +286,7 @@ export default function ExpenseForm() {
     // ---------------------------------------------------------
 
     try {
-        setLoading(true);
+        // setLoading(true); // Moved to top
         
         let imageUrl = '';
         // 1. Upload Image

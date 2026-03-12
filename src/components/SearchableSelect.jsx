@@ -40,13 +40,16 @@ export default function SearchableSelect({
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (containerRef.current && !containerRef.current.contains(e.target)) {
+        if (isOpen && search) {
+          onChange(search);
+        }
         setIsOpen(false);
         setSearch("");
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+  }, [isOpen, search, onChange]);
 
   const handleOpen = () => {
     if (disabled) return;
@@ -70,13 +73,13 @@ export default function SearchableSelect({
   };
 
   const handleKeyDown = (e) => {
-    if (e.key === "Escape") {
-      setIsOpen(false);
-      setSearch("");
-    }
-    if (e.key === "Enter" && filtered.length === 1) {
+    if (e.key === "Enter") {
       e.preventDefault();
-      handleSelect(filtered[0].value);
+      if (filtered.length === 1) {
+        handleSelect(filtered[0].value);
+      } else if (search) {
+        handleSelect(search);
+      }
     }
   };
 
@@ -116,12 +119,12 @@ export default function SearchableSelect({
       >
         <span
           className={
-            selectedOption
+            selectedOption || value
               ? "text-slate-800 font-medium truncate"
               : "text-slate-400"
           }
         >
-          {selectedOption ? selectedOption.label : placeholder}
+          {selectedOption ? selectedOption.label : (value || placeholder)}
         </span>
         <div className="flex items-center gap-1 flex-shrink-0">
           {value && !disabled && (

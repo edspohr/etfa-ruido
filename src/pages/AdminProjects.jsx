@@ -22,8 +22,7 @@ export default function AdminProjects() {
     name: '', 
     client: '', 
     code: '', 
-    recurrence: '',
-    isRecurrent: false 
+    recurrence: ''
   });
   const [clients, setClients] = useState([]);
   
@@ -80,8 +79,8 @@ export default function AdminProjects() {
         const projectRef = await addDoc(collection(db, "projects"), {
             name: newProject.name,
             code: newProject.code || '',
-            recurrence: newProject.isRecurrent ? newProject.recurrence : '',
-            isRecurrent: newProject.isRecurrent,
+            recurrence: newProject.recurrence || '',
+            isRecurrent: !!newProject.recurrence,
             client: newProject.client,
             expenses: 0,
             status: 'active',
@@ -98,7 +97,7 @@ export default function AdminProjects() {
         });
 
         toast.success("Proyecto creado exitosamente");
-        setNewProject({ name: '', client: '', code: '', recurrence: '', isRecurrent: false });
+        setNewProject({ name: '', client: '', code: '', recurrence: '' });
         setShowProjectForm(false);
         fetchData();
     } catch (err) {
@@ -279,36 +278,6 @@ export default function AdminProjects() {
                             />
                         </div>
 
-                        <div className="flex items-center gap-2 py-2">
-                            <input 
-                                type="checkbox"
-                                id="isRecurrent"
-                                checked={newProject.isRecurrent}
-                                onChange={e => setNewProject({...newProject, isRecurrent: e.target.checked})}
-                                className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
-                            />
-                            <label htmlFor="isRecurrent" className="text-sm font-bold text-gray-700 cursor-pointer">
-                                Este proyecto es recurrente
-                            </label>
-                        </div>
-
-                        {newProject.isRecurrent && (
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Frecuencia de Recurrencia</label>
-                                <select 
-                                    className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none"
-                                    value={newProject.recurrence}
-                                    onChange={e => setNewProject({...newProject, recurrence: e.target.value})}
-                                    required={newProject.isRecurrent}
-                                >
-                                    <option value="">Seleccionar frecuencia...</option>
-                                    <option value="Mensual">Mensual</option>
-                                    <option value="Trimestral">Trimestral</option>
-                                    <option value="Semestral">Semestral</option>
-                                    <option value="Anual">Anual</option>
-                                </select>
-                            </div>
-                        )}
                         <button type="submit" className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700">
                             Guardar Proyecto
                         </button>
