@@ -9,13 +9,10 @@ import { sortProjects } from '../utils/sort';
 import { Skeleton } from '../components/Skeleton';
 import SearchableSelect from '../components/SearchableSelect';
 import { useDropzone } from "react-dropzone";
-import * as pdfjs from "pdfjs-dist";
+import { getPdfText, extractInvoiceData } from '../utils/parseInvoicePDF';
 import { toast } from 'sonner';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-
-// Configure PDF.js Worker
-pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
 
 export default function AdminInvoicingGeneration() {
   const navigate = useNavigate();
@@ -196,33 +193,7 @@ export default function AdminInvoicingGeneration() {
       }
   };
 
-  // PDF Extraction Logic
-  const getPdfText = async (file) => {
-    try {
-      const arrayBuffer = await file.arrayBuffer();
-      const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
-      let fullText = "";
-      const maxPages = Math.min(pdf.numPages, 3);
-
-      for (let i = 1; i <= maxPages; i++) {
-        const page = await pdf.getPage(i);
-        const textContent = await page.getTextContent();
-        const pageText = textContent.items.map((item) => item.str).join(" ");
-        fullText += pageText + " ";
-      }
-
-      // Detect scanned/image-only PDFs
-      if (!fullText || fullText.trim().length < 10) {
-        toast.warning("El PDF es una imagen escaneada. Ingrese los datos manualmente.");
-        return null;
-      }
-
-      return fullText;
-    } catch (e) {
-      console.error("Error reading PDF:", e);
-      return null;
-    }
-  };
+  // PDF Extraction Logic — uses centralized getPdfText & extractInvoiceData from parseInvoicePDF.js
 
   const onDrop = useCallback(async (acceptedFiles) => {
     if (acceptedFiles.length === 0) return;
@@ -230,78 +201,61 @@ export default function AdminInvoicingGeneration() {
     setExtracting(true);
 
     try {
-        const text = await getPdfText(file);
-        if (!text) throw new Error("No se pudo leer el PDF");
-
-        // 1. Try to find Project
-        const normalizedText = text.toLowerCase().replace(/\s+/g, " ");
-        let matchedProj = null;
-        for (const project of projects) {
-            if (!project.code) continue;
-            const code = project.code.toLowerCase().trim();
-            if (normalizedText.includes(code)) {
-                matchedProj = project;
-                break;
-            }
-        }
-
-        if (matchedProj) {
-            setSelectedProjectId(matchedProj.id);
-            toast.success(`Proyecto detectado: ${matchedProj.name}`);
-        }
-
-        // 2. Try to extract Amount (multiple patterns for Chilean invoices)
-        const amountPatterns = [
-            /total\s*(?:neto|a\s*pagar)?[\s:]*\$?\s*([\d.,]+)/i,
-            /monto\s*(?:total|neto)?[\s:]*\$?\s*([\d.,]+)/i,
-            /total[\s\S]{0,30}?\$\s?([\d.,]+)/i,
-            /total[\s\S]{0,20}?\$?([\d.,]+)/i,
-        ];
-        let extractedAmount = 0;
-        for (const pattern of amountPatterns) {
-            const totalMatch = text.match(pattern);
-            if (totalMatch && totalMatch[1]) {
-                let s = totalMatch[1].replace(/\./g, "").replace(",", ".").replace(/[^\d.]/g, "");
-                const parsed = parseFloat(s) || 0;
-                if (parsed > 0) {
-                    extractedAmount = parsed;
-                    break;
-                }
-            }
-        }
-        if (extractedAmount > 0) {
-            setMontoNeto(String(extractedAmount));
-            setCustomItems([{ description: 'Servicios según PDF', amount: extractedAmount }]);
-            toast.success(`Monto detectado: ${formatCurrency(extractedAmount)}`);
-        }
-
-        // 3. Try to extract RUT (Flexible Chilean RUT patterns)
-        const rutMatch = text.match(/\b(\d{1,2}\.?\d{3}\.?\d{3}-?[\dkK])\b/i);
-        if (rutMatch) {
-            const rawRut = rutMatch[0];
-            setClientData(prev => ({ ...prev, rut: rawRut }));
-            // Trigger lookup
-            const cleanRut = rawRut.replace(/[.-]/g, '').toUpperCase();
-            const q = query(collection(db, "clients"), where("rut", "==", cleanRut));
-            const snapshot = await getDocs(q);
-            if (!snapshot.empty) {
-                const data = snapshot.docs[0].data();
-                setClientData({
-                    rut: rawRut,
-                    razonSocial: data.razonSocial || '',
-                    direccion: data.direccion || '',
-                    comuna: data.comuna || '',
-                    giro: data.giro || ''
-                });
-            }
-        }
-
+      const text = await getPdfText(file);
+      if (!text) {
+        toast.warning('El PDF es una imagen escaneada. Ingresa los datos manualmente.');
         setExtractionMode(false);
+        return;
+      }
+
+      const projectCodes = projects.map(p => p.code).filter(Boolean);
+      const { rut, amount, date, projectCode } = extractInvoiceData(text, projectCodes);
+
+      // Auto-select project by code
+      if (projectCode) {
+        const matched = projects.find(p => p.code?.toLowerCase() === projectCode.toLowerCase());
+        if (matched) {
+          setSelectedProjectId(matched.id);
+          toast.success(`Proyecto detectado: ${matched.name}`);
+        }
+      }
+
+      // Auto-fill amount
+      if (amount > 0) {
+        setMontoNeto(String(amount));
+        setCustomItems([{ description: 'Servicios según PDF', amount }]);
+        toast.success(`Monto neto detectado: ${formatCurrency(amount)}`);
+      } else {
+        toast.warning('No se pudo detectar el monto neto. Ingresa el valor manualmente.');
+      }
+
+      // Auto-fill RUT and look up client
+      if (rut) {
+        setClientData(prev => ({ ...prev, rut }));
+        const cleanRut = rut.replace(/[.\-]/g, '').toUpperCase();
+        try {
+          const q = query(collection(db, 'clients'), where('rut', '==', cleanRut));
+          const snapshot = await getDocs(q);
+          if (!snapshot.empty) {
+            const data = snapshot.docs[0].data();
+            setClientData({ rut, razonSocial: data.razonSocial || '', direccion: data.direccion || '', comuna: data.comuna || '', giro: data.giro || '' });
+            toast.success('Cliente encontrado en base de datos.');
+          }
+        } catch { /* lookup failed, ignore */ }
+      }
+
+      // Auto-fill date
+      if (date) {
+        setInvoiceDate(date);
+      }
+
+      setExtractionMode(false);
     } catch (e) {
-        console.error("Extraction error:", e);
-        toast.error("Error al extraer datos del PDF.");
+      console.error('Extraction error:', e);
+      toast.error('Error al extraer datos del PDF.');
+      setExtractionMode(false);
     } finally {
-        setExtracting(false);
+      setExtracting(false);
     }
   }, [projects]);
 
@@ -541,57 +495,39 @@ export default function AdminInvoicingGeneration() {
       try {
         const text = await getPdfText(file);
         if (!text) {
-          results.push({ fileName: file.name, status: 'error', error: 'No se pudo leer', rut: '', razonSocial: '', project: '', amount: 0, include: false });
+          results.push({ fileName: file.name, status: 'error', error: 'PDF escaneado/sin texto', rut: '', razonSocial: '', project: '', amount: 0, include: false });
           continue;
         }
 
-        const normalizedText = text.toLowerCase().replace(/\s+/g, ' ');
+        const projectCodes = projects.map(p => p.code).filter(Boolean);
+        const { rut: extractedRut, amount: extractedAmount, projectCode } = extractInvoiceData(text, projectCodes);
 
-        // Find project
-        let matchedProject = null;
-        for (const project of projects) {
-          if (!project.code) continue;
-          if (normalizedText.includes(project.code.toLowerCase().trim())) {
-            matchedProject = project;
-            break;
-          }
-        }
-
-        // Extract amount
-        let extractedAmount = 0;
-        const totalMatch = text.match(/total[\s\S]{0,20}?\$?([\d.,]+)/i);
-        if (totalMatch && totalMatch[1]) {
-          let s = totalMatch[1].replace(/\./g, '').replace(',', '.').replace(/[^\d.]/g, '');
-          extractedAmount = parseFloat(s) || 0;
-        }
-
-        // Extract RUT
-        let extractedRut = '';
         let clientName = '';
-        const rutMatch = text.match(/(\d{1,2}\.?\d{3}\.?\d{3}-?[\dkK])/);
-        if (rutMatch) {
-          extractedRut = rutMatch[0];
-          // Look up client name
-          const cleanRut = extractedRut.replace(/[.-]/g, '').toUpperCase();
+        if (extractedRut) {
+          const cleanRut = extractedRut.replace(/[.\-]/g, '').toUpperCase();
           try {
             const q = query(collection(db, 'clients'), where('rut', '==', cleanRut));
             const snapshot = await getDocs(q);
-            if (!snapshot.empty) {
-              clientName = snapshot.docs[0].data().razonSocial || '';
-            }
-          } catch { /* ignore lookup errors */ }
+            if (!snapshot.empty) clientName = snapshot.docs[0].data().razonSocial || '';
+          } catch { /* ignore */ }
+        }
+
+        let matchedProject = null;
+        if (projectCode) {
+          matchedProject = projects.find(p => p.code?.toLowerCase() === projectCode.toLowerCase()) || null;
         }
 
         results.push({
-          fileName: file.name,
-          status: 'ok',
-          rut: extractedRut,
+          fileName:    file.name,
+          status:      extractedAmount > 0 ? 'ok' : 'error',
+          error:       extractedAmount > 0 ? null : 'Monto no detectado — ingresa manualmente',
+          rut:         extractedRut || '',
           razonSocial: clientName,
-          project: matchedProject ? matchedProject.name : '',
-          projectId: matchedProject ? matchedProject.id : '',
-          amount: extractedAmount,
+          project:     matchedProject?.name || '',
+          projectId:   matchedProject?.id   || '',
+          amount:      extractedAmount,
           observaciones: '',
-          include: extractedAmount > 0
+          include:     extractedAmount > 0,
         });
       } catch (e) {
         results.push({ fileName: file.name, status: 'error', error: e.message, rut: '', razonSocial: '', project: '', amount: 0, include: false });

@@ -11,6 +11,7 @@ import {
   FaExclamationCircle, FaChartPie, FaPlus as Plus
 } from 'react-icons/fa';
 import { toast } from 'sonner';
+import { sortProjects } from '../utils/sort';
 
 // --- CONFIGURATION ---
 const COLUMNS = [
@@ -403,7 +404,7 @@ export default function AdminKanbanBoard() {
             if (!status) status = 'pending';
             return { id: doc.id, ...data, billingStatus: status };
         });
-        setProjects(projData);
+        setProjects(sortProjects(projData));
         setLoading(false);
     }, (error) => {
         console.error("Error fetching projects:", error);

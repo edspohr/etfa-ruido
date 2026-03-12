@@ -1,6 +1,5 @@
 import { useState, useCallback } from "react";
 import { useDropzone } from "react-dropzone";
-import * as pdfjs from "pdfjs-dist";
 import {
   Upload,
   FileText,
@@ -22,9 +21,7 @@ import {
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { toast } from "sonner";
-
-// Configure PDF.js Worker via CDN to avoid Vite bundling issues
-pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
+import { getPdfText, extractInvoiceData } from "../utils/parseInvoicePDF";
 
 export default function InvoiceBulkUploader({ onProcessingComplete, onClose }) {
   const [files, setFiles] = useState([]);
@@ -42,33 +39,7 @@ export default function InvoiceBulkUploader({ onProcessingComplete, onClose }) {
     setFiles(newFiles);
   };
 
-  const getPdfText = async (file) => {
-    try {
-      const arrayBuffer = await file.arrayBuffer();
-      const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
-      let fullText = "";
 
-      const maxPages = Math.min(pdf.numPages, 3);
-
-      for (let i = 1; i <= maxPages; i++) {
-        const page = await pdf.getPage(i);
-        const textContent = await page.getTextContent();
-        const pageText = textContent.items.map((item) => item.str).join(" ");
-        fullText += pageText + " ";
-      }
-
-      // Detect scanned/image-only PDFs
-      if (!fullText || fullText.trim().length < 10) {
-        toast.warning(`"${file.name}" es una imagen escaneada. No se pudo extraer texto.`);
-        return null;
-      }
-
-      return fullText;
-    } catch (e) {
-      console.error("Error reading PDF:", e);
-      return null;
-    }
-  };
 
   /**
    * Core Logic: Find a project that matches the text in the PDF
@@ -179,39 +150,8 @@ export default function InvoiceBulkUploader({ onProcessingComplete, onClose }) {
             continue;
           }
 
-          // C. Extra Data Extraction (Amount, Date) - Basic heuristics
-          // Attempt to find "Total" followed by number
-          // Heuristic: Look for largest number in the text? searching for "Total"?
-          // Let's keep it simple: Just create the invoice linked to project, let admin fill details later if extraction fails.
-          // We will default amount to 0 or try to parse.
-
-          // Let's try to extract Total Amount
-          // Regex: "Total" .... "$ 1.000.000" or "1.000.000"
-          // This is hard to get right generically. Let's start with 0 and rely on user to verify or reconciliation to match.
-          // BUT, user asked for "Monto Total" extraction.
-
-          let extractedAmount = 0;
-          // Try multiple patterns for Chilean invoice formats
-          const amountPatterns = [
-              /total\s*(?:neto|a\s*pagar)?[\s:]*\$?\s*([\d.,]+)/i,
-              /monto\s*(?:total|neto)?[\s:]*\$?\s*([\d.,]+)/i,
-              /total[\s\S]{0,30}?\$\s?([\d.,]+)/i,
-              /total[\s\S]{0,20}?\$?([\d.,]+)/i,
-          ];
-          for (const pattern of amountPatterns) {
-              const totalMatch = text.match(pattern);
-              if (totalMatch && totalMatch[1]) {
-                  let s = totalMatch[1]
-                      .replace(/\./g, "")
-                      .replace(",", ".")
-                      .replace(/[^\d.]/g, "");
-                  const parsed = parseFloat(s) || 0;
-                  if (parsed > 0) {
-                      extractedAmount = parsed;
-                      break;
-                  }
-              }
-          }
+          // C. Extra Data Extraction using centralized utility
+          const { amount: extractedAmount } = extractInvoiceData(text, activeProjects.map(p => p.code).filter(Boolean));
 
           // D. Create Invoice Record
           const invoiceData = {
