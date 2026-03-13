@@ -89,31 +89,32 @@ function parseClpAmount(raw) {
 
 /**
  * Amount patterns — ordered from most to least specific.
- * We prefer "neto" amounts over "total" amounts (IVA is separate).
+ * We prefer "total" amounts because the user wants the final amount with IVA
+ * to match against the bank statement.
  * Each pattern has a priority weight: higher = preferred.
  */
 const AMOUNT_PATTERNS = [
-  // 1. Explicit "monto neto" / "total neto" lines
-  { re: /monto\s+neto[\s:$]*([\d.,]{4,})/i, weight: 100 },
-  { re: /total\s+neto[\s:$]*([\d.,]{4,})/i, weight: 100 },
-  { re: /neto[\s:$]*([\d.,]{4,})/i,          weight: 90  },
-  // 2. "afecto" (Chilean term for taxable base = neto)
-  { re: /afecto[\s:$]*([\d.,]{4,})/i,        weight: 85  },
-  // 3. Subtotal (often = neto before IVA)
-  { re: /subtotal[\s:$]*([\d.,]{4,})/i,      weight: 80  },
-  // 4. Generic "total" — could be total con IVA, so lower weight
-  { re: /total\s+a\s+pagar[\s:$]*([\d.,]{4,})/i, weight: 50 },
-  { re: /total[\s\S]{0,15}?[$ \s:]([\d.,]{4,})/i, weight: 40 },
-  // 5. Large number near $ sign (last resort)
+  // 1. Explicit "total a pagar" or "total" lines
+  { re: /total\s+a\s+pagar[\s:$]*([\d.,]{4,})/i, weight: 100 },
+  { re: /total[\s\S]{0,15}?[$ \s:]([\d.,]{4,})/i, weight: 90 },
+  // 2. "monto total"
+  { re: /monto\s+total[\s:$]*([\d.,]{4,})/i,      weight: 85  },
+  // 3. Neto / Afecto / Subtotal (lower priority now)
+  { re: /monto\s+neto[\s:$]*([\d.,]{4,})/i, weight: 50 },
+  { re: /total\s+neto[\s:$]*([\d.,]{4,})/i, weight: 50 },
+  { re: /neto[\s:$]*([\d.,]{4,})/i,          weight: 45  },
+  { re: /afecto[\s:$]*([\d.,]{4,})/i,        weight: 40  },
+  { re: /subtotal[\s:$]*([\d.,]{4,})/i,      weight: 35  },
+  // 4. Large number near $ sign (last resort)
   { re: /\$\s*([\d.,]{5,})/g, weight: 10 },
 ];
 
 /** RUT patterns for Chilean tax IDs */
 const RUT_PATTERNS = [
-  // Standard with dots: 76.123.456-7
-  /(?:\s|^|RUT:?\s*)(\d{1,2}\.\d{3}\.\d{3}-[\dkK])(?:\s|$)/i,
-  // Without dots: 76123456-7
-  /(?:\s|^|RUT:?\s*)(\d{7,8}-[\dkK])(?:\s|$)/i,
+  // Standard with dots, allowing spaces around dash: 76.123.456 - 7 or 65.177.022- K
+  /(?:\s|^|RUT:?\s*)(\d{1,2}\.\d{3}\.\d{3}\s*-\s*[\dkK])(?:\s|$)/i,
+  // Without dots: 76123456 - 7
+  /(?:\s|^|RUT:?\s*)(\d{7,8}\s*-\s*[\dkK])(?:\s|$)/i,
   // Dense: 761234567 (no dash, no dots — needs checksum validation)
   /(?:\s|^|RUT:?\s*)(\d{8,9})(?:\s|$)/i,
 ];

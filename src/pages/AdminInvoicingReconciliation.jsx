@@ -7,7 +7,7 @@ import {
 import * as XLSX from 'xlsx';
 import {
   collection, query, where, getDocs, writeBatch, doc,
-  serverTimestamp, setDoc, getDoc
+  serverTimestamp, setDoc, getDoc, deleteDoc, orderBy
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { formatCurrency } from '../utils/format';
@@ -37,6 +37,7 @@ export default function AdminInvoicingReconciliation() {
   const [movements, setMovements]           = useState([]);
   const [matches, setMatches]               = useState([]);
   const [pendingInvoices, setPendingInvoices] = useState([]);
+  const [bankStatements, setBankStatements]   = useState([]);
   const [loading, setLoading]               = useState(false);
   const [loadingMovements, setLoadingMovements] = useState(true);
   const [processing, setProcessing]         = useState(false);
@@ -56,6 +57,7 @@ export default function AdminInvoicingReconciliation() {
     const init = async () => {
       await fetchPending();
       await fetchMovements();
+      await fetchBankStatements();
       try {
         const qProj = query(collection(db, 'projects'), where('status', '!=', 'deleted'));
         const snapProj = await getDocs(qProj);
@@ -95,6 +97,16 @@ export default function AdminInvoicingReconciliation() {
       toast.error('Error al cargar movimientos bancarios.');
     } finally {
       setLoadingMovements(false);
+    }
+  };
+
+  const fetchBankStatements = async () => {
+    try {
+      const q = query(collection(db, 'bank_statements'), orderBy('uploadedAt', 'desc'));
+      const snapshot = await getDocs(q);
+      setBankStatements(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+    } catch (e) {
+      console.error('Error fetching bank statements:', e);
     }
   };
 
@@ -153,6 +165,10 @@ export default function AdminInvoicingReconciliation() {
         let dupeCount = 0;
         const newMovs = [];
 
+        // Create the statement document reference
+        const statementDocRef = doc(collection(db, 'bank_statements'));
+        const statementId = statementDocRef.id;
+
         for (let i = 0; i < parsed.length; i++) {
           const mov   = parsed[i];
           const docId = generateMovementId(bankName, mov.date, mov.amount, mov.description, i);
@@ -168,13 +184,23 @@ export default function AdminInvoicingReconciliation() {
             bank:        bankName,
             createdAt:   serverTimestamp(),
             reconciled:  false,
+            statementId: statementId
           };
           batch.set(docRef, movData);
           newMovs.push({ id: docId, ...movData });
           newCount++;
         }
 
-        if (newCount > 0) await batch.commit();
+        if (newCount > 0) {
+          // Record the loaded statement metadata
+          batch.set(statementDocRef, {
+            filename: selectedFile.name,
+            bank: bankName,
+            movementsCount: newCount,
+            uploadedAt: serverTimestamp()
+          });
+          await batch.commit();
+        }
 
         if (newCount > 0) {
           toast.success(
@@ -186,6 +212,7 @@ export default function AdminInvoicingReconciliation() {
         }
 
         await fetchMovements();
+        await fetchBankStatements();
       } catch (error) {
         console.error('Error parsing Excel:', error);
         toast.error(`Error al procesar el archivo de ${bankName}: ${error.message}`);
@@ -202,6 +229,36 @@ export default function AdminInvoicingReconciliation() {
     reader.readAsArrayBuffer(selectedFile);
     // Reset input so the same file can be re-uploaded if needed
     e.target.value = '';
+  };
+
+  // ── Delete Cartola ────────────────────────────────────────────────────────
+  const handleDeleteStatement = async (statement) => {
+    if (!window.confirm(`¿Estás seguro de eliminar la cartola "${statement.filename}"? Esto borrará ${statement.movementsCount} movimientos asociados y desenlazará las facturas correspondientes.`)) return;
+    
+    setLoading(true);
+    try {
+      // 1. Delete all bank movements that belong to this statement
+      const q = query(collection(db, 'bank_movements'), where('statementId', '==', statement.id));
+      const snap = await getDocs(q);
+      
+      const batch = writeBatch(db);
+      snap.docs.forEach((d) => {
+        batch.delete(doc(db, 'bank_movements', d.id));
+      });
+      // 2. Delete the statement itself
+      batch.delete(doc(db, 'bank_statements', statement.id));
+      
+      await batch.commit();
+      toast.success(`Cartola eliminada y ${snap.size} movimientos borrados.`);
+      
+      await fetchMovements();
+      await fetchBankStatements();
+    } catch (e) {
+      console.error('Error deleting statement:', e);
+      toast.error('Error al eliminar la cartola.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   // ── Smart Matching ────────────────────────────────────────────────────────
@@ -361,12 +418,16 @@ export default function AdminInvoicingReconciliation() {
     <Layout title="Cuenta Corriente Unificada" isFullWidth={true}>
       <div className="flex flex-col gap-6">
 
-        {/* Upload + Summary */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="md:col-span-2 bg-white p-6 rounded-2xl shadow-soft border border-slate-100">
-            <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
-              <Upload className="w-5 h-5 text-indigo-600" /> Cargar Cartolas
-            </h3>
+        {/* Upload + Cartolas + Summary */}
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          {/* Box 1: Cargar Cartolas y Listado (Span 3) */}
+          <div className="lg:col-span-3 bg-white p-6 rounded-2xl shadow-soft border border-slate-100 flex flex-col sm:flex-row gap-6">
+            
+            {/* Upload Section */}
+            <div className="flex-1">
+              <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
+                <Upload className="w-5 h-5 text-indigo-600" /> Cargar Cartolas
+              </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {['Itaú', 'Santander'].map((bank) => {
                 const count = movements.filter((m) => m.bank === bank).length;
@@ -396,10 +457,42 @@ export default function AdminInvoicingReconciliation() {
                 );
               })}
             </div>
-            {loading && <p className="text-center text-sm text-indigo-600 mt-3 font-medium animate-pulse">Procesando archivo...</p>}
+            {loading && <p className="text-center text-sm text-indigo-600 mt-3 font-medium animate-pulse">Procesando...</p>}
+            </div>
+
+            {/* Listado de Cartolas Cargadas (New Feature) */}
+            <div className="flex-1 flex flex-col border-t sm:border-t-0 sm:border-l border-slate-100 pt-6 sm:pt-0 sm:pl-6">
+              <h3 className="font-bold text-slate-800 mb-3 text-sm flex items-center gap-2">
+                <FileSpreadsheet className="w-4 h-4 text-slate-400" /> Últimas Cartolas Cargadas
+              </h3>
+              <div className="flex-1 min-h-[100px] max-h-[140px] overflow-y-auto space-y-2 pr-1">
+                {bankStatements.length === 0 ? (
+                  <p className="text-xs text-slate-400 italic">No hay cartolas recientes.</p>
+                ) : (
+                  bankStatements.map((st) => (
+                    <div key={st.id} className="group flex justify-between items-center bg-slate-50 p-2.5 rounded-lg border border-slate-100 hover:border-slate-300 transition-colors">
+                      <div className="min-w-0 mr-2">
+                        <p className="font-bold text-xs text-slate-700 truncate" title={st.filename}>{st.filename}</p>
+                        <p className="text-[10px] text-slate-500 mt-0.5">
+                          {st.bank} • {st.movementsCount} movs • {st.uploadedAt?.seconds ? new Date(st.uploadedAt.seconds * 1000).toLocaleDateString() : ''}
+                        </p>
+                      </div>
+                      <button 
+                        onClick={() => handleDeleteStatement(st)}
+                        className="p-1.5 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded-md transition-all opacity-0 group-hover:opacity-100 focus:opacity-100"
+                        title="Eliminar cartola y sus movimientos"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
           </div>
 
-          <div className="bg-white p-6 rounded-2xl shadow-soft border border-slate-100 flex flex-col justify-center">
+          {/* Box 2: Summary (Span 1) */}
+          <div className="lg:col-span-1 bg-white p-6 rounded-2xl shadow-soft border border-slate-100 flex flex-col justify-center">
             <h3 className="font-bold text-slate-800 mb-3">Resumen</h3>
             <div className="space-y-3 text-sm">
               {[
@@ -480,10 +573,11 @@ export default function AdminInvoicingReconciliation() {
         )}
 
         {/* Data workspaces */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 h-[calc(100vh-320px)] min-h-[600px]">
+        {/* Adjusted grid layout: 12 cols total -> 7 for bank, 5 for invoices */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 h-[calc(100vh-320px)] min-h-[600px]">
 
           {/* Movements table */}
-          <div className="bg-white rounded-2xl shadow-soft border border-slate-100 overflow-hidden flex flex-col h-full">
+          <div className="lg:col-span-7 bg-white rounded-2xl shadow-soft border border-slate-100 overflow-hidden flex flex-col h-full">
             <div className="p-4 border-b border-slate-100 bg-slate-50 sticky top-0 z-10">
               <h3 className="font-bold text-slate-800 flex items-center gap-2">
                 <FileSpreadsheet className="w-4 h-4 text-slate-500" /> Movimientos Bancarios
@@ -592,7 +686,7 @@ export default function AdminInvoicingReconciliation() {
           </div>
 
           {/* Pending invoices */}
-          <div className="bg-white rounded-2xl shadow-soft border border-slate-100 overflow-hidden flex flex-col h-full">
+          <div className="lg:col-span-5 bg-white rounded-2xl shadow-soft border border-slate-100 overflow-hidden flex flex-col h-full">
             <div className="p-4 border-b border-slate-100 bg-slate-50 sticky top-0 z-10">
               <h3 className="font-bold text-slate-800 flex items-center gap-2">
                 <CheckCircle className="w-4 h-4 text-slate-500" /> Facturas Emitidas (Por Cobrar)
