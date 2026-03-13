@@ -112,21 +112,21 @@ const AMOUNT_PATTERNS = [
 /** Razón Social patterns */
 const RAZON_SOCIAL_PATTERNS = [
   // SEÑOR(ES): FUNDACION SUMMER
-  /SEÑOR\(ES\):\s*([^RUT\n\r]+)/i,
+  /SEÑOR\(ES\):\s*(.*?)\s*(?=R\.?U\.?T|GIRO|$)/i,
   // Nombre o Razón Social: 
-  /(?:Nombre|Razon)\s+Social:?\s*([^RUT\n\r]+)/i,
+  /(?:Nombre|Raz[oó]n)\s+Social:?\s*(.*?)\s*(?=R\.?U\.?T|GIRO|$)/i,
   // Generic "Cliente: "
-  /Cliente:?\s*([^RUT\n\r]+)/i,
+  /Cliente:?\s*(.*?)\s*(?=R\.?U\.?T|GIRO|$)/i,
 ];
 
 /** RUT patterns for Chilean tax IDs */
 const RUT_PATTERNS = [
   // Standard with dots, allowing spaces around dash: 76.123.456 - 7 or 65.177.022- K
-  /(?:\s|^|RUT:?\s*)(\d{1,2}\.\d{3}\.\d{3}\s*-\s*[\dkK])(?:\s|$)/i,
+  /(?:\s|^|R\.?U\.?T\.?:?\s*)(\d{1,2}\.\d{3}\.\d{3}\s*-\s*[\dkK])(?:\s|$)/i,
   // Without dots: 76123456 - 7
-  /(?:\s|^|RUT:?\s*)(\d{7,8}\s*-\s*[\dkK])(?:\s|$)/i,
+  /(?:\s|^|R\.?U\.?T\.?:?\s*)(\d{7,8}\s*-\s*[\dkK])(?:\s|$)/i,
   // Dense: 761234567 (no dash, no dots — needs checksum validation)
-  /(?:\s|^|RUT:?\s*)(\d{8,9})(?:\s|$)/i,
+  /(?:\s|^|R\.?U\.?T\.?:?\s*)(\d{8,9})(?:\s|$)/i,
 ];
 
 /** Date patterns → normalised to YYYY-MM-DD */
