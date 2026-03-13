@@ -3,11 +3,6 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Helper function to check if user is admin
-    function isAdmin() {
-      return request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-    }
-
     // USERS: Allow Read/Write for Authenticated Users (Temporary for Migration)
     match /users/{userId} {
       allow read, write: if request.auth != null;
@@ -54,8 +49,11 @@ service cloud.firestore {
       allow read, write: if request.auth != null;
     }
 
-    // BANK MOVEMENTS: Permitir lectura y escritura para la nueva conciliación
+    // BANK MOVEMENTS & STATEMENTS: Permitir lectura y escritura para la nueva conciliación
     match /bank_movements/{movementId} {
+      allow read, write: if request.auth != null;
+    }
+    match /bank_statements/{statementId} {
       allow read, write: if request.auth != null;
     }
 

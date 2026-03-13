@@ -151,15 +151,15 @@ export default function AdminInvoicingHistory() {
                      <div 
                         key={inv.id} 
                         onClick={() => openInvoiceDetail(inv)}
-                        className={`p-6 hover:bg-slate-50 transition flex flex-col md:flex-row md:items-center justify-between gap-4 cursor-pointer ${inv.paymentStatus === 'void' ? 'opacity-60 bg-slate-50' : ''}`}
+                        className={`p-3 md:p-4 hover:bg-slate-50 transition flex flex-col md:flex-row md:items-center justify-between gap-4 cursor-pointer ${inv.paymentStatus === 'void' ? 'opacity-60 bg-slate-50' : ''}`}
                      >
                          
                          <div className="flex items-start gap-4">
-                             <div className={`p-3 rounded-xl ${getStatusColor(inv.paymentStatus)}`}>
-                                 <FileText className="w-6 h-6" />
+                             <div className={`p-2 rounded-xl ${getStatusColor(inv.paymentStatus)}`}>
+                                 <FileText className="w-5 h-5" />
                              </div>
                              <div>
-                                 <h4 className={`font-bold text-slate-800 text-lg ${inv.paymentStatus === 'void' ? 'line-through text-slate-500' : ''}`}>
+                                 <h4 className={`font-bold text-slate-800 text-base ${inv.paymentStatus === 'void' ? 'line-through text-slate-500' : ''}`}>
                                     {inv.clientName || 'Cliente desconocido'}
                                  </h4>
                                  <p className="text-sm text-indigo-600 font-medium mb-1">{inv.projectName}</p>
@@ -175,7 +175,7 @@ export default function AdminInvoicingHistory() {
 
                          <div className="flex items-center gap-6 justify-between md:justify-end w-full md:w-auto">
                              <div className="text-right">
-                                 <p className={`text-2xl font-extrabold text-slate-800 ${inv.paymentStatus === 'void' ? 'line-through text-slate-400' : ''}`}>
+                                 <p className={`text-xl font-extrabold text-slate-800 ${inv.paymentStatus === 'void' ? 'line-through text-slate-400' : ''}`}>
                                     {formatCurrency(inv.totalAmount)}
                                  </p>
                                  <p className="text-xs text-slate-500">{inv.itemCount} items</p>

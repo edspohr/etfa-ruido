@@ -195,8 +195,7 @@ export default function AdminInvoicingReconciliation() {
 
   const fetchBankStatements = async () => {
     try {
-      const q = query(collection(db, 'bank_statements'), orderBy('uploadedAt', 'desc'));
-      const snapshot = await getDocs(q);
+      const snapshot = await getDocs(collection(db, 'bank_statements'));
       setBankStatements(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
     } catch (e) {
       console.error('Error fetching bank statements:', e);
@@ -334,14 +333,20 @@ export default function AdminInvoicingReconciliation() {
       const q = query(collection(db, 'bank_movements'), where('statementId', '==', statement.id));
       const snap = await getDocs(q);
       
-      const batch = writeBatch(db);
-      snap.docs.forEach((d) => {
-        batch.delete(doc(db, 'bank_movements', d.id));
-      });
+      const docsArr = snap.docs;
+      // Loop through documents in chunks of 500 (Firestore limit)
+      for (let i = 0; i < docsArr.length; i += 500) {
+        const batch = writeBatch(db);
+        const chunk = docsArr.slice(i, i + 500);
+        chunk.forEach((d) => batch.delete(d.ref));
+        await batch.commit();
+      }
+
       // 2. Delete the statement itself
-      batch.delete(doc(db, 'bank_statements', statement.id));
+      const batchFinal = writeBatch(db);
+      batchFinal.delete(doc(db, 'bank_statements', statement.id));
+      await batchFinal.commit();
       
-      await batch.commit();
       toast.success(`Cartola eliminada y ${snap.size} movimientos borrados.`);
       
       await fetchMovements();
@@ -359,17 +364,26 @@ export default function AdminInvoicingReconciliation() {
     
     setLoading(true);
     try {
-      const batch = writeBatch(db);
-      
-      // Delete all movements
+      // Delete movements in chunks
       const movsSnap = await getDocs(collection(db, 'bank_movements'));
-      movsSnap.docs.forEach(d => batch.delete(d.ref));
+      const movsArr = movsSnap.docs;
+      for (let i = 0; i < movsArr.length; i += 500) {
+        const batch = writeBatch(db);
+        const chunk = movsArr.slice(i, i + 500);
+        chunk.forEach(d => batch.delete(d.ref));
+        await batch.commit();
+      }
       
-      // Delete all statements
+      // Delete statements in chunks
       const statesSnap = await getDocs(collection(db, 'bank_statements'));
-      statesSnap.docs.forEach(d => batch.delete(d.ref));
+      const statesArr = statesSnap.docs;
+      for (let i = 0; i < statesArr.length; i += 500) {
+        const batch = writeBatch(db);
+        const chunk = statesArr.slice(i, i + 500);
+        chunk.forEach(d => batch.delete(d.ref));
+        await batch.commit();
+      }
       
-      await batch.commit();
       toast.success('Base de datos de conciliación limpiada.');
       setMovements([]);
       setBankStatements([]);
