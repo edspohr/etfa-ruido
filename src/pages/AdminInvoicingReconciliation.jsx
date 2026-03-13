@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import Layout from '../components/Layout';
 import {
   Upload, FileSpreadsheet, CheckCircle, AlertTriangle, ArrowRight,
-  Save, RefreshCw, X, Link, ChevronDown, ChevronUp, AlertCircle, Trash2
+  Save, RefreshCw, X, Link, ChevronDown, ChevronUp, AlertCircle, Trash2,
+  Search, Filter, Info, Zap, Eye
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import {
@@ -23,7 +24,7 @@ const generateMovementId = (bankName, date, amount, description, index) => {
   return `${sanitize(bankName)}_${sanitize(date)}_${Math.round(Math.abs(amount))}_${sanitize(description).substring(0, 20)}_${index}`;
 };
 
-// Parse "DD/MM/YYYY" → Date object (for smart matching date proximity)
+// Parse "DD/MM/YYYY" → Date object
 const parseDisplayDate = (dateStr) => {
   if (!dateStr || dateStr === 'S/F') return null;
   const parts = dateStr.split('/');
@@ -52,16 +53,18 @@ export default function AdminInvoicingReconciliation() {
 
   const [projects, setProjects] = useState([]);
 
+  // Filters
+  const [movementFilter, setMovementFilter] = useState('all'); // all, credits, debits, unreconciled
+  const [movementSearch, setMovementSearch] = useState('');
+
   // ── Smart Matching ────────────────────────────────────────────────────────
   const runSmartMatching = useCallback((bankMovements, invoices, currentMatches) => {
     const newSuggestions = {};
     const autoMatches    = [];
 
     bankMovements.forEach((mov) => {
-      // 1. Skip already matched
       if (currentMatches.some((m) => m.movement.id === mov.id)) return;
-
-      // 2. Only match positive amounts (credits) with invoices
+      if (mov.reconciled) return;
       if (mov.amount <= 0) return;
 
       const scored = [];
@@ -72,10 +75,15 @@ export default function AdminInvoicingReconciliation() {
         let score = 0;
         const reasons = [];
 
-        // 1. Amount: exact ±10 → +50, ±100 → +25
-        const amountDiff = Math.abs(Number(inv.totalAmount) - mov.amount);
-        if (amountDiff < 10)  { score += 50; reasons.push('Monto exacto'); }
-        else if (amountDiff < 100) { score += 25; reasons.push('Monto similar'); }
+        // 1. Amount matching
+        const invAmount = Number(inv.totalAmount) || 0;
+        const amountDiff = Math.abs(invAmount - mov.amount);
+        const amountPct = invAmount > 0 ? amountDiff / invAmount * 100 : 100;
+        
+        if (amountDiff < 10)        { score += 50; reasons.push('Monto exacto'); }
+        else if (amountDiff < 100)  { score += 35; reasons.push('Monto similar (±$100)'); }
+        else if (amountPct < 1)     { score += 25; reasons.push('Monto ~1% diferencia'); }
+        else if (amountPct < 5)     { score += 10; reasons.push('Monto ~5% diferencia'); }
 
         // 2. Date proximity
         const movDate = parseDisplayDate(mov.date);
@@ -89,11 +97,12 @@ export default function AdminInvoicingReconciliation() {
 
         if (movDate && invDate && !isNaN(movDate) && !isNaN(invDate)) {
           const days = Math.abs((movDate - invDate) / 86_400_000);
-          if (days <= 5)  { score += 20; reasons.push(`Fecha cercana (${Math.round(days)}d)`); }
-          else if (days <= 15) { score += 10; reasons.push(`Fecha próxima (${Math.round(days)}d)`); }
+          if (days <= 3)       { score += 25; reasons.push(`${Math.round(days)}d diferencia`); }
+          else if (days <= 7)  { score += 15; reasons.push(`${Math.round(days)}d diferencia`); }
+          else if (days <= 30) { score += 5;  reasons.push(`${Math.round(days)}d diferencia`); }
         }
 
-        // 3. Text: client name or project code in bank description
+        // 3. Text matching
         const descLower   = String(mov.description || '').toLowerCase();
         const clientName  = String(inv.clientName  || '').toLowerCase();
         const projectName = String(inv.projectName || '').toLowerCase();
@@ -103,12 +112,22 @@ export default function AdminInvoicingReconciliation() {
           if (proj?.code) projectCode = proj.code.toLowerCase();
         }
 
-        if (clientName.length > 2 && descLower.includes(clientName)) {
-          score += 30; reasons.push('Nombre cliente en descripción');
-        } else if (projectCode.length > 2 && descLower.includes(projectCode)) {
-          score += 30; reasons.push('Código proyecto en descripción');
-        } else if (projectName.length > 3 && descLower.includes(projectName)) {
-          score += 20; reasons.push('Nombre proyecto en descripción');
+        if (clientName.length > 3 && descLower.includes(clientName)) {
+          score += 30; reasons.push('Cliente en descripción');
+        }
+        if (projectCode.length > 2 && descLower.includes(projectCode)) {
+          score += 25; reasons.push('Código proyecto');
+        }
+        if (projectName.length > 4 && descLower.includes(projectName)) {
+          score += 15; reasons.push('Nombre proyecto');
+        }
+
+        // Check for RUT in description
+        if (inv.clientRut) {
+          const cleanRut = inv.clientRut.replace(/[.\-\s]/g, '');
+          if (cleanRut.length > 5 && descLower.includes(cleanRut.toLowerCase())) {
+            score += 35; reasons.push('RUT en descripción');
+          }
         }
 
         if (score > 0) scored.push({ invoice: inv, score, reasons });
@@ -117,9 +136,10 @@ export default function AdminInvoicingReconciliation() {
       scored.sort((a, b) => b.score - a.score);
 
       if (scored.length > 0) {
+        // Auto-match: high confidence + clear winner
         if (
           scored[0].score >= 70 &&
-          (scored.length === 1 || scored[0].score > scored[1].score + 20)
+          (scored.length === 1 || scored[0].score > scored[1].score + 15)
         ) {
           autoMatches.push({
             movement: mov,
@@ -128,7 +148,7 @@ export default function AdminInvoicingReconciliation() {
             reason:   scored[0].reasons.join(' + '),
           });
         }
-        const relevant = scored.filter((s) => s.score > 30);
+        const relevant = scored.filter((s) => s.score > 20);
         if (relevant.length > 0) newSuggestions[mov.id] = relevant;
       }
     });
@@ -219,7 +239,6 @@ export default function AdminInvoicingReconciliation() {
         const arrayBuffer = evt.target.result;
         let workbook;
 
-        // Detect HTML-disguised XLS (some Chilean banks export HTML tables as .xls)
         const firstBytes = new Uint8Array(arrayBuffer.slice(0, 100));
         const headerStr  = String.fromCharCode(...firstBytes).toLowerCase();
         const isHtml     = headerStr.includes('<html') || headerStr.includes('<table') || headerStr.includes('<!doctype');
@@ -230,10 +249,7 @@ export default function AdminInvoicingReconciliation() {
           try {
             workbook = XLSX.read(arrayBuffer, { type: 'array', raw: true });
           } catch {
-            toast.error(
-              `El formato del archivo de ${bankName} no es reconocido. ` +
-              `Exporta desde el banco como Excel (.xlsx) con columnas de Fecha, Descripción y Abono.`
-            );
+            toast.error(`Formato no reconocido para ${bankName}. Exporta como Excel (.xlsx).`);
             setLoading(false);
             return;
           }
@@ -243,10 +259,8 @@ export default function AdminInvoicingReconciliation() {
         const ws     = workbook.Sheets[wsname];
         const rows   = XLSX.utils.sheet_to_json(ws, { header: 1 });
 
-        // ── Use the new robust parser ──
         const { movements: parsed, warnings, errors } = parseBankData(rows, bankName);
 
-        // Surface parser errors/warnings to the user
         errors.forEach((msg)   => toast.error(msg,   { duration: 8000 }));
         warnings.forEach((msg) => toast.warning(msg, { duration: 6000 }));
 
@@ -255,19 +269,15 @@ export default function AdminInvoicingReconciliation() {
           return;
         }
 
-        // Persist to Firestore (with duplicate detection)
         const batch = writeBatch(db);
         let newCount  = 0;
         let dupeCount = 0;
-        const newMovs = [];
 
-        // Create the statement document reference
         const statementDocRef = doc(collection(db, 'bank_statements'));
         const statementId = statementDocRef.id;
 
         for (let i = 0; i < parsed.length; i++) {
           const mov   = parsed[i];
-          // Use absolute amount for ID to stay compatible with existing ID scheme if necessary (or just use parsed amount)
           const docId = generateMovementId(bankName, mov.date, mov.amount, mov.description, i);
           const docRef = doc(db, 'bank_movements', docId);
 
@@ -284,12 +294,10 @@ export default function AdminInvoicingReconciliation() {
             statementId: statementId
           };
           batch.set(docRef, movData);
-          newMovs.push({ id: docId, ...movData });
           newCount++;
         }
 
         if (newCount > 0) {
-          // Record the loaded statement metadata
           batch.set(statementDocRef, {
             filename: selectedFile.name,
             bank: bankName,
@@ -300,10 +308,7 @@ export default function AdminInvoicingReconciliation() {
         }
 
         if (newCount > 0) {
-          toast.success(
-            `${newCount} movimientos nuevos de ${bankName}.` +
-            (dupeCount > 0 ? ` (${dupeCount} duplicados omitidos)` : '')
-          );
+          toast.success(`${newCount} movimientos de ${bankName}.${dupeCount > 0 ? ` (${dupeCount} duplicados)` : ''}`);
         } else if (dupeCount > 0) {
           toast.info(`Todos los movimientos de ${bankName} ya estaban cargados.`);
         }
@@ -312,98 +317,64 @@ export default function AdminInvoicingReconciliation() {
         await fetchBankStatements();
       } catch (error) {
         console.error('Error parsing Excel:', error);
-        toast.error(`Error al procesar el archivo de ${bankName}: ${error.message}`);
+        toast.error(`Error: ${error.message}`);
       } finally {
         setLoading(false);
       }
     };
 
-    reader.onerror = () => {
-      toast.error('Error al leer el archivo. Intente nuevamente.');
-      setLoading(false);
-    };
-
+    reader.onerror = () => { toast.error('Error al leer el archivo.'); setLoading(false); };
     reader.readAsArrayBuffer(selectedFile);
-    // Reset input so the same file can be re-uploaded if needed
     e.target.value = '';
   };
 
   // ── Delete Cartola ────────────────────────────────────────────────────────
   const handleDeleteStatement = async (statement) => {
-    if (!window.confirm(`¿Estás seguro de eliminar la cartola "${statement.filename}"? Esto borrará ${statement.movementsCount} movimientos asociados y desenlazará las facturas correspondientes.`)) return;
+    if (!window.confirm(`¿Eliminar "${statement.filename}" y sus ${statement.movementsCount} movimientos?`)) return;
     
     setLoading(true);
     try {
-      // 1. Delete all bank movements that belong to this statement
       const q = query(collection(db, 'bank_movements'), where('statementId', '==', statement.id));
       const snap = await getDocs(q);
       
       const docsArr = snap.docs;
-      // Loop through documents in chunks of 500 (Firestore limit)
       for (let i = 0; i < docsArr.length; i += 500) {
         const batch = writeBatch(db);
-        const chunk = docsArr.slice(i, i + 500);
-        chunk.forEach((d) => batch.delete(d.ref));
+        docsArr.slice(i, i + 500).forEach((d) => batch.delete(d.ref));
         await batch.commit();
       }
 
-      // 2. Delete the statement itself
       const batchFinal = writeBatch(db);
       batchFinal.delete(doc(db, 'bank_statements', statement.id));
       await batchFinal.commit();
       
-      toast.success(`Cartola eliminada y ${snap.size} movimientos borrados.`);
-      
+      toast.success(`Cartola eliminada (${snap.size} movimientos).`);
       await fetchMovements();
       await fetchBankStatements();
     } catch (e) {
       console.error('Error deleting statement:', e);
-      toast.error('Error al eliminar la cartola.');
+      toast.error('Error al eliminar.');
     } finally {
       setLoading(false);
     }
   };
 
   const handleDeleteAll = async () => {
-    if (!window.confirm('¿ELIMINAR TODO? Esta acción borrará TODOS los movimientos bancarios y el historial de cartolas de la base de datos. Esta acción no se puede deshacer.')) return;
-    
+    if (!window.confirm('¿ELIMINAR TODOS los movimientos y cartolas?')) return;
     setLoading(true);
     try {
-      // Delete movements in chunks
-      const movsSnap = await getDocs(collection(db, 'bank_movements'));
-      const movsArr = movsSnap.docs;
-      for (let i = 0; i < movsArr.length; i += 500) {
-        const batch = writeBatch(db);
-        const chunk = movsArr.slice(i, i + 500);
-        chunk.forEach(d => batch.delete(d.ref));
-        await batch.commit();
+      for (const col of ['bank_movements', 'bank_statements']) {
+        const snap = await getDocs(collection(db, col));
+        for (let i = 0; i < snap.docs.length; i += 500) {
+          const batch = writeBatch(db);
+          snap.docs.slice(i, i + 500).forEach(d => batch.delete(d.ref));
+          await batch.commit();
+        }
       }
-      
-      // Delete statements in chunks
-      const statesSnap = await getDocs(collection(db, 'bank_statements'));
-      const statesArr = statesSnap.docs;
-      for (let i = 0; i < statesArr.length; i += 500) {
-        const batch = writeBatch(db);
-        const chunk = statesArr.slice(i, i + 500);
-        chunk.forEach(d => batch.delete(d.ref));
-        await batch.commit();
-      }
-      
-      toast.success('Base de datos de conciliación limpiada.');
-      setMovements([]);
-      setBankStatements([]);
-      setSuggestions({});
-      setMatches([]);
-    } catch (e) {
-      console.error('Error deleting all data:', e);
-      toast.error('Error al limpiar la base de datos.');
-    } finally {
-      setLoading(false);
-    }
+      toast.success('Base de conciliación limpiada.');
+      setMovements([]); setBankStatements([]); setSuggestions({}); setMatches([]);
+    } catch (e) { toast.error('Error.'); } finally { setLoading(false); }
   };
-
-  // ── Smart Matching ────────────────────────────────────────────────────────
-
 
   // ── Manual match ──────────────────────────────────────────────────────────
   const startManualMatch  = (mov) => { setActiveMovement(mov); setManualMatchOpen(true); };
@@ -421,6 +392,7 @@ export default function AdminInvoicingReconciliation() {
 
   // ── Confirm reconciliation ────────────────────────────────────────────────
   const handleConfirmMatches = async () => {
+    if (matches.length === 0) return;
     setProcessing(true);
     try {
       const batch = writeBatch(db);
@@ -440,7 +412,7 @@ export default function AdminInvoicingReconciliation() {
           },
         });
 
-        if (m.invoice.projectId) {
+        if (m.invoice.projectId && m.invoice.projectId !== 'multi' && m.invoice.projectId !== 'manual') {
           batch.update(doc(db, 'projects', m.invoice.projectId), {
             billingStatus:   'paid',
             lastPaymentDate: serverTimestamp(),
@@ -457,7 +429,7 @@ export default function AdminInvoicingReconciliation() {
       });
 
       await batch.commit();
-      toast.success(`${matches.length} facturas conciliadas exitosamente.`);
+      toast.success(`${matches.length} facturas conciliadas.`);
       setMatches([]);
       setSuggestions({});
       await fetchPending();
@@ -470,241 +442,242 @@ export default function AdminInvoicingReconciliation() {
     }
   };
 
+  // ── Filtered movements ────────────────────────────────────────────────────
+  const filteredMovements = movements.filter(mov => {
+    // Filter by type
+    if (movementFilter === 'credits' && mov.amount <= 0) return false;
+    if (movementFilter === 'debits' && mov.amount >= 0) return false;
+    if (movementFilter === 'unreconciled' && (mov.reconciled || matches.some(m => m.movement.id === mov.id))) return false;
+    
+    // Search
+    if (movementSearch) {
+      const search = movementSearch.toLowerCase();
+      const desc = String(mov.description || '').toLowerCase();
+      const date = String(mov.date || '');
+      const amountStr = String(mov.amount);
+      if (!desc.includes(search) && !date.includes(search) && !amountStr.includes(search)) return false;
+    }
+    
+    return true;
+  });
+
+  // Stats
+  const totalCredits = movements.filter(m => m.amount > 0).reduce((s, m) => s + m.amount, 0);
+  const totalDebits = movements.filter(m => m.amount < 0).reduce((s, m) => s + Math.abs(m.amount), 0);
+  const unreconciledCredits = movements.filter(m => m.amount > 0 && !m.reconciled && !matches.some(mt => mt.movement.id === m.id)).reduce((s, m) => s + m.amount, 0);
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <Layout title="Cuenta Corriente Unificada" isFullWidth={true}>
+    <Layout title="Conciliación Bancaria" isFullWidth={true}>
       <div className="flex flex-col gap-6">
 
-        {/* Upload + Cartolas + Summary */}
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* Box 1: Cargar Cartolas y Listado (Span 3) */}
-          <div className="lg:col-span-3 bg-white p-6 rounded-2xl shadow-soft border border-slate-100 flex flex-col sm:flex-row gap-6">
-            
-            {/* Upload Section */}
-            <div className="flex-1">
-              <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
-                <Upload className="w-5 h-5 text-indigo-600" /> Cargar Cartolas
-              </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Upload + Stats */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          
+          {/* Upload Section */}
+          <div className="lg:col-span-4 bg-white p-6 rounded-2xl shadow-soft border border-slate-100">
+            <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
+              <Upload className="w-5 h-5 text-indigo-600" /> Cargar Cartolas
+            </h3>
+            <div className="grid grid-cols-2 gap-3 mb-4">
               {['Itaú', 'Santander'].map((bank) => {
                 const colors = bank === 'Itaú'
-                  ? { bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-700', icon: 'text-orange-500' }
-                  : { bg: 'bg-red-50',    border: 'border-red-200',    text: 'text-red-700',    icon: 'text-red-500'    };
+                  ? { bg: 'hover:bg-orange-50', icon: 'text-orange-500', border: 'border-orange-200' }
+                  : { bg: 'hover:bg-red-50',    icon: 'text-red-500',    border: 'border-red-200' };
                 return (
-                  <div
-                    key={bank}
-                    className={`border-2 border-dashed rounded-xl p-4 text-center transition cursor-pointer relative group border-slate-200 hover:${colors.bg}`}
-                  >
-                    <input
-                      type="file"
-                      accept=".xlsx,.xls"
-                      onChange={(e) => handleFileUpload(e, bank)}
-                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                      title={`Cargar Cartola ${bank}`}
-                    />
-                    <div className="flex items-center justify-center gap-2">
-                        <FileSpreadsheet className={`w-5 h-5 ${colors.icon}`} />
-                        <span className={`font-bold text-slate-600 text-sm`}>Sincronizar {bank}</span>
-                    </div>
+                  <div key={bank} className={`border-2 border-dashed rounded-xl p-4 text-center transition cursor-pointer relative group border-slate-200 ${colors.bg}`}>
+                    <input type="file" accept=".xlsx,.xls" onChange={(e) => handleFileUpload(e, bank)} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+                    <FileSpreadsheet className={`w-5 h-5 mx-auto mb-1 ${colors.icon}`} />
+                    <span className="font-bold text-slate-600 text-xs">{bank}</span>
                   </div>
                 );
               })}
             </div>
-            {loading && <p className="text-center text-sm text-indigo-600 mt-3 font-medium animate-pulse">Procesando...</p>}
-            </div>
+            {loading && <p className="text-center text-sm text-indigo-600 animate-pulse">Procesando...</p>}
 
-            {/* Listado de Cartolas Cargadas (New Feature) */}
-            <div className="flex-1 flex flex-col border-t sm:border-t-0 sm:border-l border-slate-100 pt-6 sm:pt-0 sm:pl-6">
-              <h3 className="font-bold text-slate-800 mb-3 text-sm flex items-center gap-2">
-                <FileSpreadsheet className="w-4 h-4 text-slate-400" /> Últimas Cartolas Cargadas
-              </h3>
-              <div className="flex-1 min-h-[100px] max-h-[140px] overflow-y-auto space-y-2 pr-1">
+            {/* Cartolas List */}
+            <div className="border-t border-slate-100 pt-4 mt-2">
+              <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Cartolas Cargadas</h4>
+              <div className="max-h-[120px] overflow-y-auto space-y-1.5">
                 {bankStatements.length === 0 ? (
-                  <p className="text-xs text-slate-400 italic">No hay cartolas recientes.</p>
-                ) : (
-                  bankStatements.map((st) => (
-                    <div key={st.id} className="group flex justify-between items-center bg-slate-50 p-2.5 rounded-lg border border-slate-100 hover:border-slate-300 transition-colors">
-                      <div className="min-w-0 mr-2">
-                        <p className="font-bold text-xs text-slate-700 truncate" title={st.filename}>{st.filename}</p>
-                        <p className="text-[10px] text-slate-500 mt-0.5">
-                          {st.bank} • {st.movementsCount} movs • {st.uploadedAt?.seconds ? new Date(st.uploadedAt.seconds * 1000).toLocaleDateString() : ''}
-                        </p>
-                      </div>
-                      <button 
-                        onClick={() => handleDeleteStatement(st)}
-                        className="p-1.5 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded-md transition-all opacity-0 group-hover:opacity-100 focus:opacity-100"
-                        title="Eliminar cartola y sus movimientos"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
+                  <p className="text-xs text-slate-400 italic">Ninguna</p>
+                ) : bankStatements.map((st) => (
+                  <div key={st.id} className="group flex justify-between items-center bg-slate-50 p-2 rounded-lg border border-slate-100 hover:border-slate-300 transition">
+                    <div className="min-w-0 mr-2">
+                      <p className="font-bold text-[11px] text-slate-700 truncate">{st.filename}</p>
+                      <p className="text-[10px] text-slate-500">{st.bank} • {st.movementsCount} movs</p>
                     </div>
-                  ))
-                )}
+                    <button onClick={() => handleDeleteStatement(st)} className="p-1 text-slate-300 hover:text-red-600 rounded transition opacity-0 group-hover:opacity-100">
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
 
-          {/* Box 2: Summary (Span 1) */}
-          <div className="lg:col-span-1 bg-white p-6 rounded-2xl shadow-soft border border-slate-100 flex flex-col justify-center">
-            <h3 className="font-bold text-slate-800 mb-3">Resumen</h3>
-            <div className="space-y-3 text-sm">
-              {[
-                ['Facturas Pendientes', pendingInvoices.length, ''],
-                ['Movimientos', movements.length, ''],
-                ['Conciliaciones', matches.length, 'text-green-600'],
-                ['Sugerencias', Object.keys(suggestions).length, 'text-amber-600'],
-              ].map(([label, value, cls]) => (
-                <div key={label} className="flex justify-between border-b border-slate-50 pb-2">
-                  <span className="text-slate-500">{label}:</span>
-                  <span className={`font-bold ${cls}`}>{value}</span>
-                </div>
-              ))}
-            </div>
-            
-            <button 
-              onClick={handleDeleteAll}
-              className="mt-4 text-[10px] text-slate-400 hover:text-red-500 font-bold uppercase tracking-wider flex items-center justify-center gap-1 transition-colors"
-            >
-              <Trash2 className="w-3 h-3" /> Limpiar Todo (Pruebas)
-            </button>
+          {/* Stats Cards */}
+          <div className="lg:col-span-8 grid grid-cols-2 md:grid-cols-4 gap-4">
+            <StatCard label="Facturas Pendientes" value={pendingInvoices.length} color="amber" />
+            <StatCard label="Movimientos" value={movements.length} sublabel={`${movements.filter(m => m.amount > 0).length} abonos`} color="slate" />
+            <StatCard label="Conciliaciones" value={matches.length} color="emerald" />
+            <StatCard label="Créditos sin Conciliar" value={formatCurrency(unreconciledCredits)} color="indigo" />
           </div>
         </div>
 
         {/* Confirmed matches */}
         {matches.length > 0 && (
-          <div className="bg-white rounded-2xl shadow-soft border border-slate-100 overflow-hidden">
-            <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-green-50/50">
-              <div>
-                <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                  <CheckCircle className="w-5 h-5 text-green-600" /> Conciliaciones Sugeridas
-                </h3>
-                <p className="text-xs text-slate-500 mt-1">Revisa y confirma los pagos detectados.</p>
+          <div className="bg-white rounded-2xl shadow-soft border border-emerald-200 overflow-hidden">
+            <div className="p-4 border-b border-emerald-100 flex justify-between items-center bg-emerald-50/50">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-emerald-100 rounded-lg">
+                  <CheckCircle className="w-5 h-5 text-emerald-600" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-800">{matches.length} Conciliaciones Listas</h3>
+                  <p className="text-xs text-slate-500">Revisa y confirma los pagos detectados.</p>
+                </div>
               </div>
               <button
                 onClick={handleConfirmMatches}
                 disabled={processing}
-                className="bg-green-600 text-white px-4 py-2 rounded-lg font-bold text-sm hover:bg-green-700 transition flex items-center gap-2 shadow-sm"
+                className="bg-emerald-600 text-white px-5 py-2.5 rounded-xl font-bold text-sm hover:bg-emerald-700 transition flex items-center gap-2 shadow-md hover:shadow-lg active:scale-95"
               >
                 {processing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                Confirmar Conciliación
+                Confirmar Todo
               </button>
             </div>
 
-            <div className="divide-y divide-slate-100">
+            <div className="divide-y divide-slate-100 max-h-[300px] overflow-y-auto">
               {matches.map((match, idx) => (
-                <div key={idx} className="p-4 flex flex-col md:flex-row items-center gap-4 hover:bg-slate-50 transition relative group">
+                <div key={idx} className="p-4 flex flex-col md:flex-row items-center gap-4 hover:bg-slate-50/50 transition relative group">
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs text-slate-400 uppercase font-bold mb-1">Movimiento Banco</p>
+                    <div className="flex items-center gap-2 mb-1">
+                      <BankBadge bank={match.movement.bank} />
+                      <span className="text-xs text-slate-400">{match.movement.date}</span>
+                    </div>
                     <p className="font-bold text-slate-800 text-sm truncate">{match.movement.description}</p>
-                    <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded ${match.movement.bank === 'Itaú' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'}`}>
-                      {match.movement.bank}
-                    </span>
-                    <p className={`font-mono font-bold mt-1 ${match.movement.amount >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                      {match.movement.amount >= 0 ? '+' : '-'} {formatCurrency(Math.abs(match.movement.amount))}
-                    </p>
-                    <p className="text-xs text-slate-400 mt-1">{match.movement.date}</p>
+                    <p className="font-mono font-bold text-emerald-600 text-sm">+{formatCurrency(match.movement.amount)}</p>
                   </div>
 
-                  <div className="flex flex-col items-center gap-1 flex-shrink-0">
-                    <ArrowRight className="text-slate-300 w-5 h-5" />
-                    <span className={`text-[9px] uppercase font-bold px-2 py-0.5 rounded-full ${
-                      match.confidence === 'high'   ? 'bg-green-100 text-green-700' :
-                      match.confidence === 'smart'  ? 'bg-blue-100 text-blue-700'  :
-                                                      'bg-slate-100 text-slate-600'
-                    }`}>
-                      {match.reason || match.confidence}
-                    </span>
+                  <div className="flex flex-col items-center gap-1 flex-shrink-0 px-4">
+                    <ArrowRight className="text-emerald-400 w-5 h-5" />
+                    <ConfidenceBadge confidence={match.confidence} reason={match.reason} />
                   </div>
 
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs text-slate-400 uppercase font-bold mb-1">Factura Detectada</p>
                     <p className="font-bold text-slate-800 text-sm truncate">{match.invoice.clientName}</p>
-                    <p className="text-indigo-600 text-xs truncate mb-1">{match.invoice.projectName}</p>
-                    <p className="text-slate-800 font-bold">{formatCurrency(match.invoice.totalAmount)}</p>
+                    <p className="text-indigo-600 text-xs truncate">{match.invoice.projectName}</p>
+                    <p className="text-slate-800 font-bold text-sm">{formatCurrency(match.invoice.totalAmount)}</p>
                   </div>
 
-                  <div className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition">
-                    <button onClick={() => removeMatch(idx)} className="text-red-400 hover:text-red-600 p-2 hover:bg-red-50 rounded-lg" title="Rechazar coincidencia">
-                      <AlertTriangle className="w-5 h-5" />
-                    </button>
-                  </div>
+                  <button onClick={() => removeMatch(idx)} className="flex-shrink-0 p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition opacity-0 group-hover:opacity-100">
+                    <X className="w-4 h-4" />
+                  </button>
                 </div>
               ))}
             </div>
           </div>
         )}
 
-        {/* Data workspaces */}
-        {/* Adjusted grid layout: 12 cols total -> 9 for bank, 3 for invoices */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 h-[calc(100vh-320px)] min-h-[600px]">
+        {/* Main Workspace */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 min-h-[600px]">
 
-          {/* Movements table */}
-          <div className="lg:col-span-9 bg-white rounded-2xl shadow-soft border border-slate-100 overflow-hidden flex flex-col h-full">
-            <div className="p-4 border-b border-slate-100 bg-slate-50 sticky top-0 z-10">
-              <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                <FileSpreadsheet className="w-4 h-4 text-slate-500" /> Movimientos Bancarios
-              </h3>
-              <p className="text-xs text-slate-500">Persistidos en Firestore · Itaú y Santander</p>
+          {/* Movements Table */}
+          <div className="lg:col-span-9 bg-white rounded-2xl shadow-soft border border-slate-100 overflow-hidden flex flex-col">
+            <div className="p-4 border-b border-slate-100 bg-slate-50 flex flex-col md:flex-row gap-3 items-start md:items-center justify-between">
+              <div>
+                <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                  <FileSpreadsheet className="w-4 h-4 text-slate-500" /> Movimientos Bancarios
+                </h3>
+                <p className="text-xs text-slate-500">{filteredMovements.length} de {movements.length} movimientos</p>
+              </div>
+              <div className="flex gap-2 items-center">
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Buscar..."
+                    value={movementSearch}
+                    onChange={e => setMovementSearch(e.target.value)}
+                    className="pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none w-48"
+                  />
+                </div>
+                <select
+                  value={movementFilter}
+                  onChange={e => setMovementFilter(e.target.value)}
+                  className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-indigo-500 outline-none"
+                >
+                  <option value="all">Todos</option>
+                  <option value="credits">Solo Abonos</option>
+                  <option value="debits">Solo Cargos</option>
+                  <option value="unreconciled">Sin Conciliar</option>
+                </select>
+              </div>
             </div>
+
             <div className="overflow-auto flex-1">
               <table className="w-full text-left text-sm whitespace-nowrap">
-                <thead className="bg-slate-50 text-slate-500 font-medium sticky top-0 z-10">
+                <thead className="bg-slate-50 text-slate-500 font-medium sticky top-0 z-10 text-xs">
                   <tr>
-                    <th className="px-4 py-3">Banco</th>
-                    <th className="px-4 py-3">Fecha</th>
-                    <th className="px-4 py-3">Descripción</th>
-                    <th className="px-4 py-3 text-right">Monto</th>
-                    <th className="px-4 py-3 text-center">Estado</th>
-                    <th className="px-4 py-3 text-center">Acción</th>
+                    <th className="px-4 py-2.5">Banco</th>
+                    <th className="px-4 py-2.5">Fecha</th>
+                    <th className="px-4 py-2.5">Descripción</th>
+                    <th className="px-4 py-2.5 text-right">Monto</th>
+                    <th className="px-4 py-2.5 text-center w-20">Estado</th>
+                    <th className="px-4 py-2.5 text-center w-24">Acción</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-slate-50">
                   {loadingMovements ? (
-                    <tr><td colSpan="6" className="px-4 py-10 text-center text-slate-400 text-sm animate-pulse">Cargando movimientos...</td></tr>
-                  ) : movements.length === 0 ? (
-                    <tr><td colSpan="6" className="px-4 py-10 text-center text-slate-400">Sube archivos para ver movimientos.</td></tr>
+                    <tr><td colSpan="6" className="px-4 py-10 text-center text-slate-400 text-sm animate-pulse">Cargando...</td></tr>
+                  ) : filteredMovements.length === 0 ? (
+                    <tr><td colSpan="6" className="px-4 py-10 text-center text-slate-400 text-sm">
+                      {movements.length === 0 ? 'Sube cartolas para ver movimientos.' : 'No hay movimientos con los filtros aplicados.'}
+                    </td></tr>
                   ) : (
-                    movements.map((mov, i) => {
+                    filteredMovements.map((mov, i) => {
                       const isMatched     = matches.some((m) => m.movement.id === mov.id) || mov.reconciled;
                       const movSuggestions = suggestions[mov.id] || [];
                       const isExpanded    = expandedMovement === mov.id;
+                      const isActiveManual = manualMatchOpen && activeMovement?.id === mov.id;
 
                       return (
-                        <tr key={mov.id || i} className="group">
+                        <tr key={mov.id || i}>
                           <td colSpan="6" className="p-0">
-                            <div className={`flex items-center transition ${
-                              manualMatchOpen && activeMovement?.id === mov.id
-                                ? 'bg-indigo-50 border-l-4 border-indigo-600 shadow-inner'
-                                : manualMatchOpen ? 'opacity-40 grayscale'
-                                : isMatched ? 'bg-green-50/50'
-                                : 'hover:bg-slate-50'
+                            <div className={`flex items-center text-sm transition ${
+                              isActiveManual ? 'bg-indigo-50 border-l-4 border-indigo-600' :
+                              manualMatchOpen ? 'opacity-30' :
+                              isMatched ? 'bg-emerald-50/40' :
+                              'hover:bg-slate-50'
                             }`}>
-                              <div className="px-4 py-3 w-24 shrink-0">
-                                <span className={`text-[10px] uppercase font-bold px-2 py-1 rounded-full ${mov.bank === 'Itaú' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'}`}>
-                                  {mov.bank}
-                                </span>
+                              <div className="px-4 py-2.5 w-24 shrink-0">
+                                <BankBadge bank={mov.bank} />
                               </div>
-                              <div className="px-4 py-3 text-slate-600 w-24 shrink-0">{mov.date}</div>
-                              <div className="px-4 py-3 text-slate-700 flex-1 min-w-0 truncate" title={mov.description}>{mov.description}</div>
-                              <div className={`px-4 py-3 text-right font-bold font-mono w-32 shrink-0 ${mov.amount >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                                {mov.amount >= 0 ? '+' : '-'} {formatCurrency(Math.abs(mov.amount))}
+                              <div className="px-4 py-2.5 text-slate-500 w-24 shrink-0 text-xs">{mov.date}</div>
+                              <div className="px-4 py-2.5 text-slate-700 flex-1 min-w-0 truncate text-xs" title={mov.description}>{mov.description}</div>
+                              <div className={`px-4 py-2.5 text-right font-bold font-mono w-32 shrink-0 text-xs ${mov.amount >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
+                                {mov.amount >= 0 ? '+' : ''}{formatCurrency(mov.amount)}
                               </div>
-                              <div className="px-4 py-3 text-center w-20 shrink-0">
-                                {isMatched && <CheckCircle className="w-4 h-4 text-green-500 mx-auto" />}
+                              <div className="px-4 py-2.5 text-center w-20 shrink-0">
+                                {isMatched && <CheckCircle className="w-4 h-4 text-emerald-500 mx-auto" />}
                               </div>
-                              <div className="px-4 py-3 text-center w-24 shrink-0 flex items-center justify-center gap-1">
-                                {!isMatched && (
+                              <div className="px-4 py-2.5 text-center w-24 shrink-0 flex items-center justify-center gap-1">
+                                {!isMatched && mov.amount > 0 && (
                                   <>
-                                    <button onClick={() => startManualMatch(mov)} className="text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50 p-1.5 rounded-full transition" title="Enlazar manualmente">
-                                      <Link className="w-4 h-4" />
+                                    <button onClick={() => startManualMatch(mov)} className="text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50 p-1.5 rounded-full transition" title="Enlazar">
+                                      <Link className="w-3.5 h-3.5" />
                                     </button>
                                     {movSuggestions.length > 0 && (
                                       <button
                                         onClick={() => setExpandedMovement(isExpanded ? null : mov.id)}
-                                        className={`p-1.5 rounded-full transition ${isExpanded ? 'bg-amber-100 text-amber-700' : 'text-amber-500 hover:text-amber-700 hover:bg-amber-50'}`}
-                                        title={`${movSuggestions.length} facturas sugeridas`}
+                                        className={`p-1.5 rounded-full transition relative ${isExpanded ? 'bg-amber-100 text-amber-700' : 'text-amber-500 hover:bg-amber-50'}`}
+                                        title={`${movSuggestions.length} sugerencias`}
                                       >
-                                        {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                                        <Zap className="w-3.5 h-3.5" />
+                                        <span className="absolute -top-1 -right-1 bg-amber-500 text-white text-[8px] font-bold w-3.5 h-3.5 rounded-full flex items-center justify-center">
+                                          {movSuggestions.length}
+                                        </span>
                                       </button>
                                     )}
                                   </>
@@ -712,9 +685,12 @@ export default function AdminInvoicingReconciliation() {
                               </div>
                             </div>
 
+                            {/* Suggestions Expansion */}
                             {isExpanded && movSuggestions.length > 0 && (
                               <div className="bg-amber-50/50 border-t border-amber-100 px-6 py-3">
-                                <p className="text-[10px] uppercase font-bold text-amber-700 tracking-wider mb-2">Facturas Sugeridas ({movSuggestions.length})</p>
+                                <p className="text-[10px] uppercase font-bold text-amber-700 tracking-wider mb-2">
+                                  Facturas Sugeridas ({movSuggestions.length})
+                                </p>
                                 <div className="space-y-2">
                                   {movSuggestions.map((sug, sIdx) => (
                                     <div key={sIdx} className="flex items-center justify-between bg-white p-3 rounded-xl border border-amber-200 hover:border-indigo-300 hover:shadow-sm transition">
@@ -723,13 +699,13 @@ export default function AdminInvoicingReconciliation() {
                                         <p className="text-xs text-slate-500 truncate">{sug.invoice.projectName}</p>
                                         <div className="flex items-center gap-2 mt-1 flex-wrap">
                                           <span className="font-bold text-sm text-slate-700">{formatCurrency(sug.invoice.totalAmount)}</span>
-                                          <span className={`text-[9px] uppercase font-bold px-2 py-0.5 rounded-full ${sug.score >= 70 ? 'bg-green-100 text-green-700' : sug.score >= 50 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>
-                                            {sug.score} pts
-                                          </span>
-                                          {sug.reasons.map((r, ri) => (<span key={ri} className="text-[9px] text-slate-400">{r}</span>))}
+                                          <ScoreBadge score={sug.score} />
+                                          {sug.reasons.slice(0, 3).map((r, ri) => (
+                                            <span key={ri} className="text-[9px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{r}</span>
+                                          ))}
                                         </div>
                                       </div>
-                                      <button onClick={() => confirmSuggestion(mov, sug.invoice)} className="bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-indigo-700 transition shrink-0 ml-3">
+                                      <button onClick={() => confirmSuggestion(mov, sug.invoice)} className="bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-indigo-700 transition shrink-0 ml-3 active:scale-95">
                                         Vincular
                                       </button>
                                     </div>
@@ -747,25 +723,25 @@ export default function AdminInvoicingReconciliation() {
             </div>
           </div>
 
-          {/* Pending invoices */}
-          <div className="lg:col-span-3 bg-white rounded-2xl shadow-soft border border-slate-100 overflow-hidden flex flex-col h-full">
-            <div className="p-4 border-b border-slate-100 bg-slate-50 sticky top-0 z-10">
-              <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                <CheckCircle className="w-4 h-4 text-slate-500" /> Facturas Emitidas (Por Cobrar)
+          {/* Pending Invoices */}
+          <div className="lg:col-span-3 bg-white rounded-2xl shadow-soft border border-slate-100 overflow-hidden flex flex-col">
+            <div className="p-4 border-b border-slate-100 bg-slate-50">
+              <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                <CheckCircle className="w-4 h-4 text-slate-500" /> Facturas Pendientes
               </h3>
-              <p className="text-xs text-slate-500">Documentos pendientes de pago</p>
+              <p className="text-[10px] text-slate-500 mt-0.5">{pendingInvoices.length} documentos</p>
             </div>
-            <div className="overflow-y-auto p-4 space-y-3 flex-1 relative">
+            <div className="overflow-y-auto p-3 space-y-2 flex-1 relative">
               {manualMatchOpen && activeMovement && (
-                <div className="bg-gradient-to-r from-indigo-600 to-indigo-700 text-white p-4 rounded-xl shadow-lg border border-indigo-400/30 sticky top-0 z-20 mb-4">
+                <div className="bg-gradient-to-r from-indigo-600 to-indigo-700 text-white p-3 rounded-xl shadow-lg sticky top-0 z-20 mb-3">
                   <div className="flex justify-between items-start">
                     <div>
-                      <p className="text-[10px] uppercase font-bold tracking-wider opacity-80 mb-1">Seleccionando factura para:</p>
-                      <p className="font-bold text-sm truncate max-w-[180px]">{activeMovement.description}</p>
-                      <p className="font-mono text-xl font-bold mt-1">+ {formatCurrency(activeMovement.amount)}</p>
+                      <p className="text-[9px] uppercase font-bold tracking-wider opacity-80">Selecciona factura para:</p>
+                      <p className="font-bold text-xs truncate max-w-[180px] mt-1">{activeMovement.description}</p>
+                      <p className="font-mono text-lg font-bold mt-1">+{formatCurrency(activeMovement.amount)}</p>
                     </div>
-                    <button onClick={cancelManualMatch} className="bg-white/20 hover:bg-white/30 text-white p-1.5 rounded-lg transition">
-                      <X className="w-5 h-5" />
+                    <button onClick={cancelManualMatch} className="bg-white/20 hover:bg-white/30 p-1 rounded-lg transition">
+                      <X className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
@@ -785,28 +761,32 @@ export default function AdminInvoicingReconciliation() {
                   .map((inv, i) => {
                     const isMatched       = matches.some((m) => m.invoice.id === inv.id);
                     const isExactCandidate = manualMatchOpen && activeMovement && Math.abs(Number(inv.totalAmount) - activeMovement.amount) < 100;
-                    let cls = 'p-3 rounded-lg border transition duration-200 relative ';
-                    if (manualMatchOpen) {
-                      cls += 'cursor-pointer hover:ring-2 hover:ring-indigo-500 hover:shadow-md ';
-                      cls += isExactCandidate ? 'bg-indigo-50 border-indigo-500 shadow-md ring-1 ring-indigo-200 ' : 'bg-white border-slate-200 opacity-90 ';
-                    } else {
-                      cls += isMatched ? 'bg-green-50 border-green-200 opacity-60 cursor-default ' : 'bg-white border-slate-100 hover:border-slate-300 hover:shadow-sm cursor-pointer ';
-                    }
+                    
                     return (
-                      <div key={i} className={cls} onClick={() => manualMatchOpen ? confirmManualMatch(inv) : (setSelectedInvoice(inv), setIsModalOpen(true))}>
+                      <div
+                        key={i}
+                        className={`p-3 rounded-xl border transition relative cursor-pointer ${
+                          manualMatchOpen
+                            ? `hover:ring-2 hover:ring-indigo-500 ${isExactCandidate ? 'bg-indigo-50 border-indigo-400 ring-1 ring-indigo-200 shadow-md' : 'bg-white border-slate-200 opacity-80'}`
+                            : isMatched
+                            ? 'bg-emerald-50 border-emerald-200 opacity-50'
+                            : 'bg-white border-slate-100 hover:border-slate-300 hover:shadow-sm'
+                        }`}
+                        onClick={() => manualMatchOpen ? confirmManualMatch(inv) : (setSelectedInvoice(inv), setIsModalOpen(true))}
+                      >
                         {isExactCandidate && (
-                          <span className="absolute -top-2 -right-2 bg-indigo-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm animate-bounce">Coincidencia</span>
+                          <span className="absolute -top-1.5 -right-1.5 bg-indigo-600 text-white text-[8px] font-bold px-1.5 py-0.5 rounded-full shadow animate-bounce">Match</span>
                         )}
                         <div className="flex justify-between items-start mb-1">
-                          <span className="text-xs font-bold text-indigo-600 truncate max-w-[150px]">{inv.clientName}</span>
-                          <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">
-                            {inv.createdAt?.seconds ? new Date(inv.createdAt.seconds * 1000).toLocaleDateString() : 'N/A'}
+                          <span className="text-xs font-bold text-indigo-600 truncate max-w-[140px]">{inv.clientName}</span>
+                          <span className="text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">
+                            {inv.createdAt?.seconds ? new Date(inv.createdAt.seconds * 1000).toLocaleDateString() : '-'}
                           </span>
                         </div>
-                        <p className="text-xs text-slate-500 truncate mb-2">{inv.projectName}</p>
+                        <p className="text-[10px] text-slate-500 truncate mb-1.5">{inv.projectName}</p>
                         <div className="flex justify-between items-center">
                           <span className="text-slate-800 font-bold text-sm">{formatCurrency(inv.totalAmount)}</span>
-                          {isMatched && <span className="text-[10px] font-bold text-green-600 flex items-center"><CheckCircle className="w-3 h-3 mr-1" /> Matched</span>}
+                          {isMatched && <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />}
                         </div>
                       </div>
                     );
@@ -815,6 +795,13 @@ export default function AdminInvoicingReconciliation() {
             </div>
           </div>
 
+        </div>
+
+        {/* Danger Zone */}
+        <div className="flex justify-end">
+          <button onClick={handleDeleteAll} className="text-[10px] text-slate-400 hover:text-red-500 font-bold uppercase tracking-wider flex items-center gap-1 transition px-3 py-1.5 rounded-lg hover:bg-red-50">
+            <Trash2 className="w-3 h-3" /> Limpiar Todo
+          </button>
         </div>
       </div>
 
@@ -825,5 +812,59 @@ export default function AdminInvoicingReconciliation() {
         onUpdate={fetchPending}
       />
     </Layout>
+  );
+}
+
+// ── Sub-components ──────────────────────────────────────────────────────────
+
+function StatCard({ label, value, sublabel, color = 'slate' }) {
+  const colors = {
+    amber:   'border-amber-200 bg-amber-50/50',
+    slate:   'border-slate-200 bg-slate-50/50',
+    emerald: 'border-emerald-200 bg-emerald-50/50',
+    indigo:  'border-indigo-200 bg-indigo-50/50',
+  };
+
+  return (
+    <div className={`p-4 rounded-2xl border ${colors[color]} transition hover:shadow-sm`}>
+      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{label}</p>
+      <p className="text-2xl font-black text-slate-900">{value}</p>
+      {sublabel && <p className="text-[10px] text-slate-400 mt-0.5">{sublabel}</p>}
+    </div>
+  );
+}
+
+function BankBadge({ bank }) {
+  const colors = bank === 'Itaú'
+    ? 'bg-orange-100 text-orange-700'
+    : bank === 'Santander'
+    ? 'bg-red-100 text-red-700'
+    : 'bg-slate-100 text-slate-600';
+  return (
+    <span className={`text-[9px] uppercase font-bold px-2 py-0.5 rounded-full ${colors}`}>
+      {bank}
+    </span>
+  );
+}
+
+function ConfidenceBadge({ confidence, reason }) {
+  const cls = confidence === 'high'   ? 'bg-emerald-100 text-emerald-700' :
+              confidence === 'smart'  ? 'bg-blue-100 text-blue-700'  :
+                                        'bg-slate-100 text-slate-600';
+  return (
+    <span className={`text-[8px] uppercase font-bold px-2 py-0.5 rounded-full ${cls} max-w-[120px] truncate text-center`} title={reason}>
+      {reason || confidence}
+    </span>
+  );
+}
+
+function ScoreBadge({ score }) {
+  const cls = score >= 70 ? 'bg-emerald-100 text-emerald-700' :
+              score >= 50 ? 'bg-amber-100 text-amber-700' :
+                            'bg-slate-100 text-slate-600';
+  return (
+    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${cls}`}>
+      {score}pts
+    </span>
   );
 }

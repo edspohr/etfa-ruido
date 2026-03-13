@@ -2,11 +2,13 @@
  * parseBankStatement.js
  * Robust, bank-agnostic Excel cartola parser for Chilean banks.
  *
- * Strategy:
- * 1. Scan every row for a header signature (fecha + abono/monto columns).
- * 2. Map columns by keyword matching with normalized comparison (no accents, lowercase).
- * 3. Parse amounts and dates defensively, with explicit error reporting per row.
- * 4. Return { movements, errors, warnings } so the UI can surface issues.
+ * v2 improvements:
+ * - Smarter header detection with weighted scoring
+ * - Better handling of merged/split columns (Santander vs Itaú differences)
+ * - Improved date parsing for Excel serial numbers
+ * - Defensive amount parsing for Chilean CLP formats
+ * - Explicit error/warning reporting per row
+ * - Support for single "Monto" column with sign detection
  */
 
 import * as XLSX from 'xlsx';
@@ -15,7 +17,6 @@ import * as XLSX from 'xlsx';
 // HELPERS
 // ---------------------------------------------------------------------------
 
-/** Remove accents and lowercase — makes "Descripción" == "descripcion" */
 const norm = (v) =>
   String(v ?? '')
     .toLowerCase()
@@ -23,29 +24,29 @@ const norm = (v) =>
     .replace(/[\u0300-\u036f]/g, '')
     .trim();
 
-/** Keyword groups for each logical column */
 const COL_SIGNATURES = {
-  date:   ['fecha', 'date', 'fec.', 'fec'],
-  desc:   ['descripcion', 'descripción', 'detalle', 'glosa', 'concepto', 'movimiento', 'transaccion'],
-  credit: ['abono', 'credito', 'crédito', 'credit', 'deposito', 'depósito', 'ingreso'],
-  debit:  ['cargo', 'debito', 'débito', 'debit', 'egreso', 'retiro'],
-  amount: ['monto', 'importe', 'valor', 'amount'],
-  // "saldo" / "balance" columns must be excluded — they look like amounts but aren't
-  exclude: ['saldo', 'balance', 'acumulado'],
+  date:    ['fecha', 'date', 'fec.', 'fec', 'f. contable', 'fecha contable', 'fecha operacion'],
+  desc:    ['descripcion', 'detalle', 'glosa', 'concepto', 'movimiento', 'transaccion', 'beneficiario'],
+  credit:  ['abono', 'credito', 'credit', 'deposito', 'ingreso', 'haber'],
+  debit:   ['cargo', 'debito', 'debit', 'egreso', 'retiro', 'debe'],
+  amount:  ['monto', 'importe', 'valor', 'amount'],
+  exclude: ['saldo', 'balance', 'acumulado', 'disponible'],
 };
 
-/** Returns true if the cell matches any keyword in the list */
 const matchesAny = (cell, keywords) => {
   const n = norm(cell);
+  if (!n || n.length < 2) return false;
   return keywords.some((k) => n === k || n.startsWith(k) || n.includes(k));
 };
 
-/** Parse an Excel date serial, a DD/MM/YYYY string, or a YYYY-MM-DD string → "DD/MM/YYYY" */
+// ---------------------------------------------------------------------------
+// DATE PARSER
+// ---------------------------------------------------------------------------
 export function parseExcelDate(raw) {
   if (raw == null || raw === '') return null;
 
   // 1. Excel numeric serial
-  if (typeof raw === 'number') {
+  if (typeof raw === 'number' && raw > 30000 && raw < 60000) {
     try {
       const d = XLSX.SSF.parse_date_code(raw);
       if (d && d.y > 1900) {
@@ -57,7 +58,7 @@ export function parseExcelDate(raw) {
   const s = String(raw).trim();
 
   // 2. DD/MM/YYYY or DD-MM-YYYY
-  const dmy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  const dmy = s.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})$/);
   if (dmy) {
     const [, d, m, y] = dmy;
     const year = y.length === 2 ? `20${y}` : y;
@@ -71,50 +72,77 @@ export function parseExcelDate(raw) {
     return `${d.padStart(2, '0')}/${m.padStart(2, '0')}/${y}`;
   }
 
-  // 4. Last resort: try JS Date
+  // 4. "DD de MMM YYYY" or "DD MMM YYYY" (Spanish dates in some banks)
+  const spanishDate = s.match(/(\d{1,2})\s+(?:de\s+)?(ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)\w*\s+(\d{4})/i);
+  if (spanishDate) {
+    const months = { ene:'01', feb:'02', mar:'03', abr:'04', may:'05', jun:'06',
+                     jul:'07', ago:'08', sep:'09', oct:'10', nov:'11', dic:'12' };
+    const [, d, m, y] = spanishDate;
+    const month = months[m.toLowerCase().substring(0,3)] || '01';
+    return `${d.padStart(2, '0')}/${month}/${y}`;
+  }
+
+  // 5. Last resort: JS Date
   const jsDate = new Date(s);
-  if (!isNaN(jsDate.getTime())) {
+  if (!isNaN(jsDate.getTime()) && jsDate.getFullYear() > 2000) {
     return jsDate.toLocaleDateString('es-CL');
   }
 
-  return null; // unparseable
+  return null;
 }
 
-/** Parse a cell value as a CLP amount. Supports explicit negatives. */
+// ---------------------------------------------------------------------------
+// AMOUNT PARSER
+// ---------------------------------------------------------------------------
 export function parseAmount(raw) {
   if (raw == null || raw === '') return 0;
   if (typeof raw === 'number') return Math.round(raw);
 
   let s = String(raw).trim();
-  // Detect explicit negatives: "(1.234)" or "-1.234"
-  const isNegative = /^\(/.test(s) || /^-/.test(s);
-  // Remove thousands separators (dots in CLP, commas in EN)
-  s = s.replace(/\./g, '').replace(/,/g, '').replace(/[^0-9-]/g, '');
+  
+  // Detect parenthetical negatives: (1.234)
+  const isParenNeg = /^\([\d.,\s]+\)$/.test(s);
+  const isDashNeg = /^-/.test(s);
+  
+  // Remove everything except digits, dots, commas, and minus sign
+  s = s.replace(/[()]/g, '');
+  
+  // Handle CLP format: 1.234.567 (dots as thousands)
+  if (/^\d{1,3}(\.\d{3})+$/.test(s.replace(/^-/, ''))) {
+    s = s.replace(/\./g, '');
+  }
+  // Handle comma thousands: 1,234,567
+  else if (/^\d{1,3}(,\d{3})+$/.test(s.replace(/^-/, ''))) {
+    s = s.replace(/,/g, '');
+  }
+  // Mixed formats: remove everything non-numeric except minus
+  else {
+    // If there's a decimal separator (last dot or comma followed by 1-2 digits)
+    s = s.replace(/[.,](\d{1,2})$/, '');
+    s = s.replace(/[.,]/g, '');
+  }
+  
+  s = s.replace(/[^\d-]/g, '');
   const n = parseInt(s, 10);
   if (isNaN(n) || n === 0) return 0;
-  // If we already detected negative via regex, ensure it's negative.
-  // Otherwise respect the parsed number's sign.
-  return isNegative ? -Math.abs(n) : n;
+  
+  if (isParenNeg || isDashNeg) return -Math.abs(n);
+  return n;
 }
 
 // ---------------------------------------------------------------------------
 // COLUMN DETECTOR
 // ---------------------------------------------------------------------------
 
-/**
- * Given a header row (array of cell values), return column index map:
- * { dateIdx, descIdx, creditIdx, debitIdx, amountIdx }
- * Any missing column is -1.
- */
 function detectColumns(headerRow) {
   const result = { dateIdx: -1, descIdx: -1, creditIdx: -1, debitIdx: -1, amountIdx: -1 };
   if (!Array.isArray(headerRow)) return result;
 
   headerRow.forEach((cell, i) => {
     const n = norm(cell);
-    if (!n) return;
+    if (!n || n.length < 2) return;
 
-    // Exclude saldo/balance columns from amount candidates
+    // Skip saldo/balance columns
     if (matchesAny(n, COL_SIGNATURES.exclude)) return;
 
     if (result.dateIdx   === -1 && matchesAny(n, COL_SIGNATURES.date))   result.dateIdx   = i;
@@ -127,18 +155,21 @@ function detectColumns(headerRow) {
   return result;
 }
 
-/**
- * Score a potential header row. Returns a number 0-4.
- * Higher = more likely to be the real header.
- */
 function scoreHeaderRow(row) {
   let score = 0;
   if (!Array.isArray(row)) return 0;
+  
+  // Must have at least some non-empty cells
+  const nonEmpty = row.filter(c => c != null && String(c).trim() !== '');
+  if (nonEmpty.length < 2) return 0;
+  
   const cols = detectColumns(row);
-  if (cols.dateIdx   !== -1) score++;
-  if (cols.descIdx   !== -1) score++;
-  if (cols.creditIdx !== -1 || cols.amountIdx !== -1) score++;
-  if (cols.debitIdx  !== -1) score++;
+  if (cols.dateIdx   !== -1) score += 2; // Date is critical
+  if (cols.descIdx   !== -1) score += 1;
+  if (cols.creditIdx !== -1) score += 2;
+  if (cols.debitIdx  !== -1) score += 1;
+  if (cols.amountIdx !== -1) score += 1;
+  
   return score;
 }
 
@@ -146,12 +177,6 @@ function scoreHeaderRow(row) {
 // MAIN PARSER
 // ---------------------------------------------------------------------------
 
-/**
- * parseBankData(rows, bankName)
- * @param {Array<Array>} rows   — output of XLSX.utils.sheet_to_json(ws, {header:1})
- * @param {string}       bankName — 'Itaú' | 'Santander' | etc.
- * @returns {{ movements: Array, warnings: Array, errors: Array }}
- */
 export function parseBankData(rows, bankName) {
   const movements = [];
   const warnings  = [];
@@ -162,7 +187,7 @@ export function parseBankData(rows, bankName) {
     return { movements, warnings, errors };
   }
 
-  // ---- 1. Find best header row (scan first 50 rows) ----
+  // ---- 1. Find best header row ----
   let headerRowIdx = -1;
   let bestScore    = 0;
   const scanLimit  = Math.min(rows.length, 50);
@@ -173,70 +198,84 @@ export function parseBankData(rows, bankName) {
       bestScore    = score;
       headerRowIdx = i;
     }
-    if (score >= 3) break; // Good enough, stop scanning
+    if (score >= 4) break; // Very confident
   }
 
   if (headerRowIdx === -1 || bestScore < 2) {
     errors.push(
-      `No se detectaron columnas de Fecha y Monto/Abono en ${bankName}. ` +
-      `Asegúrate de que el archivo Excel tenga encabezados como: "Fecha", "Descripción", "Abono" o "Monto".`
+      `No se detectaron columnas válidas en ${bankName}. ` +
+      `Asegúrate de que el archivo tenga encabezados como: "Fecha", "Descripción", "Abono"/"Cargo" o "Monto". ` +
+      `Columnas encontradas en primera fila: ${(rows[0] || []).filter(Boolean).join(', ')}`
     );
     return { movements, warnings, errors };
   }
 
   const cols = detectColumns(rows[headerRowIdx]);
 
-  // Warn about missing optional columns
-  if (cols.descIdx === -1)
+  if (cols.descIdx === -1) {
     warnings.push(`${bankName}: no se detectó columna de descripción. Los movimientos se importarán sin glosa.`);
+  }
 
-  // Determine which column to use for credit amounts
-  // Priority: dedicated credit column > generic amount column
-  const amountColIdx = cols.creditIdx !== -1 ? cols.creditIdx : cols.amountIdx;
+  // Determine amount strategy
+  const hasSeparateColumns = cols.creditIdx !== -1 || cols.debitIdx !== -1;
+  const hasGenericAmount = cols.amountIdx !== -1;
 
-  if (amountColIdx === -1) {
+  if (!hasSeparateColumns && !hasGenericAmount) {
     errors.push(
-      `${bankName}: no se detectó columna de montos (Abono/Monto). ` +
-      `Columnas encontradas: ${rows[headerRowIdx].filter(Boolean).join(', ')}`
+      `${bankName}: no se detectó columna de montos. ` +
+      `Encabezados detectados: ${rows[headerRowIdx].filter(Boolean).join(', ')}`
     );
     return { movements, warnings, errors };
   }
 
   // ---- 2. Parse data rows ----
+  let skippedRows = 0;
+  
   for (let i = headerRowIdx + 1; i < rows.length; i++) {
     const row = rows[i];
-    if (!row || row.every((c) => c == null || c === '')) continue; // empty row
+    if (!row || row.every((c) => c == null || c === '')) continue;
 
-    // Determine absolute amount based on columns available
+    // Determine amount
     let amount = 0;
-    const rawCredit = cols.creditIdx !== -1 ? row[cols.creditIdx] : null;
-    const rawDebit  = cols.debitIdx  !== -1 ? row[cols.debitIdx]  : null;
-    const rawAmount = cols.amountIdx !== -1 ? row[cols.amountIdx] : null;
+    
+    if (hasSeparateColumns) {
+      // Separate Cargo/Abono columns
+      const rawCredit = cols.creditIdx !== -1 ? row[cols.creditIdx] : null;
+      const rawDebit  = cols.debitIdx  !== -1 ? row[cols.debitIdx]  : null;
 
-    if (rawCredit != null && rawCredit !== '') {
-      // It's a credit column -> treat as positive
-      amount = Math.abs(parseAmount(rawCredit));
-    } else if (rawDebit != null && rawDebit !== '') {
-      // It's a debit column -> treat as negative
-      amount = -Math.abs(parseAmount(rawDebit));
-    } else if (rawAmount != null && rawAmount !== '') {
-      // It's a generic amount column -> trust its internal sign
-      amount = parseAmount(rawAmount);
+      const creditVal = parseAmount(rawCredit);
+      const debitVal  = parseAmount(rawDebit);
+
+      if (creditVal !== 0) {
+        amount = Math.abs(creditVal); // Credits are positive
+      } else if (debitVal !== 0) {
+        amount = -Math.abs(debitVal); // Debits are negative
+      } else if (hasGenericAmount) {
+        // Fallback to generic amount column
+        amount = parseAmount(row[cols.amountIdx]);
+      }
+    } else {
+      // Single amount column — trust its sign
+      amount = parseAmount(row[cols.amountIdx]);
     }
 
-    if (amount === 0) continue; // Skip zero-value or unparseable rows
+    if (amount === 0) {
+      skippedRows++;
+      continue;
+    }
 
     // Date
     const rawDate = cols.dateIdx !== -1 ? row[cols.dateIdx] : null;
     const date    = parseExcelDate(rawDate);
-    if (!date) {
-      warnings.push(`Fila ${i + 1}: fecha no reconocida ("${rawDate}"). Movimiento incluido con fecha S/F.`);
+    if (!date && rawDate) {
+      // Only warn if there was a value but we couldn't parse it
+      warnings.push(`Fila ${i + 1}: fecha no reconocida ("${rawDate}").`);
     }
 
     // Description
     const desc =
       cols.descIdx !== -1 && row[cols.descIdx] != null
-        ? String(row[cols.descIdx]).trim()
+        ? String(row[cols.descIdx]).trim().replace(/\s+/g, ' ')
         : 'Sin descripción';
 
     movements.push({
@@ -247,9 +286,14 @@ export function parseBankData(rows, bankName) {
     });
   }
 
+  if (skippedRows > 0 && movements.length > 0) {
+    warnings.push(`${bankName}: se omitieron ${skippedRows} filas con monto cero o vacío.`);
+  }
+
   if (movements.length === 0 && errors.length === 0) {
     warnings.push(
-      `${bankName}: el archivo fue procesado pero no contiene movimientos de abono en el rango de datos.`
+      `${bankName}: el archivo fue procesado pero no contiene movimientos con montos válidos. ` +
+      `Se encontró header en fila ${headerRowIdx + 1} con columnas: ${rows[headerRowIdx].filter(Boolean).join(', ')}`
     );
   }
 
