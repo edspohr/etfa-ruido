@@ -80,19 +80,21 @@ export function parseExcelDate(raw) {
   return null; // unparseable
 }
 
-/** Parse a cell value as a positive CLP amount. Returns 0 if unparseable or negative. */
+/** Parse a cell value as a CLP amount. Supports explicit negatives. */
 export function parseAmount(raw) {
   if (raw == null || raw === '') return 0;
-  if (typeof raw === 'number') return raw > 0 ? Math.round(raw) : 0;
+  if (typeof raw === 'number') return Math.round(raw);
 
   let s = String(raw).trim();
   // Detect explicit negatives: "(1.234)" or "-1.234"
   const isNegative = /^\(/.test(s) || /^-/.test(s);
   // Remove thousands separators (dots in CLP, commas in EN)
-  s = s.replace(/\./g, '').replace(/,/g, '').replace(/[^0-9]/g, '');
+  s = s.replace(/\./g, '').replace(/,/g, '').replace(/[^0-9-]/g, '');
   const n = parseInt(s, 10);
   if (isNaN(n) || n === 0) return 0;
-  return isNegative ? 0 : n; // credits only — negatives are debits, skip them
+  // If we already detected negative via regex, ensure it's negative.
+  // Otherwise respect the parsed number's sign.
+  return isNegative ? -Math.abs(n) : n;
 }
 
 // ---------------------------------------------------------------------------
@@ -201,18 +203,28 @@ export function parseBankData(rows, bankName) {
   }
 
   // ---- 2. Parse data rows ----
-  let skippedCount = 0;
-
   for (let i = headerRowIdx + 1; i < rows.length; i++) {
     const row = rows[i];
     if (!row || row.every((c) => c == null || c === '')) continue; // empty row
 
-    // Amount
-    const amount = parseAmount(row[amountColIdx]);
-    if (amount <= 0) {
-      skippedCount++;
-      continue; // debits or zero-value rows — skip
+    // Determine absolute amount based on columns available
+    let amount = 0;
+    const rawCredit = cols.creditIdx !== -1 ? row[cols.creditIdx] : null;
+    const rawDebit  = cols.debitIdx  !== -1 ? row[cols.debitIdx]  : null;
+    const rawAmount = cols.amountIdx !== -1 ? row[cols.amountIdx] : null;
+
+    if (rawCredit != null && rawCredit !== '') {
+      // It's a credit column -> treat as positive
+      amount = Math.abs(parseAmount(rawCredit));
+    } else if (rawDebit != null && rawDebit !== '') {
+      // It's a debit column -> treat as negative
+      amount = -Math.abs(parseAmount(rawDebit));
+    } else if (rawAmount != null && rawAmount !== '') {
+      // It's a generic amount column -> trust its internal sign
+      amount = parseAmount(rawAmount);
     }
+
+    if (amount === 0) continue; // Skip zero-value or unparseable rows
 
     // Date
     const rawDate = cols.dateIdx !== -1 ? row[cols.dateIdx] : null;
@@ -233,13 +245,6 @@ export function parseBankData(rows, bankName) {
       amount,
       bank:        bankName,
     });
-  }
-
-  if (skippedCount > 0 && movements.length === 0) {
-    warnings.push(
-      `${bankName}: se saltaron ${skippedCount} filas porque sus montos son negativos (cargos) o cero. ` +
-      `Si esperabas abonos, verifica que el archivo corresponda a la cuenta correcta.`
-    );
   }
 
   if (movements.length === 0 && errors.length === 0) {

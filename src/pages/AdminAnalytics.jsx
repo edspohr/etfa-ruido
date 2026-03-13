@@ -1,15 +1,15 @@
 import { useState, useEffect } from 'react';
 import { 
-    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
-    PieChart, Pie, Cell, LineChart, Line, AreaChart, Area
+    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+    PieChart, Pie, Cell, AreaChart, Area
 } from 'recharts';
 import { collection, query, getDocs, where, orderBy } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import Layout from '../components/Layout';
 import { 
-    TrendingUp, DollarSign, Clock, Users, Calendar, 
+    TrendingUp, DollarSign, Clock, Users, Calendar,
     Filter, RefreshCcw, ArrowUpRight, ArrowDownRight,
-    PieChart as PieIcon, BarChart3, Activity
+    PieChart as PieIcon, Activity
 } from 'lucide-react';
 import { formatCurrency } from '../utils/format';
 import { sortProjects } from '../utils/sort';

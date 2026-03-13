@@ -53,17 +53,21 @@ export default function AdminInvoicingReconciliation() {
   const [projects, setProjects] = useState([]);
 
   // ── Smart Matching ────────────────────────────────────────────────────────
-  const runSmartMatching = useCallback((bankMovements, invoices) => {
+  const runSmartMatching = useCallback((bankMovements, invoices, currentMatches) => {
     const newSuggestions = {};
     const autoMatches    = [];
 
     bankMovements.forEach((mov) => {
-      if (matches.some((m) => m.movement.id === mov.id)) return;
+      // 1. Skip already matched
+      if (currentMatches.some((m) => m.movement.id === mov.id)) return;
+
+      // 2. Only match positive amounts (credits) with invoices
+      if (mov.amount <= 0) return;
 
       const scored = [];
 
       invoices.forEach((inv) => {
-        if (matches.some((m) => m.invoice.id === inv.id)) return;
+        if (currentMatches.some((m) => m.invoice.id === inv.id)) return;
 
         let score = 0;
         const reasons = [];
@@ -143,7 +147,7 @@ export default function AdminInvoicingReconciliation() {
         return [...prev, ...filtered];
       });
     }
-  }, [projects, matches]);
+  }, [projects]);
 
   // ── Init ──────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -162,7 +166,7 @@ export default function AdminInvoicingReconciliation() {
 
   useEffect(() => {
     if (movements.length > 0 && pendingInvoices.length > 0) {
-      runSmartMatching(movements, pendingInvoices);
+      runSmartMatching(movements, pendingInvoices, matches);
     }
   }, [movements, pendingInvoices, runSmartMatching]);
 
@@ -263,6 +267,7 @@ export default function AdminInvoicingReconciliation() {
 
         for (let i = 0; i < parsed.length; i++) {
           const mov   = parsed[i];
+          // Use absolute amount for ID to stay compatible with existing ID scheme if necessary (or just use parsed amount)
           const docId = generateMovementId(bankName, mov.date, mov.amount, mov.description, i);
           const docRef = doc(db, 'bank_movements', docId);
 
@@ -594,7 +599,9 @@ export default function AdminInvoicingReconciliation() {
                     <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded ${match.movement.bank === 'Itaú' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'}`}>
                       {match.movement.bank}
                     </span>
-                    <p className="text-green-600 font-mono font-bold mt-1">+ {formatCurrency(match.movement.amount)}</p>
+                    <p className={`font-mono font-bold mt-1 ${match.movement.amount >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                      {match.movement.amount >= 0 ? '+' : '-'} {formatCurrency(Math.abs(match.movement.amount))}
+                    </p>
                     <p className="text-xs text-slate-400 mt-1">{match.movement.date}</p>
                   </div>
 
@@ -679,8 +686,8 @@ export default function AdminInvoicingReconciliation() {
                               </div>
                               <div className="px-4 py-3 text-slate-600 w-24 shrink-0">{mov.date}</div>
                               <div className="px-4 py-3 text-slate-700 flex-1 min-w-0 truncate" title={mov.description}>{mov.description}</div>
-                              <div className="px-4 py-3 text-right font-bold text-green-600 font-mono w-32 shrink-0">
-                                + {formatCurrency(mov.amount)}
+                              <div className={`px-4 py-3 text-right font-bold font-mono w-32 shrink-0 ${mov.amount >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                                {mov.amount >= 0 ? '+' : '-'} {formatCurrency(Math.abs(mov.amount))}
                               </div>
                               <div className="px-4 py-3 text-center w-20 shrink-0">
                                 {isMatched && <CheckCircle className="w-4 h-4 text-green-500 mx-auto" />}
