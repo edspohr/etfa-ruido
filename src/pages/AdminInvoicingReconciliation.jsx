@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import Layout from '../components/Layout';
 import {
   Upload, FileSpreadsheet, CheckCircle, AlertTriangle, ArrowRight,
-  Save, RefreshCw, X, Link, ChevronDown, ChevronUp, AlertCircle
+  Save, RefreshCw, X, Link, ChevronDown, ChevronUp, AlertCircle, Trash2
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import {
@@ -375,7 +375,7 @@ export default function AdminInvoicingReconciliation() {
         return [...prev, ...autoMatches.filter((m) => !existing.has(m.movement.id))];
       });
     }
-  }, [matches, projects]);
+  }, [projects]);
 
   // ── Manual match ──────────────────────────────────────────────────────────
   const startManualMatch  = (mov) => { setActiveMovement(mov); setManualMatchOpen(true); };

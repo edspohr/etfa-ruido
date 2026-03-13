@@ -95,18 +95,18 @@ function parseClpAmount(raw) {
  */
 const AMOUNT_PATTERNS = [
   // 1. Explicit "total a pagar" or "total" lines
-  { re: /total\s+a\s+pagar[\s:$]*([\d.,]{4,})/i, weight: 100 },
-  { re: /total[\s\S]{0,15}?[$ \s:]([\d.,]{4,})/i, weight: 90 },
+  { regex: /total\s+a\s+pagar[\s:$]*([\d.,]{4,})/i, weight: 100 },
+  { regex: /total[\s\S]{0,15}?[$ \s:]([\d.,]{4,})/i, weight: 90 },
   // 2. "monto total"
-  { re: /monto\s+total[\s:$]*([\d.,]{4,})/i,      weight: 85  },
+  { regex: /monto\s+total[\s:$]*([\d.,]{4,})/i,      weight: 85  },
   // 3. Neto / Afecto / Subtotal (lower priority now)
-  { re: /monto\s+neto[\s:$]*([\d.,]{4,})/i, weight: 50 },
-  { re: /total\s+neto[\s:$]*([\d.,]{4,})/i, weight: 50 },
-  { re: /neto[\s:$]*([\d.,]{4,})/i,          weight: 45  },
-  { re: /afecto[\s:$]*([\d.,]{4,})/i,        weight: 40  },
-  { re: /subtotal[\s:$]*([\d.,]{4,})/i,      weight: 35  },
+  { regex: /monto\s+neto[\s:$]*([\d.,]{4,})/i, weight: 50 },
+  { regex: /total\s+neto[\s:$]*([\d.,]{4,})/i, weight: 50 },
+  { regex: /neto[\s:$]*([\d.,]{4,})/i,          weight: 45  },
+  { regex: /afecto[\s:$]*([\d.,]{4,})/i,        weight: 40  },
+  { regex: /subtotal[\s:$]*([\d.,]{4,})/i,      weight: 35  },
   // 4. Large number near $ sign (last resort)
-  { re: /\$\s*([\d.,]{5,})/g, weight: 10 },
+  { regex: /\$\s*([\d.,]{5,})/g, weight: 10 },
 ];
 
 /** Razón Social patterns */
@@ -132,12 +132,12 @@ const RUT_PATTERNS = [
 /** Date patterns → normalised to YYYY-MM-DD */
 const DATE_PATTERNS = [
   // DD/MM/YYYY or DD-MM-YYYY
-  { re: /\b(\d{2})[/-](\d{2})[/-](\d{4})\b/, fmt: ([, d, m, y]) => `${y}-${m}-${d}` },
+  { regex: /\b(\d{2})[/-](\d{2})[/-](\d{4})\b/, fmt: ([, d, m, y]) => `${y}-${m}-${d}` },
   // YYYY-MM-DD
-  { re: /\b(\d{4})[/-](\d{2})[/-](\d{2})\b/, fmt: ([, y, m, d]) => `${y}-${m}-${d}` },
+  { regex: /\b(\d{4})[/-](\d{2})[/-](\d{2})\b/, fmt: ([, y, m, d]) => `${y}-${m}-${d}` },
   // "25 de enero de 2025" (Spanish long form)
   {
-    re: /(\d{1,2})\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\s+(?:de\s+)?(\d{4})/i,
+    regex: /(\d{1,2})\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\s+(?:de\s+)?(\d{4})/i,
     fmt: ([, d, mes, y]) => {
       const months = { enero:'01',febrero:'02',marzo:'03',abril:'04',mayo:'05',junio:'06',
                        julio:'07',agosto:'08',septiembre:'09',octubre:'10',noviembre:'11',diciembre:'12' };
@@ -169,11 +169,11 @@ export function extractInvoiceData(text, projects = []) {
   // ---- 1. Amount ----
   let bestAmount = 0, bestWeight = -1;
 
-  for (const { re, weight } of AMOUNT_PATTERNS) {
+  for (const { regex, weight } of AMOUNT_PATTERNS) {
     // Collect all matches for this pattern and pick the highest plausible amount
     const candidates = [];
     let m;
-    const iterRe = new RegExp(re.source, re.flags.includes('g') ? re.flags : re.flags + 'g');
+    const iterRe = new RegExp(regex.source, regex.flags.includes('g') ? regex.flags : regex.flags + 'g');
     while ((m = iterRe.exec(normalized)) !== null) {
       const n = parseClpAmount(m[1]);
       // Sanity: CLP invoices are usually > 1,000 and < 500,000,000
@@ -207,8 +207,8 @@ export function extractInvoiceData(text, projects = []) {
   // ---- 3. Date ----
   let foundDate = null;
 
-  for (const { re, fmt } of DATE_PATTERNS) {
-    const m = normalized.match(re);
+  for (const { regex, fmt } of DATE_PATTERNS) {
+    const m = normalized.match(regex);
     if (m) {
       try {
         const candidate = fmt(m);
@@ -224,8 +224,8 @@ export function extractInvoiceData(text, projects = []) {
 
   // ---- 4. Client Name (Razón Social) ----
   let foundClientName = null;
-  for (const re of RAZON_SOCIAL_PATTERNS) {
-    const m = normalized.match(re);
+  for (const pattern of RAZON_SOCIAL_PATTERNS) {
+    const m = normalized.match(pattern);
     if (m && m[1]) {
       const candidate = m[1].trim().replace(/\s+/g, ' ');
       // Sanity: not too long, not just "R.U.T."
