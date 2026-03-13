@@ -494,11 +494,7 @@ export default function AdminInvoicingGeneration() {
       setBatchProgress({ current: i + 1, total: acceptedFiles.length });
       try {
         const text = await getPdfText(file);
-        if (!text) {
-          results.push({ fileName: file.name, status: 'error', error: 'PDF escaneado/sin texto', rut: '', razonSocial: '', project: '', amount: 0, include: false });
-          continue;
-        }
-
+        
         const projectCodes = projects.map(p => p.code).filter(Boolean);
         const { rut: extractedRut, amount: extractedAmount, projectCode } = extractInvoiceData(text, projectCodes);
 

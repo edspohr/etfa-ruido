@@ -12,9 +12,10 @@
  * Strict RUT validation: checksum digit is verified.
  */
 import * as pdfjs from 'pdfjs-dist';
+import pdfWorkerURL from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
-// Configure PDF.js worker statically
-pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
+// Configure PDF.js worker using Vite URL string for bulletproof loading
+pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerURL;
 
 // ---------------------------------------------------------------------------
 // RUT VALIDATOR (verifica dígito verificador chileno)
@@ -257,10 +258,14 @@ export async function getPdfText(file, maxPages = 3) {
       fullText += content.items.map((i) => i.str).join(' ') + ' ';
     }
 
-    if (fullText.trim().length < 10) return null; // scanned/image PDF
+    if (fullText.trim().length < 10) {
+      throw new Error("El PDF no contiene texto digital legible (imagen escaneada)");
+    }
+    
     return fullText;
   } catch (e) {
     console.error('[getPdfText] Error reading PDF:', e);
-    return null;
+    // Rethrow to UI to display the exact reason (e.g CORS, Worker 404, or scanned PDF)
+    throw new Error(e.message || "Error desconocido al procesar PDF");
   }
 }
