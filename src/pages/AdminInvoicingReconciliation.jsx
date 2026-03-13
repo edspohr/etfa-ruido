@@ -52,6 +52,99 @@ export default function AdminInvoicingReconciliation() {
 
   const [projects, setProjects] = useState([]);
 
+  // ── Smart Matching ────────────────────────────────────────────────────────
+  const runSmartMatching = useCallback((bankMovements, invoices) => {
+    const newSuggestions = {};
+    const autoMatches    = [];
+
+    bankMovements.forEach((mov) => {
+      if (matches.some((m) => m.movement.id === mov.id)) return;
+
+      const scored = [];
+
+      invoices.forEach((inv) => {
+        if (matches.some((m) => m.invoice.id === inv.id)) return;
+
+        let score = 0;
+        const reasons = [];
+
+        // 1. Amount: exact ±10 → +50, ±100 → +25
+        const amountDiff = Math.abs(Number(inv.totalAmount) - mov.amount);
+        if (amountDiff < 10)  { score += 50; reasons.push('Monto exacto'); }
+        else if (amountDiff < 100) { score += 25; reasons.push('Monto similar'); }
+
+        // 2. Date proximity
+        const movDate = parseDisplayDate(mov.date);
+        let invDate   = null;
+        if (inv.issueDate) {
+          const [y, m, d] = inv.issueDate.split('-').map(Number);
+          invDate = new Date(y, m - 1, d);
+        } else if (inv.createdAt?.seconds) {
+          invDate = new Date(inv.createdAt.seconds * 1000);
+        }
+
+        if (movDate && invDate && !isNaN(movDate) && !isNaN(invDate)) {
+          const days = Math.abs((movDate - invDate) / 86_400_000);
+          if (days <= 5)  { score += 20; reasons.push(`Fecha cercana (${Math.round(days)}d)`); }
+          else if (days <= 15) { score += 10; reasons.push(`Fecha próxima (${Math.round(days)}d)`); }
+        }
+
+        // 3. Text: client name or project code in bank description
+        const descLower   = String(mov.description || '').toLowerCase();
+        const clientName  = String(inv.clientName  || '').toLowerCase();
+        const projectName = String(inv.projectName || '').toLowerCase();
+        let projectCode   = '';
+        if (inv.projectId) {
+          const proj = projects.find((p) => p.id === inv.projectId);
+          if (proj?.code) projectCode = proj.code.toLowerCase();
+        }
+
+        if (clientName.length > 2 && descLower.includes(clientName)) {
+          score += 30; reasons.push('Nombre cliente en descripción');
+        } else if (projectCode.length > 2 && descLower.includes(projectCode)) {
+          score += 30; reasons.push('Código proyecto en descripción');
+        } else if (projectName.length > 3 && descLower.includes(projectName)) {
+          score += 20; reasons.push('Nombre proyecto en descripción');
+        }
+
+        if (score > 0) scored.push({ invoice: inv, score, reasons });
+      });
+
+      scored.sort((a, b) => b.score - a.score);
+
+      if (scored.length > 0) {
+        if (
+          scored[0].score >= 70 &&
+          (scored.length === 1 || scored[0].score > scored[1].score + 20)
+        ) {
+          autoMatches.push({
+            movement: mov,
+            invoice:  scored[0].invoice,
+            confidence: 'high',
+            reason:   scored[0].reasons.join(' + '),
+          });
+        }
+        const relevant = scored.filter((s) => s.score > 30);
+        if (relevant.length > 0) newSuggestions[mov.id] = relevant;
+      }
+    });
+
+    setSuggestions(prev => {
+      const nextStr = JSON.stringify(newSuggestions);
+      if (JSON.stringify(prev) === nextStr) return prev;
+      return newSuggestions;
+    });
+
+    if (autoMatches.length > 0) {
+      setMatches((prev) => {
+        const existing = new Set(prev.map((m) => m.movement.id));
+        const filtered = autoMatches.filter((m) => !existing.has(m.movement.id));
+        if (filtered.length === 0) return prev;
+        return [...prev, ...filtered];
+      });
+    }
+  }, [projects, matches]);
+
   // ── Init ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     const init = async () => {
@@ -291,97 +384,7 @@ export default function AdminInvoicingReconciliation() {
   };
 
   // ── Smart Matching ────────────────────────────────────────────────────────
-  const runSmartMatching = useCallback((bankMovements, invoices) => {
-    const newSuggestions = {};
-    const autoMatches    = [];
 
-    bankMovements.forEach((mov) => {
-      if (matches.some((m) => m.movement.id === mov.id)) return;
-
-      const scored = [];
-
-      invoices.forEach((inv) => {
-        if (matches.some((m) => m.invoice.id === inv.id)) return;
-
-        let score = 0;
-        const reasons = [];
-
-        // 1. Amount: exact ±10 → +50, ±100 → +25
-        const amountDiff = Math.abs(Number(inv.totalAmount) - mov.amount);
-        if (amountDiff < 10)  { score += 50; reasons.push('Monto exacto'); }
-        else if (amountDiff < 100) { score += 25; reasons.push('Monto similar'); }
-
-        // 2. Date proximity
-        const movDate = parseDisplayDate(mov.date);
-        let invDate   = null;
-        if (inv.issueDate) {
-          const [y, m, d] = inv.issueDate.split('-').map(Number);
-          invDate = new Date(y, m - 1, d);
-        } else if (inv.createdAt?.seconds) {
-          invDate = new Date(inv.createdAt.seconds * 1000);
-        }
-
-        if (movDate && invDate && !isNaN(movDate) && !isNaN(invDate)) {
-          const days = Math.abs((movDate - invDate) / 86_400_000);
-          if (days <= 5)  { score += 20; reasons.push(`Fecha cercana (${Math.round(days)}d)`); }
-          else if (days <= 15) { score += 10; reasons.push(`Fecha próxima (${Math.round(days)}d)`); }
-        }
-
-        // 3. Text: client name or project code in bank description
-        const descLower   = String(mov.description || '').toLowerCase();
-        const clientName  = String(inv.clientName  || '').toLowerCase();
-        const projectName = String(inv.projectName || '').toLowerCase();
-        let projectCode   = '';
-        if (inv.projectId) {
-          const proj = projects.find((p) => p.id === inv.projectId);
-          if (proj?.code) projectCode = proj.code.toLowerCase();
-        }
-
-        if (clientName.length > 2 && descLower.includes(clientName)) {
-          score += 30; reasons.push('Nombre cliente en descripción');
-        } else if (projectCode.length > 2 && descLower.includes(projectCode)) {
-          score += 30; reasons.push('Código proyecto en descripción');
-        } else if (projectName.length > 3 && descLower.includes(projectName)) {
-          score += 20; reasons.push('Nombre proyecto en descripción');
-        }
-
-        if (score > 0) scored.push({ invoice: inv, score, reasons });
-      });
-
-      scored.sort((a, b) => b.score - a.score);
-
-      if (scored.length > 0) {
-        if (
-          scored[0].score >= 70 &&
-          (scored.length === 1 || scored[0].score > scored[1].score + 20)
-        ) {
-          autoMatches.push({
-            movement: mov,
-            invoice:  scored[0].invoice,
-            confidence: 'high',
-            reason:   scored[0].reasons.join(' + '),
-          });
-        }
-        const relevant = scored.filter((s) => s.score > 30);
-        if (relevant.length > 0) newSuggestions[mov.id] = relevant;
-      }
-    });
-
-    setSuggestions(prev => {
-      const nextStr = JSON.stringify(newSuggestions);
-      if (JSON.stringify(prev) === nextStr) return prev;
-      return newSuggestions;
-    });
-
-    if (autoMatches.length > 0) {
-      setMatches((prev) => {
-        const existing = new Set(prev.map((m) => m.movement.id));
-        const filtered = autoMatches.filter((m) => !existing.has(m.movement.id));
-        if (filtered.length === 0) return prev;
-        return [...prev, ...filtered];
-      });
-    }
-  }, [projects, matches]);
 
   // ── Manual match ──────────────────────────────────────────────────────────
   const startManualMatch  = (mov) => { setActiveMovement(mov); setManualMatchOpen(true); };
