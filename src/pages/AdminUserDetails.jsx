@@ -14,6 +14,7 @@ import {
   deleteDoc,
 } from "firebase/firestore";
 import { formatCurrency } from "../utils/format";
+import { sortProjects } from "../utils/sort";
 import {
   ArrowLeft,
   CheckCircle,
@@ -450,7 +451,7 @@ export default function AdminUserDetails() {
                            });
 
                            // Map to Array with Metadata
-                           const rows = Object.entries(projectStats).map(([pid, stats]) => {
+                           let rows = Object.entries(projectStats).map(([pid, stats]) => {
                                const projectMeta = projectsList.find(p => p.id === pid);
                                return {
                                    id: pid,
@@ -460,6 +461,9 @@ export default function AdminUserDetails() {
                                    ...stats
                                };
                            });
+
+                           // Sort rows using the standard alphanumeric sort
+                           rows = sortProjects(rows);
 
                            if (rows.length === 0) return <tr><td colSpan="6" className="p-8 text-center text-gray-400">No hay actividad registrada.</td></tr>;
 
