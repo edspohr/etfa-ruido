@@ -9,8 +9,12 @@
  * - Multiple ordered patterns per field; first match wins.
  * - Scores candidates and picks the best one (not just first regex match).
  * - Never confuses IVA with neto: always prefers neto/net amounts.
- * - Strict RUT validation: checksum digit is verified.
+ * Strict RUT validation: checksum digit is verified.
  */
+import * as pdfjs from 'pdfjs-dist';
+
+// Configure PDF.js worker statically
+pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
 
 // ---------------------------------------------------------------------------
 // RUT VALIDATOR (verifica dígito verificador chileno)
@@ -241,11 +245,6 @@ export function extractInvoiceData(text, projectCodes = []) {
  * Returns null if the PDF is image-only / scanned.
  */
 export async function getPdfText(file, maxPages = 3) {
-  // Lazy import to avoid SSR issues
-  const pdfjs = await import('pdfjs-dist');
-  pdfjs.GlobalWorkerOptions.workerSrc =
-    `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
-
   try {
     const arrayBuffer = await file.arrayBuffer();
     const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;

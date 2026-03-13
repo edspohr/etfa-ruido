@@ -58,7 +58,7 @@ export default function AdminInvoicingGeneration() {
   // PDF Extraction State (Massive Load is now the primary function)
   const [extractionMode, setExtractionMode] = useState(true);
   const [extracting, setExtracting] = useState(false);
-  const [extractionResult, setExtractionResult] = useState(null);
+  const [extractionResult, ] = useState(null);
 
   // UI State
   const [loadingProjects, setLoadingProjects] = useState(true);
@@ -504,7 +504,7 @@ export default function AdminInvoicingGeneration() {
 
         let clientName = '';
         if (extractedRut) {
-          const cleanRut = extractedRut.replace(/[.\-]/g, '').toUpperCase();
+          const cleanRut = extractedRut.replace(/[.-]/g, '').toUpperCase();
           try {
             const q = query(collection(db, 'clients'), where('rut', '==', cleanRut));
             const snapshot = await getDocs(q);
@@ -1242,7 +1242,10 @@ export default function AdminInvoicingGeneration() {
                               {inv.status === 'ok' ? (
                                 <span className="inline-flex items-center gap-1 text-emerald-600 text-xs font-bold"><CheckCircle className="w-4 h-4" /> OK</span>
                               ) : (
-                                <span className="inline-flex items-center gap-1 text-rose-500 text-xs font-bold" title={inv.error}><AlertCircle className="w-4 h-4" /> Error</span>
+                                <span className="inline-flex flex-col items-center gap-1 text-rose-500 text-[10px] font-bold text-center leading-tight">
+                                    <span className="flex items-center gap-1"><AlertCircle className="w-3.5 h-3.5" /> Error</span>
+                                    {inv.error && <span className="font-normal opacity-80 max-w-[120px]">{inv.error}</span>}
+                                </span>
                               )}
                             </td>
                           </tr>
