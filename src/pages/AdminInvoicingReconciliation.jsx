@@ -367,15 +367,21 @@ export default function AdminInvoicingReconciliation() {
       }
     });
 
-    setSuggestions(newSuggestions);
+    setSuggestions(prev => {
+      const nextStr = JSON.stringify(newSuggestions);
+      if (JSON.stringify(prev) === nextStr) return prev;
+      return newSuggestions;
+    });
 
     if (autoMatches.length > 0) {
       setMatches((prev) => {
         const existing = new Set(prev.map((m) => m.movement.id));
-        return [...prev, ...autoMatches.filter((m) => !existing.has(m.movement.id))];
+        const filtered = autoMatches.filter((m) => !existing.has(m.movement.id));
+        if (filtered.length === 0) return prev;
+        return [...prev, ...filtered];
       });
     }
-  }, [projects]);
+  }, [projects, matches]);
 
   // ── Manual match ──────────────────────────────────────────────────────────
   const startManualMatch  = (mov) => { setActiveMovement(mov); setManualMatchOpen(true); };
