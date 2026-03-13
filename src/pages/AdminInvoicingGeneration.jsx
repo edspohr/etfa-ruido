@@ -401,7 +401,6 @@ export default function AdminInvoicingGeneration() {
   // PDF Export Logic
   const generatePDF = (invData, exps, customs) => {
       const doc = new jsPDF();
-      const pageWidth = doc.internal.pageSize.width;
       
       // Header
       doc.setFontSize(22);

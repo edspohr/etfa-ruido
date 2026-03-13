@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Layout from '../components/Layout';
 import {
   Upload, FileSpreadsheet, CheckCircle, AlertTriangle, ArrowRight,
@@ -7,11 +7,11 @@ import {
 import * as XLSX from 'xlsx';
 import {
   collection, query, where, getDocs, writeBatch, doc,
-  serverTimestamp, setDoc, getDoc, deleteDoc, orderBy
+  serverTimestamp, getDoc, orderBy
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { formatCurrency } from '../utils/format';
-import { parseBankData, parseExcelDate } from '../utils/parseBankStatement';
+import { parseBankData } from '../utils/parseBankStatement';
 import { sortProjects } from '../utils/sort';
 import InvoiceDetailModal from '../components/InvoiceDetailModal';
 import { toast } from 'sonner';
@@ -71,7 +71,7 @@ export default function AdminInvoicingReconciliation() {
     if (movements.length > 0 && pendingInvoices.length > 0) {
       runSmartMatching(movements, pendingInvoices);
     }
-  }, [movements, pendingInvoices]);
+  }, [movements, pendingInvoices, runSmartMatching]);
 
   // ── Data fetching ─────────────────────────────────────────────────────────
   const fetchPending = async () => {
@@ -133,7 +133,7 @@ export default function AdminInvoicingReconciliation() {
         } catch {
           try {
             workbook = XLSX.read(arrayBuffer, { type: 'array', raw: true });
-          } catch (rawErr) {
+          } catch {
             toast.error(
               `El formato del archivo de ${bankName} no es reconocido. ` +
               `Exporta desde el banco como Excel (.xlsx) con columnas de Fecha, Descripción y Abono.`
@@ -291,7 +291,7 @@ export default function AdminInvoicingReconciliation() {
   };
 
   // ── Smart Matching ────────────────────────────────────────────────────────
-  const runSmartMatching = (bankMovements, invoices) => {
+  const runSmartMatching = useCallback((bankMovements, invoices) => {
     const newSuggestions = {};
     const autoMatches    = [];
 
@@ -375,7 +375,7 @@ export default function AdminInvoicingReconciliation() {
         return [...prev, ...autoMatches.filter((m) => !existing.has(m.movement.id))];
       });
     }
-  };
+  }, [matches, projects]);
 
   // ── Manual match ──────────────────────────────────────────────────────────
   const startManualMatch  = (mov) => { setActiveMovement(mov); setManualMatchOpen(true); };
