@@ -109,6 +109,16 @@ const AMOUNT_PATTERNS = [
   { re: /\$\s*([\d.,]{5,})/g, weight: 10 },
 ];
 
+/** Razón Social patterns */
+const RAZON_SOCIAL_PATTERNS = [
+  // SEÑOR(ES): FUNDACION SUMMER
+  /SEÑOR\(ES\):\s*([^RUT\n\r]+)/i,
+  // Nombre o Razón Social: 
+  /(?:Nombre|Razon)\s+Social:?\s*([^RUT\n\r]+)/i,
+  // Generic "Cliente: "
+  /Cliente:?\s*([^RUT\n\r]+)/i,
+];
+
 /** RUT patterns for Chilean tax IDs */
 const RUT_PATTERNS = [
   // Standard with dots, allowing spaces around dash: 76.123.456 - 7 or 65.177.022- K
@@ -142,13 +152,13 @@ const DATE_PATTERNS = [
 // ---------------------------------------------------------------------------
 
 /**
- * extractInvoiceData(text, projectCodes?)
+ * extractInvoiceData(text, projects?)
  *
- * @param {string}   text         — PDF text content (from pdfjs)
- * @param {string[]} projectCodes — optional list of known project codes to search for
- * @returns {{ rut: string|null, amount: number, date: string|null, projectCode: string|null }}
+ * @param {string}   text     — PDF text content (from pdfjs)
+ * @param {object[]} projects — optional list of known projects [{id, name, code}]
+ * @returns {{ rut: string|null, amount: number, date: string|null, projectCode: string|null, clientName: string|null, projectId: string|null }}
  */
-export function extractInvoiceData(text, projectCodes = []) {
+export function extractInvoiceData(text, projects = []) {
   if (!text || text.trim().length < 10) {
     return { rut: null, amount: 0, date: null, projectCode: null };
   }
@@ -212,19 +222,54 @@ export function extractInvoiceData(text, projectCodes = []) {
     }
   }
 
-  // ---- 4. Project code ----
-  let foundProjectCode = null;
-
-  if (projectCodes.length > 0) {
-    // Sort by length descending so longer/more-specific codes match first
-    const sorted = [...projectCodes].sort((a, b) => b.length - a.length);
-    const lowerText = normalized.toLowerCase();
-
-    for (const code of sorted) {
-      if (!code || code.length < 3) continue;
-      if (lowerText.includes(code.toLowerCase())) {
-        foundProjectCode = code;
+  // ---- 4. Client Name (Razón Social) ----
+  let foundClientName = null;
+  for (const re of RAZON_SOCIAL_PATTERNS) {
+    const m = normalized.match(re);
+    if (m && m[1]) {
+      const candidate = m[1].trim().replace(/\s+/g, ' ');
+      // Sanity: not too long, not just "R.U.T."
+      if (candidate.length > 2 && !candidate.toLowerCase().includes('r.u.t')) {
+        foundClientName = candidate;
         break;
+      }
+    }
+  }
+
+  // ---- 5. Project (by code or name) ----
+  let foundProjectCode = null;
+  let foundProjectId = null;
+
+  if (projects.length > 0) {
+    const lowerText = normalized.toLowerCase();
+    
+    // First try by Code (more specific)
+    const sortedByCode = [...projects]
+      .filter(p => p.code)
+      .sort((a, b) => b.code.length - a.code.length);
+    
+    for (const p of sortedByCode) {
+      if (p.code.length < 3) continue;
+      if (lowerText.includes(p.code.toLowerCase())) {
+        foundProjectCode = p.code;
+        foundProjectId = p.id;
+        break;
+      }
+    }
+
+    // If still not found, try by Name
+    if (!foundProjectId) {
+      const sortedByName = [...projects]
+        .filter(p => p.name)
+        .sort((a, b) => b.name.length - a.name.length);
+      
+      for (const p of sortedByName) {
+        if (p.name.length < 5) continue;
+        if (lowerText.includes(p.name.toLowerCase())) {
+          foundProjectCode = p.code || null;
+          foundProjectId = p.id;
+          break;
+        }
       }
     }
   }
@@ -234,6 +279,8 @@ export function extractInvoiceData(text, projectCodes = []) {
     amount:      bestAmount,
     date:        foundDate,
     projectCode: foundProjectCode,
+    projectId:   foundProjectId,
+    clientName:  foundClientName
   };
 }
 

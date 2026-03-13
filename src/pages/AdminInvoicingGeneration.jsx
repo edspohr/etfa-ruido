@@ -208,12 +208,11 @@ export default function AdminInvoicingGeneration() {
         return;
       }
 
-      const projectCodes = projects.map(p => p.code).filter(Boolean);
-      const { rut, amount, date, projectCode } = extractInvoiceData(text, projectCodes);
+      const { rut, amount, date, projectId: extractedProjectId, clientName: extractedClientName } = extractInvoiceData(text, projects);
 
-      // Auto-select project by code
-      if (projectCode) {
-        const matched = projects.find(p => p.code?.toLowerCase() === projectCode.toLowerCase());
+      // Auto-select project
+      if (extractedProjectId) {
+        const matched = projects.find(p => p.id === extractedProjectId);
         if (matched) {
           setSelectedProjectId(matched.id);
           toast.success(`Proyecto detectado: ${matched.name}`);
@@ -224,24 +223,38 @@ export default function AdminInvoicingGeneration() {
       if (amount > 0) {
         setMontoNeto(String(amount));
         setCustomItems([{ description: 'Servicios según PDF', amount }]);
-        toast.success(`Monto neto detectado: ${formatCurrency(amount)}`);
+        toast.success(`Monto detectado: ${formatCurrency(amount)}`);
       } else {
         toast.warning('No se pudo detectar el monto neto. Ingresa el valor manualmente.');
       }
 
       // Auto-fill RUT and look up client
       if (rut) {
-        setClientData(prev => ({ ...prev, rut }));
-        const cleanRut = rut.replace(/[.\-]/g, '').toUpperCase();
-        try {
-          const q = query(collection(db, 'clients'), where('rut', '==', cleanRut));
-          const snapshot = await getDocs(q);
-          if (!snapshot.empty) {
-            const data = snapshot.docs[0].data();
-            setClientData({ rut, razonSocial: data.razonSocial || '', direccion: data.direccion || '', comuna: data.comuna || '', giro: data.giro || '' });
-            toast.success('Cliente encontrado en base de datos.');
-          }
-        } catch { /* lookup failed, ignore */ }
+        setClientData(prev => ({ 
+          ...prev, 
+          rut, 
+          razonSocial: extractedClientName || prev.razonSocial 
+        }));
+        
+        // Only trigger lookup if client name wasn't found in PDF or to enrichment
+        if (!extractedClientName) {
+        const cleanRut = rut.replace(/[.-]/g, '').toUpperCase();
+            try {
+              const q = query(collection(db, 'clients'), where('rut', '==', cleanRut));
+              const snapshot = await getDocs(q);
+              if (!snapshot.empty) {
+                const data = snapshot.docs[0].data();
+                setClientData({ 
+                  rut, 
+                  razonSocial: data.razonSocial || '', 
+                  direccion: data.direccion || '', 
+                  comuna: data.comuna || '', 
+                  giro: data.giro || '' 
+                });
+                toast.success('Cliente encontrado en base de datos.');
+              }
+            } catch { /* lookup failed, ignore */ }
+        }
       }
 
       // Auto-fill date
@@ -495,11 +508,10 @@ export default function AdminInvoicingGeneration() {
       try {
         const text = await getPdfText(file);
         
-        const projectCodes = projects.map(p => p.code).filter(Boolean);
-        const { rut: extractedRut, amount: extractedAmount, projectCode } = extractInvoiceData(text, projectCodes);
+        const { rut: extractedRut, amount: extractedAmount, projectId: extractedProjectId, clientName: extractedClientName } = extractInvoiceData(text, projects);
 
-        let clientName = '';
-        if (extractedRut) {
+        let clientName = extractedClientName || '';
+        if (!clientName && extractedRut) {
           const cleanRut = extractedRut.replace(/[.-]/g, '').toUpperCase();
           try {
             const q = query(collection(db, 'clients'), where('rut', '==', cleanRut));
@@ -509,8 +521,8 @@ export default function AdminInvoicingGeneration() {
         }
 
         let matchedProject = null;
-        if (projectCode) {
-          matchedProject = projects.find(p => p.code?.toLowerCase() === projectCode.toLowerCase()) || null;
+        if (extractedProjectId) {
+          matchedProject = projects.find(p => p.id === extractedProjectId) || null;
         }
 
         results.push({

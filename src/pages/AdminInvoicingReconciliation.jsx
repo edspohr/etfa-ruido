@@ -261,6 +261,35 @@ export default function AdminInvoicingReconciliation() {
     }
   };
 
+  const handleDeleteAll = async () => {
+    if (!window.confirm('¿ELIMINAR TODO? Esta acción borrará TODOS los movimientos bancarios y el historial de cartolas de la base de datos. Esta acción no se puede deshacer.')) return;
+    
+    setLoading(true);
+    try {
+      const batch = writeBatch(db);
+      
+      // Delete all movements
+      const movsSnap = await getDocs(collection(db, 'bank_movements'));
+      movsSnap.docs.forEach(d => batch.delete(d.ref));
+      
+      // Delete all statements
+      const statesSnap = await getDocs(collection(db, 'bank_statements'));
+      statesSnap.docs.forEach(d => batch.delete(d.ref));
+      
+      await batch.commit();
+      toast.success('Base de datos de conciliación limpiada.');
+      setMovements([]);
+      setBankStatements([]);
+      setSuggestions({});
+      setMatches([]);
+    } catch (e) {
+      console.error('Error deleting all data:', e);
+      toast.error('Error al limpiar la base de datos.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // ── Smart Matching ────────────────────────────────────────────────────────
   const runSmartMatching = (bankMovements, invoices) => {
     const newSuggestions = {};
@@ -430,14 +459,13 @@ export default function AdminInvoicingReconciliation() {
               </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {['Itaú', 'Santander'].map((bank) => {
-                const count = movements.filter((m) => m.bank === bank).length;
                 const colors = bank === 'Itaú'
                   ? { bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-700', icon: 'text-orange-500' }
                   : { bg: 'bg-red-50',    border: 'border-red-200',    text: 'text-red-700',    icon: 'text-red-500'    };
                 return (
                   <div
                     key={bank}
-                    className={`border-2 border-dashed rounded-xl p-4 text-center transition cursor-pointer relative group ${count > 0 ? `${colors.bg} ${colors.border}` : `border-slate-200 hover:${colors.bg}`}`}
+                    className={`border-2 border-dashed rounded-xl p-4 text-center transition cursor-pointer relative group border-slate-200 hover:${colors.bg}`}
                   >
                     <input
                       type="file"
@@ -447,11 +475,8 @@ export default function AdminInvoicingReconciliation() {
                       title={`Cargar Cartola ${bank}`}
                     />
                     <div className="flex items-center justify-center gap-2">
-                      {count > 0 ? (
-                        <><CheckCircle className={`w-5 h-5 ${colors.text}`} /><span className={`font-bold text-sm ${colors.text}`}>{bank} ({count} mov.)</span></>
-                      ) : (
-                        <><FileSpreadsheet className={`w-5 h-5 ${colors.icon}`} /><span className={`font-bold text-slate-600 text-sm`}>Excel {bank}</span></>
-                      )}
+                        <FileSpreadsheet className={`w-5 h-5 ${colors.icon}`} />
+                        <span className={`font-bold text-slate-600 text-sm`}>Sincronizar {bank}</span>
                     </div>
                   </div>
                 );
@@ -507,6 +532,13 @@ export default function AdminInvoicingReconciliation() {
                 </div>
               ))}
             </div>
+            
+            <button 
+              onClick={handleDeleteAll}
+              className="mt-4 text-[10px] text-slate-400 hover:text-red-500 font-bold uppercase tracking-wider flex items-center justify-center gap-1 transition-colors"
+            >
+              <Trash2 className="w-3 h-3" /> Limpiar Todo (Pruebas)
+            </button>
           </div>
         </div>
 
@@ -573,11 +605,11 @@ export default function AdminInvoicingReconciliation() {
         )}
 
         {/* Data workspaces */}
-        {/* Adjusted grid layout: 12 cols total -> 7 for bank, 5 for invoices */}
+        {/* Adjusted grid layout: 12 cols total -> 9 for bank, 3 for invoices */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 h-[calc(100vh-320px)] min-h-[600px]">
 
           {/* Movements table */}
-          <div className="lg:col-span-7 bg-white rounded-2xl shadow-soft border border-slate-100 overflow-hidden flex flex-col h-full">
+          <div className="lg:col-span-9 bg-white rounded-2xl shadow-soft border border-slate-100 overflow-hidden flex flex-col h-full">
             <div className="p-4 border-b border-slate-100 bg-slate-50 sticky top-0 z-10">
               <h3 className="font-bold text-slate-800 flex items-center gap-2">
                 <FileSpreadsheet className="w-4 h-4 text-slate-500" /> Movimientos Bancarios
@@ -686,7 +718,7 @@ export default function AdminInvoicingReconciliation() {
           </div>
 
           {/* Pending invoices */}
-          <div className="lg:col-span-5 bg-white rounded-2xl shadow-soft border border-slate-100 overflow-hidden flex flex-col h-full">
+          <div className="lg:col-span-3 bg-white rounded-2xl shadow-soft border border-slate-100 overflow-hidden flex flex-col h-full">
             <div className="p-4 border-b border-slate-100 bg-slate-50 sticky top-0 z-10">
               <h3 className="font-bold text-slate-800 flex items-center gap-2">
                 <CheckCircle className="w-4 h-4 text-slate-500" /> Facturas Emitidas (Por Cobrar)
