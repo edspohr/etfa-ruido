@@ -1,18 +1,26 @@
 import { useState, useEffect } from 'react';
 import Sidebar from './Sidebar';
-import { Menu } from 'lucide-react';
+import { Menu, FolderOpen, Calendar, ClipboardList, Receipt } from 'lucide-react';
 import { useAuth } from '../context/useAuth';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import ForcePasswordChange from './ForcePasswordChange';
 import PageTransition from './PageTransition';
-import { useLocation } from 'react-router-dom';
+import { useLocation, Link } from 'react-router-dom';
+
+const PROF_NAV = [
+  { to: '/mis-proyectos',     icon: FolderOpen,    label: 'Proyectos' },
+  { to: '/mi-calendario',     icon: Calendar,      label: 'Calendario' },
+  { to: '/mis-tareas',        icon: ClipboardList, label: 'Tareas' },
+  { to: '/dashboard/expenses', icon: Receipt,       label: 'Rendiciones' },
+];
 
 export default function Layout({ children, title, isFullWidth = false }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const { currentUser } = useAuth();
+  const { currentUser, userRole } = useAuth();
   const [mustChangePass, setMustChangePass] = useState(false);
   const location = useLocation();
+  const isProfessional = userRole && userRole !== 'admin';
 
   useEffect(() => {
     async function checkUserStatus() {
@@ -49,20 +57,41 @@ export default function Layout({ children, title, isFullWidth = false }) {
             </div>
         </header>
 
-        <main className="flex-1 overflow-x-hidden overflow-y-auto bg-slate-50 p-6 md:p-8">
+        <main className={`flex-1 overflow-x-hidden overflow-y-auto bg-slate-50 p-6 md:p-8 ${isProfessional ? 'pb-24 md:pb-8' : ''}`}>
             <div className={isFullWidth ? "w-full px-2" : "max-w-7xl mx-auto"}>
                 <PageTransition key={location.pathname}>
                     {children}
                 </PageTransition>
             </div>
         </main>
-        
+
         {/* Mobile Overlay */}
         {sidebarOpen && (
-            <div 
-                className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-10 md:hidden transition-opacity" 
+            <div
+                className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-10 md:hidden transition-opacity"
                 onClick={() => setSidebarOpen(false)}
             ></div>
+        )}
+
+        {/* Mobile bottom nav — professionals only */}
+        {isProfessional && (
+          <nav className="fixed bottom-0 inset-x-0 bg-slate-900 border-t border-slate-800 flex md:hidden z-40">
+            {PROF_NAV.map(({ to, icon: Icon, label }) => {
+              const active = location.pathname === to || location.pathname.startsWith(to + '/');
+              return (
+                <Link
+                  key={to}
+                  to={to}
+                  className={`flex-1 flex flex-col items-center justify-center py-2.5 gap-0.5 text-[10px] font-semibold transition-colors ${
+                    active ? 'text-indigo-400' : 'text-slate-500 hover:text-slate-300'
+                  }`}
+                >
+                  <Icon className="w-5 h-5" />
+                  {label}
+                </Link>
+              );
+            })}
+          </nav>
         )}
       </div>
     </div>

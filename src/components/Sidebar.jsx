@@ -1,9 +1,9 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/useAuth';
-import { 
-  PieChart, LayoutDashboard, FolderOpen, CheckCircle, 
-  FileText, UserCircle, Receipt, LogOut, Wallet, ClipboardList, BarChart3, 
-  Activity, Grid, FilePlus
+import {
+  PieChart, LayoutDashboard, FolderOpen, CheckCircle,
+  FileText, UserCircle, Receipt, LogOut, Wallet, ClipboardList, BarChart3,
+  Activity, Grid, FilePlus, Calendar,
 } from 'lucide-react';
 
 export default function Sidebar({ isOpen, setIsOpen }) {
@@ -51,20 +51,32 @@ export default function Sidebar({ isOpen, setIsOpen }) {
             </div>
         </div>
 
-        {/* Mi Espacio (Always visible) */}
-        <p className={groupTitleClass}>Mi Espacio</p>
-        <Link to="/dashboard" className={linkClass('/dashboard')} onClick={() => setIsOpen(false)}>
-            <UserCircle className="w-4 h-4 mr-3" />
-            Mi Resumen
-        </Link>
-        <Link to="/dashboard/expenses" className={linkClass('/dashboard/expenses')} onClick={() => setIsOpen(false)}>
-            <Receipt className="w-4 h-4 mr-3" />
-            Mis Rendiciones
-        </Link>
-        <Link to="/dashboard/reports" className={linkClass('/dashboard/reports')} onClick={() => setIsOpen(false)}>
-            <ClipboardList className="w-4 h-4 mr-3" />
-            Mis Mediciones
-        </Link>
+        {/* Mi Espacio – professional nav */}
+        {userRole !== 'admin' && (
+          <>
+            <p className={groupTitleClass}>Mi Espacio</p>
+            <Link to="/mis-proyectos" className={linkClass('/mis-proyectos')} onClick={() => setIsOpen(false)}>
+                <FolderOpen className="w-4 h-4 mr-3" />
+                Mis Proyectos
+            </Link>
+            <Link to="/mi-calendario" className={linkClass('/mi-calendario')} onClick={() => setIsOpen(false)}>
+                <Calendar className="w-4 h-4 mr-3" />
+                Mi Calendario
+            </Link>
+            <Link to="/mis-tareas" className={linkClass('/mis-tareas')} onClick={() => setIsOpen(false)}>
+                <ClipboardList className="w-4 h-4 mr-3" />
+                Mis Tareas
+            </Link>
+            <Link to="/dashboard/expenses" className={linkClass('/dashboard/expenses')} onClick={() => setIsOpen(false)}>
+                <Receipt className="w-4 h-4 mr-3" />
+                Mis Rendiciones
+            </Link>
+            <Link to="/dashboard/reports" className={linkClass('/dashboard/reports')} onClick={() => setIsOpen(false)}>
+                <FileText className="w-4 h-4 mr-3" />
+                Mis Mediciones
+            </Link>
+          </>
+        )}
 
         {userRole === 'admin' && (
             <>
@@ -79,6 +91,10 @@ export default function Sidebar({ isOpen, setIsOpen }) {
                                     ? <><div className="w-2.5 h-2.5 rounded-full mr-2.5 bg-teal-400 shadow-[0_0_12px_rgba(45,212,191,0.8)] animate-pulse"></div> INFORMES</>
                                     : (location.pathname === '/admin' || location.pathname.startsWith('/admin/invoicing') || location.pathname.startsWith('/admin/analytics'))
                                     ? <><div className="w-2.5 h-2.5 rounded-full mr-2.5 bg-blue-400 shadow-[0_0_12px_rgba(96,165,250,0.8)] animate-pulse"></div> FINANCIERO</>
+                                    : location.pathname.startsWith('/admin/calendar')
+                                    ? <><div className="w-2.5 h-2.5 rounded-full mr-2.5 bg-green-400 shadow-[0_0_12px_rgba(74,222,128,0.8)] animate-pulse"></div> CALENDARIO</>
+                                    : location.pathname.startsWith('/admin/tasks')
+                                    ? <><div className="w-2.5 h-2.5 rounded-full mr-2.5 bg-violet-400 shadow-[0_0_12px_rgba(167,139,250,0.8)] animate-pulse"></div> PLANNER</>
                                     : 'MÓDULO'}
                             </span>
                         </div>
@@ -158,6 +174,36 @@ export default function Sidebar({ isOpen, setIsOpen }) {
                         <Link to="/admin/analytics" className={linkClass('/admin/analytics')} onClick={() => setIsOpen(false)}>
                             <BarChart3 className="w-4 h-4 mr-3" />
                             Análisis de Datos
+                        </Link>
+                    </>
+                ) : location.pathname.startsWith('/admin/calendar') ? (
+                    // --- CALENDAR MODULE MENU ---
+                    <>
+                        <div className="px-4 mt-6 mb-2">
+                            <p className="text-[10px] font-bold text-green-400 uppercase tracking-widest">Calendario Terreno</p>
+                        </div>
+                        <Link to="/admin/calendar" className={linkClass('/admin/calendar')} onClick={() => setIsOpen(false)}>
+                            <Calendar className="w-4 h-4 mr-3" />
+                            Semana de Terreno
+                        </Link>
+                        <Link to="/admin/tasks" className={linkClass('/admin/tasks')} onClick={() => setIsOpen(false)}>
+                            <ClipboardList className="w-4 h-4 mr-3" />
+                            Planner
+                        </Link>
+                    </>
+                ) : location.pathname.startsWith('/admin/tasks') ? (
+                    // --- PLANNER MODULE MENU ---
+                    <>
+                        <div className="px-4 mt-6 mb-2">
+                            <p className="text-[10px] font-bold text-violet-400 uppercase tracking-widest">Planner</p>
+                        </div>
+                        <Link to="/admin/tasks" className={linkClass('/admin/tasks')} onClick={() => setIsOpen(false)}>
+                            <ClipboardList className="w-4 h-4 mr-3" />
+                            Planner
+                        </Link>
+                        <Link to="/admin/calendar" className={linkClass('/admin/calendar')} onClick={() => setIsOpen(false)}>
+                            <Calendar className="w-4 h-4 mr-3" />
+                            Calendario Terreno
                         </Link>
                     </>
                 ) : null}

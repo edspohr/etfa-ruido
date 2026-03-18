@@ -348,8 +348,82 @@ export default function AdminProjectDetails() {
              );
         })()}
 
+        {/* Contacto y Recursos Card */}
+        {(project.contacto?.nombre || project.contacto?.email || (project.recursos?.ingenieros?.length > 0)) && (
+            <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 mb-8">
+                <h3 className="text-sm font-bold text-slate-300 uppercase tracking-wide mb-4">Contacto y Recursos</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {(project.contacto?.nombre || project.contacto?.telefono || project.contacto?.email || project.contacto?.cargo) && (
+                        <div>
+                            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Contacto del cliente</p>
+                            <div className="space-y-2">
+                                {project.contacto?.nombre && (
+                                    <div>
+                                        <span className="text-xs text-slate-400">Nombre</span>
+                                        <p className="text-sm font-medium text-slate-100">{project.contacto.nombre}</p>
+                                    </div>
+                                )}
+                                {project.contacto?.telefono && (
+                                    <div>
+                                        <span className="text-xs text-slate-400">Teléfono / WhatsApp</span>
+                                        <p className="text-sm font-medium text-slate-100">{project.contacto.telefono}</p>
+                                    </div>
+                                )}
+                                {project.contacto?.email && (
+                                    <div>
+                                        <span className="text-xs text-slate-400">Email</span>
+                                        <p className="text-sm font-medium text-slate-100">{project.contacto.email}</p>
+                                    </div>
+                                )}
+                                {project.contacto?.cargo && (
+                                    <div>
+                                        <span className="text-xs text-slate-400">Cargo / Rol</span>
+                                        <p className="text-sm font-medium text-slate-100">{project.contacto.cargo}</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                    {(project.recursos?.ingenieros?.length > 0 || project.recursos?.vehiculo || project.recursos?.equipamiento) && (
+                        <div>
+                            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Recursos asignados</p>
+                            <div className="space-y-2">
+                                {project.recursos?.ingenieros?.length > 0 && (
+                                    <div>
+                                        <span className="text-xs text-slate-400">Ingenieros</span>
+                                        <div className="flex flex-wrap gap-1 mt-1">
+                                            {project.recursos.ingenieros.map(uid => {
+                                                const u = users.find(u => u.id === uid);
+                                                return (
+                                                    <span key={uid} className="px-2 py-0.5 bg-slate-700 text-slate-200 rounded-full text-xs">
+                                                        {u?.displayName || uid}
+                                                    </span>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+                                {project.recursos?.vehiculo && (
+                                    <div>
+                                        <span className="text-xs text-slate-400">Vehículo</span>
+                                        <p className="text-sm font-medium text-slate-100">{project.recursos.vehiculo}</p>
+                                    </div>
+                                )}
+                                {project.recursos?.equipamiento && (
+                                    <div>
+                                        <span className="text-xs text-slate-400">Equipamiento</span>
+                                        <p className="text-sm font-medium text-slate-100">{project.recursos.equipamiento}</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            
+
             {/* Expenses List */}
             <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
                 <div className="px-6 py-4 border-b bg-gray-50 flex justify-between items-center">

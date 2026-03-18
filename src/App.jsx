@@ -22,13 +22,19 @@ import AdminInvoicingReconciliation from './pages/AdminInvoicingReconciliation';
 import AdminReports from './pages/AdminReports';
 import UserReports from './pages/UserReports';
 import AdminAnalytics from './pages/AdminAnalytics';
+import AdminCalendar from './pages/AdminCalendar';
+import AdminTasks from './pages/AdminTasks';
+import ProfessionalProjects from './pages/ProfessionalProjects';
+import ProfessionalCalendar from './pages/ProfessionalCalendar';
+import ProfessionalTasks from './pages/ProfessionalTasks';
 
 
 function RootRedirect() {
   const { currentUser, userRole } = useAuth();
   if (!currentUser) return <Navigate to="/login" />;
   if (userRole === 'admin') return <Navigate to="/admin/select-module" />;
-  return <Navigate to="/dashboard" />;
+  if (userRole === 'professional') return <Navigate to="/mis-proyectos" />;
+  return <Navigate to="/login" />;
 }
 
 function App() {
@@ -52,6 +58,12 @@ function App() {
         <Route path="/admin/balances" element={<ProtectedRoute requiredRole="admin"><AdminBalances /></ProtectedRoute>} />
         <Route path="/admin/users-seeder" element={<ProtectedRoute requiredRole="admin"><AdminUserSeeder /></ProtectedRoute>} />
 
+        {/* Calendar Module */}
+        <Route path="/admin/calendar" element={<ProtectedRoute requiredRole="admin"><AdminCalendar /></ProtectedRoute>} />
+
+        {/* Tasks / Planner Module */}
+        <Route path="/admin/tasks" element={<ProtectedRoute requiredRole="admin"><AdminTasks /></ProtectedRoute>} />
+
         {/* Reports Module */}
         <Route path="/admin/reports" element={<ProtectedRoute requiredRole="admin"><AdminReports /></ProtectedRoute>} />
 
@@ -64,7 +76,12 @@ function App() {
         <Route path="/admin/invoicing/history" element={<ProtectedRoute requiredRole="admin"><AdminInvoicingHistory /></ProtectedRoute>} />
         <Route path="/admin/invoicing/reconciliation" element={<ProtectedRoute requiredRole="admin"><AdminInvoicingReconciliation /></ProtectedRoute>} />
         
-        {/* User Routes */}
+        {/* Professional Routes */}
+        <Route path="/mis-proyectos" element={<ProtectedRoute requiredRole={['professional', 'admin']}><ProfessionalProjects /></ProtectedRoute>} />
+        <Route path="/mi-calendario" element={<ProtectedRoute requiredRole={['professional', 'admin']}><ProfessionalCalendar /></ProtectedRoute>} />
+        <Route path="/mis-tareas" element={<ProtectedRoute requiredRole={['professional', 'admin']}><ProfessionalTasks /></ProtectedRoute>} />
+
+        {/* User Routes (legacy + shared) */}
         <Route path="/dashboard" element={<ProtectedRoute requiredRole={['professional', 'admin']}><UserDashboard /></ProtectedRoute>} />
         <Route path="/dashboard/reports" element={<ProtectedRoute requiredRole={['professional', 'admin']}><UserReports /></ProtectedRoute>} />
         <Route path="/dashboard/expenses" element={<ProtectedRoute requiredRole={['professional', 'admin']}><UserExpenses /></ProtectedRoute>} />
