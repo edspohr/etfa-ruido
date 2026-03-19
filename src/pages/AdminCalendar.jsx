@@ -120,7 +120,7 @@ export default function AdminCalendar() {
       try {
         const [projSnap, usersSnap, evSnap] = await Promise.all([
           getDocs(query(collection(db, 'projects'), where('status', '!=', 'deleted'))),
-          getDocs(query(collection(db, 'users'),    where('role',   '==', 'professional'))),
+          getDocs(query(collection(db, 'users'),    where('role',   'in', ['professional', 'admin']))),
           getDocs(collection(db, 'calendar_events')),
         ]);
 

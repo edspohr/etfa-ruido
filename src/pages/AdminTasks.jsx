@@ -192,7 +192,7 @@ export default function AdminTasks() {
         const [tasksSnap, projSnap, usersSnap] = await Promise.all([
           getDocs(collection(db, 'tasks')),
           getDocs(query(collection(db, 'projects'), where('status', '!=', 'deleted'))),
-          getDocs(query(collection(db, 'users'),    where('role',   '==', 'professional'))),
+          getDocs(query(collection(db, 'users'),    where('role',   'in', ['professional', 'admin']))),
         ]);
         setTasks(tasksSnap.docs.map(d => ({ id: d.id, ...d.data() })));
         setProjects(
@@ -514,6 +514,7 @@ export default function AdminTasks() {
                       onChange={e => setFormData(f => ({ ...f, type: e.target.value }))}
                       className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-slate-100 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
                     >
+                      <option value="reporte_tecnico">Reporte Técnico</option>
                       <option value="reporte_flash">Reporte Flash</option>
                       <option value="informe">Informe</option>
                     </select>

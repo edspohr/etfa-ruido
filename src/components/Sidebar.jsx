@@ -113,6 +113,29 @@ export default function Sidebar({ isOpen, setIsOpen }) {
                     </Link>
                 </div>
 
+                {/* Mi Espacio - Admin también es profesional */}
+                <p className={groupTitleClass}>Mi Espacio</p>
+                <Link to="/mis-proyectos" className={linkClass('/mis-proyectos')} onClick={() => setIsOpen(false)}>
+                    <FolderOpen className="w-4 h-4 mr-3" />
+                    Mis Proyectos
+                </Link>
+                <Link to="/mi-calendario" className={linkClass('/mi-calendario')} onClick={() => setIsOpen(false)}>
+                    <Calendar className="w-4 h-4 mr-3" />
+                    Mi Calendario
+                </Link>
+                <Link to="/mis-tareas" className={linkClass('/mis-tareas')} onClick={() => setIsOpen(false)}>
+                    <ClipboardList className="w-4 h-4 mr-3" />
+                    Mis Tareas
+                </Link>
+                <Link to="/dashboard/expenses" className={linkClass('/dashboard/expenses')} onClick={() => setIsOpen(false)}>
+                    <Receipt className="w-4 h-4 mr-3" />
+                    Mis Rendiciones
+                </Link>
+                <Link to="/dashboard/reports" className={linkClass('/dashboard/reports')} onClick={() => setIsOpen(false)}>
+                    <FileText className="w-4 h-4 mr-3" />
+                    Mis Mediciones
+                </Link>
+
                 {/* Show different menus based on "Active Module" inferred from URL */}
                 {(location.pathname.startsWith('/admin/expenses') || location.pathname.startsWith('/admin/approvals') || location.pathname.startsWith('/admin/projects') || location.pathname.startsWith('/admin/balances')) ? (
                     // --- EXPENSES MODULE MENU ---

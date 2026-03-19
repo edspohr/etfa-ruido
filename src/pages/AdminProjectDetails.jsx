@@ -396,7 +396,7 @@ export default function AdminProjectDetails() {
                                                 const u = users.find(u => u.id === uid);
                                                 return (
                                                     <span key={uid} className="px-2 py-0.5 bg-slate-700 text-slate-200 rounded-full text-xs">
-                                                        {u?.displayName || uid}
+                                                        {u?.displayName || "Usuario no encontrado"}
                                                     </span>
                                                 );
                                             })}

@@ -21,6 +21,8 @@ export default function Layout({ children, title, isFullWidth = false }) {
   const [mustChangePass, setMustChangePass] = useState(false);
   const location = useLocation();
   const isProfessional = userRole && userRole !== 'admin';
+  const isOnProfessionalRoute = ['/mis-proyectos', '/mi-calendario', '/mis-tareas', '/dashboard/expenses', '/dashboard/reports'].some(route => location.pathname === route || location.pathname.startsWith(route + '/'));
+  const showBottomNav = isProfessional || (userRole === 'admin' && isOnProfessionalRoute);
 
   useEffect(() => {
     async function checkUserStatus() {
@@ -57,7 +59,7 @@ export default function Layout({ children, title, isFullWidth = false }) {
             </div>
         </header>
 
-        <main className={`flex-1 overflow-x-hidden overflow-y-auto bg-slate-50 p-6 md:p-8 ${isProfessional ? 'pb-24 md:pb-8' : ''}`}>
+        <main className={`flex-1 overflow-x-hidden overflow-y-auto bg-slate-50 p-6 md:p-8 ${showBottomNav ? 'pb-24 md:pb-8' : ''}`}>
             <div className={isFullWidth ? "w-full px-2" : "max-w-7xl mx-auto"}>
                 <PageTransition key={location.pathname}>
                     {children}
@@ -74,7 +76,7 @@ export default function Layout({ children, title, isFullWidth = false }) {
         )}
 
         {/* Mobile bottom nav — professionals only */}
-        {isProfessional && (
+        {showBottomNav && (
           <nav className="fixed bottom-0 inset-x-0 bg-slate-900 border-t border-slate-800 flex md:hidden z-40">
             {PROF_NAV.map(({ to, icon: Icon, label }) => {
               const active = location.pathname === to || location.pathname.startsWith(to + '/');
