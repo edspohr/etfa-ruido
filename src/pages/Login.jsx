@@ -16,7 +16,7 @@ export default function Login() {
        if (userRole === 'admin') {
          navigate('/admin/select-module');
        } else {
-         navigate('/dashboard');
+         navigate('/mis-proyectos');
        }
     }
   }, [currentUser, userRole, navigate]);
