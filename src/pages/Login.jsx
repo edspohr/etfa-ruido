@@ -14,7 +14,7 @@ export default function Login() {
   useEffect(() => {
     if (currentUser && userRole) {
        if (userRole === 'admin') {
-         navigate('/admin/select-module');
+         navigate('/admin');
        } else {
          navigate('/mis-proyectos');
        }
