@@ -350,35 +350,35 @@ export default function AdminProjectDetails() {
 
         {/* Contacto y Recursos Card */}
         {(project.contacto?.nombre || project.contacto?.email || (project.recursos?.ingenieros?.length > 0)) && (
-            <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 mb-8">
-                <h3 className="text-sm font-bold text-slate-300 uppercase tracking-wide mb-4">Contacto y Recursos</h3>
+            <div className="bg-white border border-slate-100 rounded-2xl p-6 mb-8 shadow-sm">
+                <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wide mb-4">Contacto y Recursos</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {(project.contacto?.nombre || project.contacto?.telefono || project.contacto?.email || project.contacto?.cargo) && (
                         <div>
-                            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Contacto del cliente</p>
+                            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Contacto</p>
                             <div className="space-y-2">
                                 {project.contacto?.nombre && (
                                     <div>
-                                        <span className="text-xs text-slate-400">Nombre</span>
-                                        <p className="text-sm font-medium text-slate-100">{project.contacto.nombre}</p>
+                                        <span className="text-xs text-slate-500">Nombre</span>
+                                        <p className="text-sm font-medium text-slate-800">{project.contacto.nombre}</p>
                                     </div>
                                 )}
                                 {project.contacto?.telefono && (
                                     <div>
-                                        <span className="text-xs text-slate-400">Teléfono / WhatsApp</span>
-                                        <p className="text-sm font-medium text-slate-100">{project.contacto.telefono}</p>
+                                        <span className="text-xs text-slate-500">Teléfono / WhatsApp</span>
+                                        <p className="text-sm font-medium text-slate-800">{project.contacto.telefono}</p>
                                     </div>
                                 )}
                                 {project.contacto?.email && (
                                     <div>
-                                        <span className="text-xs text-slate-400">Email</span>
-                                        <p className="text-sm font-medium text-slate-100">{project.contacto.email}</p>
+                                        <span className="text-xs text-slate-500">Email</span>
+                                        <p className="text-sm font-medium text-slate-800">{project.contacto.email}</p>
                                     </div>
                                 )}
                                 {project.contacto?.cargo && (
                                     <div>
-                                        <span className="text-xs text-slate-400">Cargo / Rol</span>
-                                        <p className="text-sm font-medium text-slate-100">{project.contacto.cargo}</p>
+                                        <span className="text-xs text-slate-500">Cargo / Rol</span>
+                                        <p className="text-sm font-medium text-slate-800">{project.contacto.cargo}</p>
                                     </div>
                                 )}
                             </div>
@@ -386,16 +386,16 @@ export default function AdminProjectDetails() {
                     )}
                     {(project.recursos?.ingenieros?.length > 0 || project.recursos?.vehiculo || project.recursos?.equipamiento) && (
                         <div>
-                            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Recursos asignados</p>
+                            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Recursos asignados</p>
                             <div className="space-y-2">
                                 {project.recursos?.ingenieros?.length > 0 && (
                                     <div>
-                                        <span className="text-xs text-slate-400">Ingenieros</span>
+                                        <span className="text-xs text-slate-500">Ingenieros</span>
                                         <div className="flex flex-wrap gap-1 mt-1">
                                             {project.recursos.ingenieros.map(uid => {
                                                 const u = users.find(u => u.id === uid);
                                                 return (
-                                                    <span key={uid} className="px-2 py-0.5 bg-slate-700 text-slate-200 rounded-full text-xs">
+                                                    <span key={uid} className="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-full text-xs font-medium">
                                                         {u?.displayName || "Usuario no encontrado"}
                                                     </span>
                                                 );
@@ -405,14 +405,14 @@ export default function AdminProjectDetails() {
                                 )}
                                 {project.recursos?.vehiculo && (
                                     <div>
-                                        <span className="text-xs text-slate-400">Vehículo</span>
-                                        <p className="text-sm font-medium text-slate-100">{project.recursos.vehiculo}</p>
+                                        <span className="text-xs text-slate-500">Vehículo</span>
+                                        <p className="text-sm font-medium text-slate-800">{project.recursos.vehiculo}</p>
                                     </div>
                                 )}
                                 {project.recursos?.equipamiento && (
                                     <div>
-                                        <span className="text-xs text-slate-400">Equipamiento</span>
-                                        <p className="text-sm font-medium text-slate-100">{project.recursos.equipamiento}</p>
+                                        <span className="text-xs text-slate-500">Equipamiento</span>
+                                        <p className="text-sm font-medium text-slate-800">{project.recursos.equipamiento}</p>
                                     </div>
                                 )}
                             </div>

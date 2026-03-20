@@ -12,8 +12,11 @@ import UserExpenses from './pages/UserExpenses';
 import ExpenseForm from './pages/ExpenseForm';
 import ProtectedRoute from './components/ProtectedRoute';
 import { useAuth } from './context/useAuth';
+import AdminProjectWizard from './pages/AdminProjectWizard';
+import ProfessionalFieldReport from './pages/ProfessionalFieldReport';
+import AdminReportsV2 from './pages/AdminReportsV2';
+import NewReportManual from './pages/NewReportManual';
 
-import AdminModuleSelector from './pages/AdminModuleSelector';
 import AdminInvoicingDashboard from './pages/AdminInvoicingDashboard';
 import AdminKanbanBoard from './pages/AdminKanbanBoard';
 import AdminInvoicingGeneration from './pages/AdminInvoicingGeneration';
@@ -32,7 +35,7 @@ import ProfessionalTasks from './pages/ProfessionalTasks';
 function RootRedirect() {
   const { currentUser, userRole } = useAuth();
   if (!currentUser) return <Navigate to="/login" />;
-  if (userRole === 'admin') return <Navigate to="/admin/select-module" />;
+  if (userRole === 'admin') return <Navigate to="/admin" />;
   if (userRole === 'professional') return <Navigate to="/mis-proyectos" />;
   return <Navigate to="/login" />;
 }
@@ -44,7 +47,6 @@ function App() {
         <Route path="/login" element={<Login />} />
         
         {/* Admin Routes */}
-        <Route path="/admin/select-module" element={<ProtectedRoute requiredRole="admin"><AdminModuleSelector /></ProtectedRoute>} />
         
         {/* Main Admin Dashboard (Kanban) */}
         <Route path="/admin" element={<ProtectedRoute requiredRole="admin"><AdminKanbanBoard /></ProtectedRoute>} />
@@ -53,6 +55,21 @@ function App() {
         <Route path="/admin/expenses" element={<ProtectedRoute requiredRole="admin"><AdminDashboard /></ProtectedRoute>} />
         <Route path="/admin/projects" element={<ProtectedRoute requiredRole="admin"><AdminProjects /></ProtectedRoute>} />
         <Route path="/admin/projects/:id" element={<ProtectedRoute requiredRole="admin"><AdminProjectDetails /></ProtectedRoute>} />
+        <Route path="/admin/projects/new" element={
+          <ProtectedRoute requiredRole="admin">
+            <AdminProjectWizard />
+          </ProtectedRoute>
+        } />
+        <Route path="/admin/reports" element={
+          <ProtectedRoute requiredRole="admin">
+            <AdminReportsV2 />
+          </ProtectedRoute>
+        } />
+        <Route path="/informes/nuevo" element={
+          <ProtectedRoute>
+            <NewReportManual />
+          </ProtectedRoute>
+        } />
         <Route path="/admin/users/:id" element={<ProtectedRoute requiredRole="admin"><AdminUserDetails /></ProtectedRoute>} />
         <Route path="/admin/approvals" element={<ProtectedRoute requiredRole="admin"><AdminApprovals /></ProtectedRoute>} />
         <Route path="/admin/balances" element={<ProtectedRoute requiredRole="admin"><AdminBalances /></ProtectedRoute>} />
@@ -65,7 +82,7 @@ function App() {
         <Route path="/admin/tasks" element={<ProtectedRoute requiredRole="admin"><AdminTasks /></ProtectedRoute>} />
 
         {/* Reports Module */}
-        <Route path="/admin/reports" element={<ProtectedRoute requiredRole="admin"><AdminReports /></ProtectedRoute>} />
+        <Route path="/admin/reports" element={<ProtectedRoute requiredRole="admin"><AdminReportsV2 /></ProtectedRoute>} />
 
         {/* Analytics Module */}
         <Route path="/admin/analytics" element={<ProtectedRoute requiredRole="admin"><AdminAnalytics /></ProtectedRoute>} />
@@ -80,6 +97,11 @@ function App() {
         <Route path="/mis-proyectos" element={<ProtectedRoute requiredRole={['professional', 'admin']}><ProfessionalProjects /></ProtectedRoute>} />
         <Route path="/mi-calendario" element={<ProtectedRoute requiredRole={['professional', 'admin']}><ProfessionalCalendar /></ProtectedRoute>} />
         <Route path="/mis-tareas" element={<ProtectedRoute requiredRole={['professional', 'admin']}><ProfessionalTasks /></ProtectedRoute>} />
+        <Route path="/mis-tareas/informe/:calendarEventId" element={
+          <ProtectedRoute requiredRole={['professional', 'admin']}>
+            <ProfessionalFieldReport />
+          </ProtectedRoute>
+        } />
 
         {/* User Routes (legacy + shared) */}
         <Route path="/dashboard" element={<ProtectedRoute requiredRole={['professional', 'admin']}><UserDashboard /></ProtectedRoute>} />

@@ -5,6 +5,7 @@ import { db } from '../lib/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { useAuth } from '../context/useAuth';
 import { FolderOpen, Phone, Mail, User, Car, Wrench } from 'lucide-react';
+import { sortProjects } from '../utils/sort';
 
 // NOTE: Firestore requires a composite index for this query:
 //   Collection: projects
@@ -30,6 +31,7 @@ function StatusBadge({ status }) {
 export default function ProfessionalProjects() {
   const { currentUser } = useAuth();
   const [projects, setProjects] = useState([]);
+  const [reportStatusMap, setReportStatusMap] = useState({});
   const [loading,  setLoading]  = useState(true);
 
   useEffect(() => {
@@ -44,7 +46,21 @@ export default function ProfessionalProjects() {
             where('recursos.ingenieros', 'array-contains', currentUser.uid)
           )
         );
-        setProjects(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        setProjects(sortProjects(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+
+        // Secondary fetch: reports status
+        const reportsSnap = await getDocs(
+          query(collection(db, 'reports'), 
+            where('authorId', '==', currentUser.uid),
+            where('status', 'in', ['submitted', 'in_progress'])
+          )
+        );
+        const reportMap = {};
+        reportsSnap.docs.forEach(d => {
+          reportMap[d.data().projectId] = d.data().status;
+        });
+        setReportStatusMap(reportMap);
+
       } catch (e) {
         console.error('Error al cargar proyectos:', e);
       } finally {
@@ -76,7 +92,7 @@ export default function ProfessionalProjects() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
           {projects.map(project => (
-            <ProjectCard key={project.id} project={project} />
+            <ProjectCard key={project.id} project={project} reportStatusMap={reportStatusMap} />
           ))}
         </div>
       )}
@@ -84,7 +100,7 @@ export default function ProfessionalProjects() {
   );
 }
 
-function ProjectCard({ project }) {
+function ProjectCard({ project, reportStatusMap }) {
   const { code, name, client, status, contacto, recursos } = project;
   const phone   = contacto?.telefono;
   const email   = contacto?.email;
@@ -100,9 +116,16 @@ function ProjectCard({ project }) {
             <p className="text-indigo-400 font-mono text-xs font-bold mb-0.5">[{code}]</p>
           )}
           <h3 className="text-white font-bold text-base leading-snug">{name}</h3>
-          {client && (
-            <p className="text-slate-400 text-xs mt-0.5 truncate">{client}</p>
-          )}
+          <div className="flex items-center gap-2 mt-1">
+            {client && (
+              <p className="text-slate-400 text-xs truncate">{client}</p>
+            )}
+            {reportStatusMap?.[project.id] && (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                {reportStatusMap[project.id] === 'submitted' ? 'Informe enviado' : 'En confección'}
+              </span>
+            )}
+          </div>
         </div>
         <StatusBadge status={status} />
       </div>

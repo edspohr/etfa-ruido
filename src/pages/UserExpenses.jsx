@@ -71,6 +71,14 @@ export default function UserExpenses() {
 
   return (
     <Layout title="Mis Rendiciones Históricas">
+      <div className="flex justify-end mb-4">
+        <button
+          onClick={() => navigate('/dashboard/new-expense')}
+          className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-md transition-all flex items-center gap-2"
+        >
+          Nueva Rendición
+        </button>
+      </div>
        <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
          <table className="w-full text-left">
             <thead>

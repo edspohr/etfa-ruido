@@ -79,158 +79,83 @@ export default function Sidebar({ isOpen, setIsOpen }) {
         )}
 
         {userRole === 'admin' && (
-            <>
-                {/* Active Module Indicator */}
-                <div className="px-4 mb-3 mt-8">
-                    {location.pathname !== '/admin/select-module' && (
-                        <div className="flex items-center justify-center py-2.5 px-3 rounded-xl bg-slate-900 border border-slate-800 shadow-inner">
-                            <span className="text-xs font-black text-slate-100 uppercase tracking-widest flex items-center justify-center">
-                                {(location.pathname.startsWith('/admin/expenses') || location.pathname.startsWith('/admin/approvals') || location.pathname.startsWith('/admin/projects') || location.pathname.startsWith('/admin/balances'))
-                                    ? <><div className="w-2.5 h-2.5 rounded-full mr-2.5 bg-indigo-400 shadow-[0_0_12px_rgba(129,140,248,0.8)] animate-pulse"></div> RENDICIONES</>
-                                    : location.pathname.startsWith('/admin/reports')
-                                    ? <><div className="w-2.5 h-2.5 rounded-full mr-2.5 bg-teal-400 shadow-[0_0_12px_rgba(45,212,191,0.8)] animate-pulse"></div> INFORMES</>
-                                    : (location.pathname === '/admin' || location.pathname.startsWith('/admin/invoicing') || location.pathname.startsWith('/admin/analytics'))
-                                    ? <><div className="w-2.5 h-2.5 rounded-full mr-2.5 bg-blue-400 shadow-[0_0_12px_rgba(96,165,250,0.8)] animate-pulse"></div> FINANCIERO</>
-                                    : location.pathname.startsWith('/admin/calendar')
-                                    ? <><div className="w-2.5 h-2.5 rounded-full mr-2.5 bg-green-400 shadow-[0_0_12px_rgba(74,222,128,0.8)] animate-pulse"></div> CALENDARIO</>
-                                    : location.pathname.startsWith('/admin/tasks')
-                                    ? <><div className="w-2.5 h-2.5 rounded-full mr-2.5 bg-violet-400 shadow-[0_0_12px_rgba(167,139,250,0.8)] animate-pulse"></div> PLANNER</>
-                                    : 'MÓDULO'}
-                            </span>
-                        </div>
-                    )}
-                </div>
+          <>
+            {/* Mi Espacio */}
+            <p className={groupTitleClass}>Mi Espacio</p>
+            <Link to="/mis-proyectos" className={linkClass('/mis-proyectos')} onClick={() => setIsOpen(false)}>
+                <FolderOpen className="w-4 h-4 mr-3" />
+                Mis Proyectos
+            </Link>
+            <Link to="/mi-calendario" className={linkClass('/mi-calendario')} onClick={() => setIsOpen(false)}>
+                <Calendar className="w-4 h-4 mr-3" />
+                Mi Calendario
+            </Link>
+            <Link to="/mis-tareas" className={linkClass('/mis-tareas')} onClick={() => setIsOpen(false)}>
+                <ClipboardList className="w-4 h-4 mr-3" />
+                Mis Tareas
+            </Link>
+            <Link to="/dashboard/expenses" className={linkClass('/dashboard/expenses')} onClick={() => setIsOpen(false)}>
+                <Receipt className="w-4 h-4 mr-3" />
+                Mis Rendiciones
+            </Link>
 
-                {/* Module Selector */}
-                <div className="px-4 mb-6">
-                    <Link 
-                        to="/admin/select-module" 
-                        className="flex items-center justify-center w-full py-3 px-4 bg-slate-800/80 hover:bg-slate-800 text-slate-300 hover:text-white rounded-xl border border-slate-700 transition-all text-sm font-bold group shadow-sm"
-                        onClick={() => setIsOpen(false)}
-                    >
-                        <Grid className="w-4 h-4 mr-2 group-hover:rotate-90 transition-transform duration-300" />
-                        Seleccionar Módulo
-                    </Link>
-                </div>
+            {/* Rendiciones */}
+            <p className={groupTitleClass}>Rendiciones</p>
+            <Link to="/admin/projects/new" className={linkClass('/admin/projects/new')} onClick={() => setIsOpen(false)}>
+                <FilePlus className="w-4 h-4 mr-3" />
+                Nuevo Proyecto
+            </Link>
+            <Link to="/admin/projects" className={linkClass('/admin/projects')} onClick={() => setIsOpen(false)}>
+                <FolderOpen className="w-4 h-4 mr-3" />
+                Proyectos
+            </Link>
+            <Link to="/admin/approvals" className={linkClass('/admin/approvals')} onClick={() => setIsOpen(false)}>
+                <CheckCircle className="w-4 h-4 mr-3" />
+                Aprobaciones
+            </Link>
+            <Link to="/admin/balances" className={linkClass('/admin/balances')} onClick={() => setIsOpen(false)}>
+                <Wallet className="w-4 h-4 mr-3" />
+                Saldos
+            </Link>
 
-                {/* Mi Espacio - Admin también es profesional */}
-                <p className={groupTitleClass}>Mi Espacio</p>
-                <Link to="/mis-proyectos" className={linkClass('/mis-proyectos')} onClick={() => setIsOpen(false)}>
-                    <FolderOpen className="w-4 h-4 mr-3" />
-                    Mis Proyectos
-                </Link>
-                <Link to="/mi-calendario" className={linkClass('/mi-calendario')} onClick={() => setIsOpen(false)}>
-                    <Calendar className="w-4 h-4 mr-3" />
-                    Mi Calendario
-                </Link>
-                <Link to="/mis-tareas" className={linkClass('/mis-tareas')} onClick={() => setIsOpen(false)}>
-                    <ClipboardList className="w-4 h-4 mr-3" />
-                    Mis Tareas
-                </Link>
-                <Link to="/dashboard/expenses" className={linkClass('/dashboard/expenses')} onClick={() => setIsOpen(false)}>
-                    <Receipt className="w-4 h-4 mr-3" />
-                    Mis Rendiciones
-                </Link>
-                <Link to="/dashboard/reports" className={linkClass('/dashboard/reports')} onClick={() => setIsOpen(false)}>
-                    <FileText className="w-4 h-4 mr-3" />
-                    Mis Mediciones
-                </Link>
+            {/* Operaciones */}
+            <p className={groupTitleClass}>Operaciones</p>
+            <Link to="/admin/calendar" className={linkClass('/admin/calendar')} onClick={() => setIsOpen(false)}>
+                <Calendar className="w-4 h-4 mr-3" />
+                Calendario
+            </Link>
+            <Link to="/admin/tasks" className={linkClass('/admin/tasks')} onClick={() => setIsOpen(false)}>
+                <ClipboardList className="w-4 h-4 mr-3" />
+                Planner
+            </Link>
+            <Link to="/admin/reports" className={linkClass('/admin/reports')} onClick={() => setIsOpen(false)}>
+                <FileText className="w-4 h-4 mr-3" />
+                Informes
+            </Link>
 
-                {/* Show different menus based on "Active Module" inferred from URL */}
-                {(location.pathname.startsWith('/admin/expenses') || location.pathname.startsWith('/admin/approvals') || location.pathname.startsWith('/admin/projects') || location.pathname.startsWith('/admin/balances')) ? (
-                    // --- EXPENSES MODULE MENU ---
-                    <>
-                        <div className="px-4 mt-6 mb-2">
-                             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Gestión Rendiciones</p>
-                        </div>
-                        
-                        <Link to="/admin/expenses" className={linkClass('/admin/expenses')} onClick={() => setIsOpen(false)}>
-                            <PieChart className="w-4 h-4 mr-3" />
-                            KPIs / Gráficos
-                        </Link>
-                        <Link to="/admin/projects" className={linkClass('/admin/projects')} onClick={() => setIsOpen(false)}>
-                            <FolderOpen className="w-4 h-4 mr-3" />
-                            Proyectos
-                        </Link>
-                        <Link to="/admin/approvals" className={linkClass('/admin/approvals')} onClick={() => setIsOpen(false)}>
-                            <CheckCircle className="w-4 h-4 mr-3" />
-                            Aprobaciones
-                        </Link>
-                        <Link to="/admin/balances" className={linkClass('/admin/balances')} onClick={() => setIsOpen(false)}>
-                            <Wallet className="w-4 h-4 mr-3" />
-                            Saldos (Viáticos)
-                        </Link>
-                    </>
-                ) : location.pathname.startsWith('/admin/reports') ? (
-                    // --- REPORTS MODULE MENU ---
-                    <>
-                         <div className="px-4 mt-6 mb-2">
-                             <p className="text-[10px] font-bold text-teal-400 uppercase tracking-widest">Informes Terreno</p>
-                        </div>
-                        <Link to="/admin/reports" className={linkClass('/admin/reports')} onClick={() => setIsOpen(false)}>
-                            <ClipboardList className="w-4 h-4 mr-3" />
-                            Bandeja Informes
-                        </Link>
-                    </>
-                ) : (location.pathname === '/admin' || location.pathname.startsWith('/admin/invoicing') || location.pathname.startsWith('/admin/analytics')) ? (
-                    // --- FINANCIAL MODULE MENU ---
-                    <>
-                         <div className="px-4 mt-6 mb-2">
-                             <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">Módulo Financiero</p>
-                        </div>
-                        <Link to="/admin" className={linkClass('/admin')} onClick={() => setIsOpen(false)}>
-                            <LayoutDashboard className="w-4 h-4 mr-3" />
-                            Tablero Kanban
-                        </Link>
-                        <Link to="/admin/invoicing/generate" className={linkClass('/admin/invoicing/generate')} onClick={() => setIsOpen(false)}>
-                            <FilePlus className="w-4 h-4 mr-3" />
-                            Registro de Factura
-                        </Link>
-                        <Link to="/admin/invoicing/reconciliation" className={linkClass('/admin/invoicing/reconciliation')} onClick={() => setIsOpen(false)}>
-                            <Wallet className="w-4 h-4 mr-3" />
-                            Conciliación
-                        </Link>
-                        <Link to="/admin/invoicing/history" className={linkClass('/admin/invoicing/history')} onClick={() => setIsOpen(false)}>
-                            <FolderOpen className="w-4 h-4 mr-3" />
-                            Historial
-                        </Link>
-                        <Link to="/admin/analytics" className={linkClass('/admin/analytics')} onClick={() => setIsOpen(false)}>
-                            <BarChart3 className="w-4 h-4 mr-3" />
-                            Análisis de Datos
-                        </Link>
-                    </>
-                ) : location.pathname.startsWith('/admin/calendar') ? (
-                    // --- CALENDAR MODULE MENU ---
-                    <>
-                        <div className="px-4 mt-6 mb-2">
-                            <p className="text-[10px] font-bold text-green-400 uppercase tracking-widest">Calendario Terreno</p>
-                        </div>
-                        <Link to="/admin/calendar" className={linkClass('/admin/calendar')} onClick={() => setIsOpen(false)}>
-                            <Calendar className="w-4 h-4 mr-3" />
-                            Semana de Terreno
-                        </Link>
-                        <Link to="/admin/tasks" className={linkClass('/admin/tasks')} onClick={() => setIsOpen(false)}>
-                            <ClipboardList className="w-4 h-4 mr-3" />
-                            Planner
-                        </Link>
-                    </>
-                ) : location.pathname.startsWith('/admin/tasks') ? (
-                    // --- PLANNER MODULE MENU ---
-                    <>
-                        <div className="px-4 mt-6 mb-2">
-                            <p className="text-[10px] font-bold text-violet-400 uppercase tracking-widest">Planner</p>
-                        </div>
-                        <Link to="/admin/tasks" className={linkClass('/admin/tasks')} onClick={() => setIsOpen(false)}>
-                            <ClipboardList className="w-4 h-4 mr-3" />
-                            Planner
-                        </Link>
-                        <Link to="/admin/calendar" className={linkClass('/admin/calendar')} onClick={() => setIsOpen(false)}>
-                            <Calendar className="w-4 h-4 mr-3" />
-                            Calendario Terreno
-                        </Link>
-                    </>
-                ) : null}
-            </>
+            {/* Financiero */}
+            <p className={groupTitleClass}>Financiero</p>
+            <Link to="/admin" className={linkClass('/admin')} onClick={() => setIsOpen(false)}>
+                <LayoutDashboard className="w-4 h-4 mr-3" />
+                Kanban
+            </Link>
+            <Link to="/admin/invoicing/generate" className={linkClass('/admin/invoicing/generate')} onClick={() => setIsOpen(false)}>
+                <FilePlus className="w-4 h-4 mr-3" />
+                Registro Factura
+            </Link>
+            <Link to="/admin/invoicing/reconciliation" className={linkClass('/admin/invoicing/reconciliation')} onClick={() => setIsOpen(false)}>
+                <Wallet className="w-4 h-4 mr-3" />
+                Conciliación
+            </Link>
+            <Link to="/admin/invoicing/history" className={linkClass('/admin/invoicing/history')} onClick={() => setIsOpen(false)}>
+                <FolderOpen className="w-4 h-4 mr-3" />
+                Historial Facturas
+            </Link>
+            <Link to="/admin/analytics" className={linkClass('/admin/analytics')} onClick={() => setIsOpen(false)}>
+                <BarChart3 className="w-4 h-4 mr-3" />
+                Analítica
+            </Link>
+          </>
         )}
 
         <div className="mt-auto pt-10">

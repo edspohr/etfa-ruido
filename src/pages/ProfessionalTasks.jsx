@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 import EmptyState from '../components/EmptyState';
 import { db } from '../lib/firebase';
 import { collection, getDocs, updateDoc, doc, query, where, serverTimestamp } from 'firebase/firestore';
 import { format, parseISO, addDays } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { ClipboardList, ChevronDown, ChevronUp, Save, Loader2 } from 'lucide-react';
+import { ClipboardList, ChevronDown, ChevronUp, Save, Loader2, FileText } from 'lucide-react';
 import { useAuth } from '../context/useAuth';
 import { toast } from 'sonner';
 
@@ -69,6 +70,7 @@ function getDueDateColor(dueDate) {
 // ── TaskRow ───────────────────────────────────────────────────────────────────
 
 function TaskRow({ task, onStatusChange }) {
+  const navigate = useNavigate();
   const [expanded,    setExpanded]    = useState(false);
   const [noteInput,   setNoteInput]   = useState('');
   const [savingNote,  setSavingNote]  = useState(false);
@@ -158,6 +160,23 @@ function TaskRow({ task, onStatusChange }) {
           </button>
         </div>
       </div>
+
+      {task.type === 'reporte_tecnico' && task.calendarEventId && (
+        <div className="px-4 pb-3">
+          <button
+            onClick={() => navigate(
+              `/mis-tareas/informe/${task.calendarEventId}`
+            )}
+            className="w-full flex items-center justify-center gap-2 
+                      py-2 px-4 bg-indigo-600 hover:bg-indigo-700 
+                      text-white text-sm font-semibold rounded-xl 
+                      transition-colors"
+          >
+            <FileText className="w-4 h-4" />
+            Redactar informe
+          </button>
+        </div>
+      )}
 
       {/* Expandable notes section */}
       {expanded && (

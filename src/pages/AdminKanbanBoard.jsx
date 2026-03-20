@@ -49,17 +49,10 @@ const KanbanCard = ({ project, index, onClick }) => {
                     onClick={() => onClick(project)}
                     className={`
                         bg-white p-3 rounded-lg shadow-sm border border-slate-200 mb-2 cursor-pointer 
-                        hover:shadow-md hover:border-indigo-300 transition-all group relative
+                        hover:shadow-md hover:border-indigo-300 transition-all group
                         ${snapshot.isDragging ? 'shadow-lg rotate-2 ring-2 ring-indigo-400 z-50' : ''}
                     `}
                 >
-                    {/* Inactivity Badge */ }
-                    {showInactivityAlert && (
-                        <div className="absolute -top-2 -right-2 bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full border border-red-200 shadow-sm flex items-center gap-1 z-10">
-                             <FaExclamationCircle className="w-3 h-3" />
-                             <span className="text-[9px] font-bold whitespace-nowrap">7+ d sin mov.</span>
-                        </div>
-                    )}
 
                     {/* Header: Code & Recurrence */}
                     <div className="flex justify-between items-start mb-1.5">
@@ -86,6 +79,13 @@ const KanbanCard = ({ project, index, onClick }) => {
                     <p className="text-[10px] text-slate-500 truncate font-medium">
                         {project.client || 'Cliente Sin Nombre'}
                     </p>
+
+                    {showInactivityAlert && (
+                        <div className="mt-2 flex items-center gap-1 text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">
+                            <FaExclamationCircle className="w-3 h-3 flex-shrink-0" />
+                            <span className="text-[10px] font-bold">+7 días sin movimiento</span>
+                        </div>
+                    )}
 
                     {/* Optional: Budget progress could go here */}
                 </div>

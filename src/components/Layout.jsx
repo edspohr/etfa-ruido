@@ -21,7 +21,7 @@ export default function Layout({ children, title, isFullWidth = false }) {
   const [mustChangePass, setMustChangePass] = useState(false);
   const location = useLocation();
   const isProfessional = userRole && userRole !== 'admin';
-  const isOnProfessionalRoute = ['/mis-proyectos', '/mi-calendario', '/mis-tareas', '/dashboard/expenses', '/dashboard/reports'].some(route => location.pathname === route || location.pathname.startsWith(route + '/'));
+  const isOnProfessionalRoute = ['/mis-proyectos', '/mi-calendario', '/mis-tareas', '/mis-tareas/informe', '/informes/nuevo', '/dashboard/expenses', '/dashboard/reports'].some(route => location.pathname === route || location.pathname.startsWith(route + '/'));
   const showBottomNav = isProfessional || (userRole === 'admin' && isOnProfessionalRoute);
 
   useEffect(() => {

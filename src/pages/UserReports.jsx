@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/useAuth';
 import { db } from '../lib/firebase';
-import { collection, addDoc, query, where, getDocs, serverTimestamp, orderBy } from 'firebase/firestore';
+import { collection, addDoc, query, where, getDocs, serverTimestamp } from 'firebase/firestore';
 import { toast } from 'sonner';
 import { ClipboardList, PlusCircle, CheckCircle, AlertTriangle, Clock } from 'lucide-react';
 import { sortProjects } from '../utils/sort';
@@ -106,9 +107,18 @@ export default function UserReports() {
                 {/* Formulario */}
                 <div className="md:col-span-1">
                     <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-                        <div className="flex items-center gap-2 mb-6 text-teal-700">
-             <ClipboardList className="w-5 h-5" />
-                            <h2 className="text-lg font-bold">Registrar Medición</h2>
+                        <div className="flex items-center justify-between mb-6">
+                            <div className="flex items-center gap-2 text-teal-700">
+                                <ClipboardList className="w-5 h-5" />
+                                <h2 className="text-lg font-bold">Registrar Medición</h2>
+                            </div>
+                            <Link 
+                                to="/informes/nuevo"
+                                className="bg-teal-50 text-teal-700 hover:bg-teal-100 px-3 py-1.5 rounded-lg border border-teal-200 text-xs font-bold transition-all flex items-center gap-1.5"
+                            >
+                                <PlusCircle className="w-3.5 h-3.5" />
+                                Dictado Manual
+                            </Link>
                         </div>
 
                         <form onSubmit={handleSubmit} className="space-y-4">

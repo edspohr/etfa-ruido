@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { db } from '../lib/firebase';
 import { collection, getDocs, addDoc, query, where, doc, updateDoc, increment, serverTimestamp } from 'firebase/firestore';
@@ -11,25 +11,13 @@ import { toast } from 'sonner';
 import SearchableSelect from '../components/SearchableSelect';
 
 export default function AdminProjects() {
+  const navigate = useNavigate();
   const [projects, setProjects] = useState([]);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false); // [NEW] Prevent double clicks
 
-  // Form States
-  const [showProjectForm, setShowProjectForm] = useState(false);
-  const [newProject, setNewProject] = useState({
-    name: '',
-    client: '',
-    code: '',
-    recurrence: '',
-    contacto: { nombre: '', telefono: '', email: '', cargo: '' },
-    recursos: { ingenieros: [], vehiculo: '', equipamiento: '' }
-  });
-  const [showContactoRecursos, setShowContactoRecursos] = useState(false);
-  const [showIngenieroDropdown, setShowIngenieroDropdown] = useState(false);
-  const [clients, setClients] = useState([]);
-  
+
   const [viaticoUser, setViaticoUser] = useState('');
   const [viaticoProject, setViaticoProject] = useState('');
   const [viaticoAmount, setViaticoAmount] = useState('');
@@ -54,31 +42,6 @@ export default function AdminProjects() {
         const uSnap = await getDocs(uQuery);
         const uData = uSnap.docs.map(d => ({id: d.id, ...d.data()}));
         setUsers(uData);
-
-        // Fetch Clients for the dropdown
-        const cSnap = await getDocs(collection(db, "clients"));
-        const cData = cSnap.docs.map(d => ({
-            id: d.id, 
-            label: d.data().razonSocial || d.data().name || 'Sin Nombre',
-            value: d.data().razonSocial || d.data().name || 'Sin Nombre',
-            ...d.data()
-        }));
-
-        // Also extract existing unique clients from projects
-        const existingClientsFromProjects = [...new Set(pData.map(p => p.client).filter(Boolean))];
-        const uniqueValues = new Set(cData.map(c => c.value.toLowerCase()));
-        
-        existingClientsFromProjects.forEach(c => {
-           if (!uniqueValues.has(c.toLowerCase())) {
-               cData.push({ id: c, label: c, value: c });
-               uniqueValues.add(c.toLowerCase());
-           }
-        });
-
-        // Sort alphabetically
-        cData.sort((a,b) => a.label.localeCompare(b.label));
-
-        setClients(cData);
     } catch (e) {
         console.error("Error fetching admin data:", e);
     } finally {
@@ -89,54 +52,6 @@ export default function AdminProjects() {
   useEffect(() => {
     fetchData();
   }, []);
-
-  const handleCreateProject = async (e) => {
-    e.preventDefault();
-    if (!newProject.name) return;
-
-    try {
-        const projectRef = await addDoc(collection(db, "projects"), {
-            name: newProject.name,
-            code: newProject.code || '',
-            recurrence: newProject.recurrence || '',
-            isRecurrent: !!newProject.recurrence,
-            client: newProject.client,
-            expenses: 0,
-            status: 'active',
-            createdAt: new Date().toISOString(),
-            contacto: {
-                nombre: newProject.contacto.nombre || '',
-                telefono: newProject.contacto.telefono || '',
-                email: newProject.contacto.email || '',
-                cargo: newProject.contacto.cargo || ''
-            },
-            recursos: {
-                ingenieros: newProject.recursos.ingenieros || [],
-                vehiculo: newProject.recursos.vehiculo || '',
-                equipamiento: newProject.recursos.equipamiento || ''
-            }
-        });
-
-        // Register in Bitacora
-        await addDoc(collection(db, "projects", projectRef.id, "logs"), {
-            type: 'status_change',
-            content: `Proyecto creado: ${newProject.name}`,
-            userName: 'Admin',
-            userRole: 'admin',
-            timestamp: serverTimestamp()
-        });
-
-        toast.success("Proyecto creado exitosamente");
-        setNewProject({ name: '', client: '', code: '', recurrence: '', contacto: { nombre: '', telefono: '', email: '', cargo: '' }, recursos: { ingenieros: [], vehiculo: '', equipamiento: '' } });
-        setShowContactoRecursos(false);
-        setShowIngenieroDropdown(false);
-        setShowProjectForm(false);
-        fetchData();
-    } catch (err) {
-        console.error(err);
-        toast.error("Error al crear proyecto");
-    }
-  };
 
   const handleDeleteProject = async (projectId) => {
       const pin = prompt("Ingrese clave maestra para ELIMINAR este proyecto:");
@@ -255,184 +170,24 @@ export default function AdminProjects() {
     <Layout title="Gestión de Proyectos y Viáticos">
         {/* Actions Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
-            
-            {/* Create Project Section */}
+                {/* Create Project Section (Wizard Link) */}
             <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
-                <div className="flex justify-between items-center mb-4">
-                    <h2 className="text-lg font-bold text-gray-800">Crear Nuevo Proyecto</h2>
-                    <button 
-                        onClick={() => setShowProjectForm(!showProjectForm)}
-                        className="text-blue-600 hover:text-blue-800"
-                    >
-                        {showProjectForm ? 'Cancelar' : <Plus className="w-5 h-5"/>}
-                    </button>
-                </div>
-                
-                {showProjectForm && (
-                    <form onSubmit={handleCreateProject} className="space-y-4">
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700">Nombre del Proyecto</label>
-                            <input 
-                                type="text" 
-                                className="mt-1 w-full p-2 border rounded"
-                                value={newProject.name}
-                                onChange={e => setNewProject({...newProject, name: e.target.value})}
-                                required 
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700">Código de Proyecto</label>
-                            <input 
-                                type="text" 
-                                className="mt-1 w-full p-2 border rounded"
-                                value={newProject.code}
-                                onChange={e => setNewProject({...newProject, code: e.target.value})}
-                                placeholder="Ej: PRJ-001"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700">Recurrencia</label>
-                            <input 
-                                type="text" 
-                                className="mt-1 w-full p-2 border rounded"
-                                value={newProject.recurrence}
-                                onChange={e => setNewProject({...newProject, recurrence: e.target.value})}
-                                placeholder="Ej: A, B, C..."
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Cliente</label>
-                            <SearchableSelect 
-                                options={clients}
-                                value={newProject.client}
-                                onChange={(val) => setNewProject({...newProject, client: val})}
-                                placeholder="Seleccionar cliente..."
-                            />
-                        </div>
-
-                        {/* Contacto y Recursos - Collapsible */}
-                        <div className="border border-gray-200 rounded-lg overflow-hidden">
-                            <button
-                                type="button"
-                                onClick={() => setShowContactoRecursos(!showContactoRecursos)}
-                                className="w-full flex justify-between items-center px-4 py-3 bg-gray-50 hover:bg-gray-100 text-sm font-semibold text-gray-700 transition-colors"
-                            >
-                                <span>Contacto y Recursos</span>
-                                {showContactoRecursos ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                            </button>
-                            {showContactoRecursos && (
-                                <div className="px-4 py-4 space-y-4">
-                                    {/* Subsección A: Contacto del cliente */}
-                                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Contacto del cliente</p>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700">Nombre de contacto</label>
-                                        <input
-                                            type="text"
-                                            className="mt-1 w-full p-2 border rounded"
-                                            value={newProject.contacto.nombre}
-                                            onChange={e => setNewProject({...newProject, contacto: {...newProject.contacto, nombre: e.target.value}})}
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700">Teléfono / WhatsApp</label>
-                                        <input
-                                            type="tel"
-                                            className="mt-1 w-full p-2 border rounded"
-                                            value={newProject.contacto.telefono}
-                                            onChange={e => setNewProject({...newProject, contacto: {...newProject.contacto, telefono: e.target.value}})}
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700">Email de contacto</label>
-                                        <input
-                                            type="email"
-                                            className="mt-1 w-full p-2 border rounded"
-                                            value={newProject.contacto.email}
-                                            onChange={e => setNewProject({...newProject, contacto: {...newProject.contacto, email: e.target.value}})}
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700">Cargo / Rol</label>
-                                        <input
-                                            type="text"
-                                            className="mt-1 w-full p-2 border rounded"
-                                            value={newProject.contacto.cargo}
-                                            onChange={e => setNewProject({...newProject, contacto: {...newProject.contacto, cargo: e.target.value}})}
-                                        />
-                                    </div>
-
-                                    {/* Subsección B: Recursos asignados */}
-                                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide pt-2">Recursos asignados</p>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Ingenieros asignados</label>
-                                        <div className="relative">
-                                            <button
-                                                type="button"
-                                                onClick={() => setShowIngenieroDropdown(!showIngenieroDropdown)}
-                                                className="w-full p-2 border rounded text-left text-sm flex justify-between items-center bg-white"
-                                            >
-                                                <span className="text-gray-600">
-                                                    {newProject.recursos.ingenieros.length === 0
-                                                        ? 'Seleccionar ingenieros...'
-                                                        : `${newProject.recursos.ingenieros.length} seleccionado(s)`}
-                                                </span>
-                                                {showIngenieroDropdown ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
-                                            </button>
-                                            {showIngenieroDropdown && (
-                                                <div className="absolute z-10 w-full bg-white border border-gray-200 rounded shadow-lg mt-1 max-h-40 overflow-y-auto">
-                                                    {users.filter(u => u.role === 'professional').map(u => (
-                                                        <label key={u.id} className="flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer">
-                                                            <input
-                                                                type="checkbox"
-                                                                className="mr-2"
-                                                                checked={newProject.recursos.ingenieros.includes(u.id)}
-                                                                onChange={(e) => {
-                                                                    const updated = e.target.checked
-                                                                        ? [...newProject.recursos.ingenieros, u.id]
-                                                                        : newProject.recursos.ingenieros.filter(uid => uid !== u.id);
-                                                                    setNewProject({...newProject, recursos: {...newProject.recursos, ingenieros: updated}});
-                                                                }}
-                                                            />
-                                                            <span className="text-sm text-gray-700">{u.displayName}</span>
-                                                        </label>
-                                                    ))}
-                                                    {users.filter(u => u.role === 'professional').length === 0 && (
-                                                        <p className="px-3 py-2 text-sm text-gray-400">No hay profesionales disponibles.</p>
-                                                    )}
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700">Vehículo</label>
-                                        <input
-                                            type="text"
-                                            className="mt-1 w-full p-2 border rounded"
-                                            value={newProject.recursos.vehiculo}
-                                            onChange={e => setNewProject({...newProject, recursos: {...newProject.recursos, vehiculo: e.target.value}})}
-                                            placeholder="Ej: Auto arrendado KIA - Patente XY1234"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700">Equipamiento</label>
-                                        <input
-                                            type="text"
-                                            className="mt-1 w-full p-2 border rounded"
-                                            value={newProject.recursos.equipamiento}
-                                            onChange={e => setNewProject({...newProject, recursos: {...newProject.recursos, equipamiento: e.target.value}})}
-                                            placeholder="Ej: SLM5253 + KIA + GRM"
-                                        />
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                        <button type="submit" className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700">
-                            Guardar Proyecto
-                        </button>
-                    </form>
-                )}
-                {!showProjectForm && <p className="text-gray-500 text-sm">Haz clic en el icono + para desplegar el formulario.</p>}
+                <h2 className="text-lg font-bold text-gray-800 mb-4">
+                    Crear Nuevo Proyecto
+                </h2>
+                <p className="text-gray-500 text-sm mb-4">
+                    Crea un proyecto con información básica y completa los detalles 
+                    de recursos y contacto después.
+                </p>
+                <button
+                    onClick={() => navigate('/admin/projects/new')}
+                    className="w-full bg-indigo-600 text-white py-3 rounded-xl 
+                            font-bold hover:bg-indigo-700 transition flex 
+                            items-center justify-center gap-2"
+                >
+                    <Plus className="w-5 h-5" />
+                    Crear Nuevo Proyecto
+                </button>
             </div>
 
             {/* Assign Viatico Section */}

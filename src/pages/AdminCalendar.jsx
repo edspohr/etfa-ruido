@@ -14,6 +14,7 @@ import { ChevronLeft, ChevronRight, ChevronDown, X, Trash2 } from 'lucide-react'
 import SearchableSelect from '../components/SearchableSelect';
 import { toast } from 'sonner';
 import FieldClosureModal from '../components/FieldClosureModal';
+import { sortProjects } from '../utils/sort';
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
@@ -84,6 +85,7 @@ export default function AdminCalendar() {
   const [saving,        setSaving]        = useState(false);
   const [formData,      setFormData]      = useState({ ...EMPTY_FORM });
   const [showIngDropdown, setShowIngDropdown] = useState(false);
+  const [detailEvent,   setDetailEvent]   = useState(null);
 
   // ── Computed week values ──────────────────────────────────────────────────
 
@@ -125,12 +127,12 @@ export default function AdminCalendar() {
         ]);
 
         setProjects(
-          projSnap.docs.map(d => ({
+          sortProjects(projSnap.docs.map(d => ({
             id:    d.id,
             label: `${d.data().code ? `[${d.data().code}] ` : ''}${d.data().name}`,
             value: d.id,
             ...d.data(),
-          }))
+          })))
         );
         setProfessionals(usersSnap.docs.map(d => ({ id: d.id, ...d.data() })));
         setEvents(evSnap.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -339,7 +341,7 @@ export default function AdminCalendar() {
             ev.continuesLeft  ? 'rounded-l-none pl-1' : '',
             ev.continuesRight ? 'rounded-r-none pr-1' : '',
           ].join(' ')}
-          onClick={e => { e.stopPropagation(); openEditModal(ev); }}
+          onClick={e => { e.stopPropagation(); setDetailEvent(ev); }}
           title={label}
         >
           <span className="truncate leading-none">{label}</span>
@@ -471,6 +473,92 @@ export default function AdminCalendar() {
           </div>
         </div>
       </div>
+
+      {/* ── Side Detail Panel ── */}
+      {detailEvent && (
+        <div className="fixed inset-0 z-40 flex justify-end">
+          <div 
+            className="absolute inset-0 bg-black/40" 
+            onClick={() => setDetailEvent(null)} 
+          />
+          <div className="relative w-full max-w-sm bg-slate-800 border-l border-slate-700 h-full overflow-y-auto shadow-2xl flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-700">
+              <div>
+                <p className="text-indigo-400 text-xs font-mono font-bold">
+                  {detailEvent.projectCode && `[${detailEvent.projectCode}]`}
+                </p>
+                <h2 className="text-white font-bold text-base leading-snug">
+                  {detailEvent.projectName}
+                </h2>
+              </div>
+              <button onClick={() => setDetailEvent(null)} className="text-slate-400 hover:text-white transition-colors p-1">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            {/* Body */}
+            <div className="px-5 py-4 space-y-4 flex-1">
+              {/* Dates */}
+              <div>
+                <p className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-1">Período</p>
+                <p className="text-slate-200 text-sm">
+                  {detailEvent.startDate} → {detailEvent.endDate}
+                </p>
+              </div>
+              {/* Ingenieros */}
+              {detailEvent.ingenierosNames?.length > 0 && (
+                <div>
+                  <p className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-1">Equipo</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {detailEvent.ingenierosNames.map((name, i) => (
+                      <span key={i} className="px-2.5 py-1 bg-slate-700 text-slate-200 rounded-full text-xs font-medium">
+                        {name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {/* Recursos */}
+              {detailEvent.vehiculo && (
+                <div>
+                  <p className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-1">Vehículo</p>
+                  <p className="text-slate-200 text-sm">{detailEvent.vehiculo}</p>
+                </div>
+              )}
+              {detailEvent.equipamiento && (
+                <div>
+                  <p className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-1">Equipamiento</p>
+                  <p className="text-slate-200 text-sm">{detailEvent.equipamiento}</p>
+                </div>
+              )}
+              {/* Status */}
+              <div>
+                <p className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-1">Estado</p>
+                <span className={`px-2.5 py-1 rounded-full text-xs font-bold uppercase ${detailEvent.status === 'closed' ? 'bg-slate-600 text-slate-300' : 'bg-indigo-500/20 text-indigo-300'}`}>
+                  {detailEvent.status === 'closed' ? 'Cerrado' : 'Programado'}
+                </span>
+              </div>
+            </div>
+            {/* Actions */}
+            <div className="px-5 py-4 border-t border-slate-700 space-y-2">
+              <button
+                onClick={() => { openEditModal(detailEvent); setDetailEvent(null); }}
+                className="w-full py-2.5 px-4 bg-slate-700 hover:bg-slate-600 text-white text-sm font-semibold rounded-xl transition-colors"
+              >
+                Editar evento
+              </button>
+              {detailEvent.status !== 'closed' && (
+                <button
+                  onClick={() => { handleCloseEvent(detailEvent); setDetailEvent(null); }}
+                  className="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-xl transition-colors"
+                >
+                  Cerrar terreno
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Event modal ── */}
       {modalOpen && (
