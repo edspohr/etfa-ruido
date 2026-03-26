@@ -41,7 +41,16 @@ export async function uploadReceiptImage(file, userId) {
   const path = `receipts/${userId}/${filename}`;
 
   const storageRef = ref(storage, path);
-  const snapshot = await uploadBytes(storageRef, file);
+
+  // 15-second timeout so CORS/network failures don't hang the form
+  const uploadWithTimeout = Promise.race([
+    uploadBytes(storageRef, file),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("Upload timeout after 15 seconds")), 15000)
+    ),
+  ]);
+
+  const snapshot = await uploadWithTimeout;
   const downloadURL = await getDownloadURL(snapshot.ref);
 
   return downloadURL;

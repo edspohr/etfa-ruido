@@ -304,9 +304,15 @@ export default function ExpenseForm() {
         // setLoading(true); // Moved to top
         
         let imageUrl = '';
-        // 1. Upload Image
+        // 1. Upload Image (fail gracefully if Storage has CORS/network issues)
         if (formData.receiptImage) {
-            imageUrl = await uploadReceiptImage(formData.receiptImage, currentUser.uid);
+            try {
+                imageUrl = await uploadReceiptImage(formData.receiptImage, currentUser.uid);
+            } catch (uploadErr) {
+                console.warn("Storage upload failed, saving without image:", uploadErr.message);
+                toast.warning("No se pudo adjuntar el comprobante (error de red). La rendición se guardará sin imagen.");
+                imageUrl = '';
+            }
         }
 
         // Prepare Common Data
