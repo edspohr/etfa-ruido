@@ -72,10 +72,6 @@ export default function Sidebar({ isOpen, setIsOpen }) {
         {userRole !== 'admin' && (
           <>
             <p className={groupTitleClass}>Mi Espacio</p>
-            <Link to="/mis-proyectos" className={linkClass('/mis-proyectos')} onClick={() => setIsOpen(false)}>
-                <FolderOpen className="w-4 h-4 mr-3" />
-                Mis Proyectos
-            </Link>
             <Link to="/mi-calendario" className={linkClass('/mi-calendario')} onClick={() => setIsOpen(false)}>
                 <Calendar className="w-4 h-4 mr-3" />
                 Mi Calendario
@@ -99,10 +95,6 @@ export default function Sidebar({ isOpen, setIsOpen }) {
           <>
             {/* Mi Espacio */}
             <p className={groupTitleClass}>Mi Espacio</p>
-            <Link to="/mis-proyectos" className={linkClass('/mis-proyectos')} onClick={() => setIsOpen(false)}>
-                <FolderOpen className="w-4 h-4 mr-3" />
-                Mis Proyectos
-            </Link>
             <Link to="/mi-calendario" className={linkClass('/mi-calendario')} onClick={() => setIsOpen(false)}>
                 <Calendar className="w-4 h-4 mr-3" />
                 Mi Calendario
@@ -118,7 +110,7 @@ export default function Sidebar({ isOpen, setIsOpen }) {
 
             {/* Module selector */}
             <p className={groupTitleClass}>Módulo</p>
-            <div className="flex gap-1 px-4 mb-4">
+            <div className="flex flex-wrap gap-1.5 px-4 mb-4">
               {[
                 { key: 'rendiciones', label: 'Rendiciones', to: '/admin/projects' },
                 { key: 'operaciones', label: 'Operaciones', to: '/admin/calendar' },
@@ -127,7 +119,7 @@ export default function Sidebar({ isOpen, setIsOpen }) {
                 <button
                   key={key}
                   onClick={() => { navigate(to); setIsOpen(false); }}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${
+                  className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors whitespace-nowrap ${
                     activeModule === key
                       ? 'bg-indigo-600 text-white'
                       : 'bg-slate-800 text-slate-400 hover:text-slate-200'

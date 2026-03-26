@@ -45,7 +45,7 @@ export default function ExpenseForm() {
 
   const [formData, setFormData] = useState({
     projectId: '',
-    date: '',
+    date: new Date().toISOString().split('T')[0], // default today
     merchant: '',
     description: '',
     category: '',
@@ -107,10 +107,14 @@ export default function ExpenseForm() {
       // 1. Compress Image (if it's an image)
       const compressedFile = await compressImage(originalFile);
 
-      // 2. Set Preview & Data with Compressed File
+      // 2. Set Preview & Data with Compressed File (set today's date as default)
       const url = URL.createObjectURL(compressedFile);
       setPreviewUrl(url);
-      setFormData(prev => ({ ...prev, receiptImage: compressedFile }));
+      setFormData(prev => ({ 
+        ...prev, 
+        receiptImage: compressedFile,
+        date: prev.date || new Date().toISOString().split('T')[0], // ensure date is always filled
+      }));
 
       // 3. Determine available categories based on role
       let availableCats = [...CATEGORIES_COMMON];
@@ -152,7 +156,7 @@ export default function ExpenseForm() {
       setStep('upload');
       setFormData({
         projectId: '',
-        date: '',
+        date: new Date().toISOString().split('T')[0],
         merchant: '',
         description: '',
         category: '',
@@ -246,6 +250,11 @@ export default function ExpenseForm() {
     // ---------------------------------------------------------
 
     // 1. Date Restriction (Max 60 days old)
+    if (!formData.date) {
+        toast.error("Por favor selecciona una fecha para el gasto.");
+        setLoading(false);
+        return;
+    }
     const MAX_DAYS_OLD = 60;
     // Standardize: create date to midnight local (YYYY-MM-DD + T00...)
     const expenseDate = new Date(formData.date + 'T00:00:00'); 
