@@ -278,19 +278,24 @@ export default function ExpenseForm() {
     }
 
     if (!isSplitMode) {
-        const dupQuery = query(
-            collection(db, "expenses"),
-            where("userId", "==", targetUidCheck),
-            where("date", "==", formData.date),
-            where("amount", "==", totalAmount)
-        );
-        
-        const dupSnap = await getDocs(dupQuery);
-        if (!dupSnap.empty) {
-            if (!confirm("Parece que ya existe un gasto con esta fecha y monto para este usuario. ¿Estás seguro de que no es un duplicado?")) {
-                setLoading(false);
-                return;
+        try {
+            const dupQuery = query(
+                collection(db, "expenses"),
+                where("userId", "==", targetUidCheck),
+                where("date", "==", formData.date),
+                where("amount", "==", totalAmount)
+            );
+            
+            const dupSnap = await getDocs(dupQuery);
+            if (!dupSnap.empty) {
+                if (!confirm("Parece que ya existe un gasto con esta fecha y monto para este usuario. ¿Estás seguro de que no es un duplicado?")) {
+                    setLoading(false);
+                    return;
+                }
             }
+        } catch (dupErr) {
+            // If the compound query fails (e.g. missing index), skip duplicity check and proceed
+            console.warn("Duplicity check skipped:", dupErr.message);
         }
     }
     // ---------------------------------------------------------

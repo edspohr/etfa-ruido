@@ -1,4 +1,5 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { Toaster } from 'sonner';
 import Login from './pages/Login';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminProjects from './pages/AdminProjects';
@@ -41,6 +42,7 @@ function RootRedirect() {
 function App() {
   return (
     <Router>
+      <Toaster position="top-right" richColors />
       <Routes>
         <Route path="/login" element={<Login />} />
         
