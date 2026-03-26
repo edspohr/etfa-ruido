@@ -14,10 +14,11 @@ import { toast } from 'sonner';
 
 const CATEGORIES_COMMON = [
   "Alimentación",
+  "Hotel",
   "Snacks",
-  "Combustible", 
-  "Traslados", 
-  "Materiales", 
+  "Combustible",
+  "Traslados",
+  "Materiales",
   "Otros"
 ];
 
@@ -347,6 +348,7 @@ export default function ExpenseForm() {
                 userName: targetName,
                 projectId: item.projectId,
                 projectName: projectObj?.name || 'Unknown',
+                projectRecurrence: projectObj?.recurrence || '',
                 category: formData.category,
                 date: formData.date,
                 merchant: formData.merchant,

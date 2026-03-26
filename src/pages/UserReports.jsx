@@ -7,6 +7,7 @@ import { collection, addDoc, query, where, getDocs, serverTimestamp } from 'fire
 import { toast } from 'sonner';
 import { ClipboardList, PlusCircle, CheckCircle, AlertTriangle, Clock } from 'lucide-react';
 import { sortProjects } from '../utils/sort';
+import { isOlderThan60Days } from '../utils/dateUtils';
 import SearchableSelect from '../components/SearchableSelect';
 
 export default function UserReports() {
@@ -15,6 +16,7 @@ export default function UserReports() {
     const [myReports, setMyReports] = useState([]);
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
+    const [showHistorical, setShowHistorical] = useState(false);
     
     // Form State
     const [formData, setFormData] = useState({
@@ -97,6 +99,8 @@ export default function UserReports() {
             setSubmitting(false);
         }
     };
+
+    const visibleReports = myReports.filter(r => showHistorical || !isOlderThan60Days(r.createdAt));
 
     if (loading) return <Layout title="Mis Mediciones">Cargando...</Layout>;
 
@@ -203,14 +207,22 @@ export default function UserReports() {
                         </div>
                         
                         <div className="p-4 flex-1 overflow-auto">
-                            {myReports.length === 0 ? (
+                            <div className="flex justify-end mb-3">
+                              <button
+                                onClick={() => setShowHistorical(prev => !prev)}
+                                className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 underline transition-colors"
+                              >
+                                {showHistorical ? 'Ocultar registros antiguos' : 'Mostrar registros anteriores a 60 días'}
+                              </button>
+                            </div>
+                            {visibleReports.length === 0 ? (
                                 <div className="text-center py-12 text-slate-400">
                                     <ClipboardList className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                                    <p>No has enviado mediciones aún.</p>
+                                    <p>{myReports.length > 0 && !showHistorical ? 'No hay mediciones recientes.' : 'No has enviado mediciones aún.'}</p>
                                 </div>
                             ) : (
                                 <div className="space-y-3">
-                                    {myReports.map(report => (
+                                    {visibleReports.map(report => (
                                         <div key={report.id} className="p-4 rounded-xl border border-slate-100 hover:shadow-md transition bg-white flex justify-between items-center group">
                                             <div>
                                                 <p className="text-xs text-slate-400 font-medium mb-1">{report.date} • {report.equipment}</p>

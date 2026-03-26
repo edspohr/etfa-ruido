@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { db } from '../lib/firebase';
 import { collection, getDocs, addDoc, query, where, doc, updateDoc, increment, serverTimestamp } from 'firebase/firestore';
@@ -11,19 +11,28 @@ import { toast } from 'sonner';
 import SearchableSelect from '../components/SearchableSelect';
 
 export default function AdminProjects() {
-  const navigate = useNavigate();
   const [projects, setProjects] = useState([]);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false); // [NEW] Prevent double clicks
 
-
   const [viaticoUser, setViaticoUser] = useState('');
   const [viaticoProject, setViaticoProject] = useState('');
   const [viaticoAmount, setViaticoAmount] = useState('');
-  
+
   const [projectSearch, setProjectSearch] = useState('');
   const [allocationSearch, setAllocationSearch] = useState('');
+
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [clients, setClients] = useState([]);
+  const [engineersList, setEngineersList] = useState([]);
+  const [showEngDropdown, setShowEngDropdown] = useState(false);
+  const [createForm, setCreateForm] = useState({
+    name: '', code: '', recurrence: '', client: '',
+    contactName: '', contactPhone: '', contactEmail: '', contactPosition: '',
+    engineers: [], vehicle: '', equipment: '',
+  });
 
   const fetchData = async () => {
     try {
@@ -42,6 +51,29 @@ export default function AdminProjects() {
         const uSnap = await getDocs(uQuery);
         const uData = uSnap.docs.map(d => ({id: d.id, ...d.data()}));
         setUsers(uData);
+
+        // Clients for create modal
+        const [clientsSnap, projectsSnap] = await Promise.all([
+          getDocs(collection(db, 'clients')),
+          getDocs(collection(db, 'projects')),
+        ]);
+        const registeredClients = clientsSnap.docs.map(d => ({
+          value: d.data().razonSocial || d.id,
+          label: d.data().razonSocial || 'Sin nombre',
+        }));
+        const projectClients = [...new Set(projectsSnap.docs.map(d => d.data().client).filter(Boolean))].map(name => ({
+          value: name, label: name,
+        }));
+        const combined = [...registeredClients, ...projectClients];
+        const uniqueMap = new Map();
+        combined.forEach(c => {
+          const key = c.value.toLowerCase().trim();
+          if (!uniqueMap.has(key)) uniqueMap.set(key, c);
+        });
+        setClients(Array.from(uniqueMap.values()).sort((a, b) => a.label.localeCompare(b.label)));
+
+        // Engineers for create modal
+        setEngineersList(uData.map(d => ({ id: d.id, displayName: d.displayName || d.email || 'Usuario' })));
     } catch (e) {
         console.error("Error fetching admin data:", e);
     } finally {
@@ -156,6 +188,74 @@ export default function AdminProjects() {
       }
   };
   
+  const handleCreateProject = async (e) => {
+    e.preventDefault();
+    if (!createForm.name.trim()) {
+      toast.error('El nombre del proyecto es obligatorio.');
+      return;
+    }
+    if (!createForm.code.trim()) {
+      toast.error('El código del proyecto es obligatorio.');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const dupQ = query(
+        collection(db, 'projects'),
+        where('code', '==', createForm.code.trim()),
+        where('recurrence', '==', createForm.recurrence.trim())
+      );
+      const dupSnap = await getDocs(dupQ);
+      if (!dupSnap.empty) {
+        toast.error('Ya existe un proyecto con ese Código y Recurrencia.');
+        setSaving(false);
+        return;
+      }
+
+      await addDoc(collection(db, 'projects'), {
+        name: createForm.name.trim(),
+        code: createForm.code.trim(),
+        recurrence: createForm.recurrence.trim(),
+        client: createForm.client,
+        contactName: createForm.contactName,
+        contactPhone: createForm.contactPhone,
+        contactEmail: createForm.contactEmail,
+        contactPosition: createForm.contactPosition,
+        engineers: createForm.engineers,
+        vehicle: createForm.vehicle,
+        equipment: createForm.equipment,
+        status: 'active',
+        billingStatus: 'pending',
+        expenses: 0,
+        createdAt: serverTimestamp(),
+      });
+
+      toast.success('Proyecto creado exitosamente.');
+      setShowCreateModal(false);
+      setCreateForm({
+        name: '', code: '', recurrence: '', client: '',
+        contactName: '', contactPhone: '', contactEmail: '', contactPosition: '',
+        engineers: [], vehicle: '', equipment: '',
+      });
+      fetchData();
+    } catch (err) {
+      console.error(err);
+      toast.error('Error al crear el proyecto.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggleCreateEngineer = (uid) => {
+    setCreateForm(prev => ({
+      ...prev,
+      engineers: prev.engineers.includes(uid)
+        ? prev.engineers.filter(id => id !== uid)
+        : [...prev.engineers, uid],
+    }));
+  };
+
   const formatProjectName = (p) => {
       let parts = [];
       if (p.code) parts.push(`[${p.code}]`);
@@ -170,19 +270,19 @@ export default function AdminProjects() {
     <Layout title="Gestión de Proyectos y Viáticos">
         {/* Actions Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
-                {/* Create Project Section (Wizard Link) */}
+                {/* Create Project Section */}
             <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
                 <h2 className="text-lg font-bold text-gray-800 mb-4">
                     Crear Nuevo Proyecto
                 </h2>
                 <p className="text-gray-500 text-sm mb-4">
-                    Crea un proyecto con información básica y completa los detalles 
+                    Crea un proyecto con información básica y completa los detalles
                     de recursos y contacto después.
                 </p>
                 <button
-                    onClick={() => navigate('/admin/projects/new')}
-                    className="w-full bg-indigo-600 text-white py-3 rounded-xl 
-                            font-bold hover:bg-indigo-700 transition flex 
+                    onClick={() => setShowCreateModal(true)}
+                    className="w-full bg-indigo-600 text-white py-3 rounded-xl
+                            font-bold hover:bg-indigo-700 transition flex
                             items-center justify-center gap-2"
                 >
                     <Plus className="w-5 h-5" />
@@ -356,6 +456,138 @@ export default function AdminProjects() {
                 </table>
             </div>
         </div>
+      {showCreateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="bg-slate-800 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-8 pt-8 pb-4 border-b border-slate-700">
+              <h2 className="text-xl font-bold text-white">Nuevo Proyecto</h2>
+              <button onClick={() => setShowCreateModal(false)} className="text-slate-400 hover:text-white transition">✕</button>
+            </div>
+            <form onSubmit={handleCreateProject} className="px-8 py-6 space-y-6">
+
+              {/* Section: Información Básica */}
+              <div>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Información Básica</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-semibold text-slate-300 mb-1">Nombre del proyecto *</label>
+                    <input type="text" required value={createForm.name}
+                      onChange={e => setCreateForm(p => ({...p, name: e.target.value}))}
+                      className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      placeholder="Ej: Medición de Ruido Planta Central" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-300 mb-1">Código *</label>
+                    <input type="text" required value={createForm.code}
+                      onChange={e => setCreateForm(p => ({...p, code: e.target.value}))}
+                      className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      placeholder="Ej: ETF-001" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-300 mb-1">Recurrencia</label>
+                    <input type="text" value={createForm.recurrence}
+                      onChange={e => setCreateForm(p => ({...p, recurrence: e.target.value}))}
+                      className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      placeholder="Ej: A, B, C..." />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-semibold text-slate-300 mb-1">Cliente</label>
+                    <SearchableSelect options={clients} value={createForm.client}
+                      onChange={val => setCreateForm(p => ({...p, client: val}))}
+                      placeholder="Buscar o seleccionar cliente..." />
+                  </div>
+                </div>
+              </div>
+
+              {/* Section: Contacto del Cliente */}
+              <div>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Contacto del Cliente <span className="normal-case font-normal">(opcional)</span></p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-300 mb-1">Nombre de contacto</label>
+                    <input type="text" value={createForm.contactName}
+                      onChange={e => setCreateForm(p => ({...p, contactName: e.target.value}))}
+                      className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-300 mb-1">Teléfono / WhatsApp</label>
+                    <input type="text" value={createForm.contactPhone}
+                      onChange={e => setCreateForm(p => ({...p, contactPhone: e.target.value}))}
+                      className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-300 mb-1">Email</label>
+                    <input type="email" value={createForm.contactEmail}
+                      onChange={e => setCreateForm(p => ({...p, contactEmail: e.target.value}))}
+                      className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-300 mb-1">Cargo</label>
+                    <input type="text" value={createForm.contactPosition}
+                      onChange={e => setCreateForm(p => ({...p, contactPosition: e.target.value}))}
+                      className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Section: Recursos */}
+              <div>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Recursos <span className="normal-case font-normal">(opcional)</span></p>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-300 mb-1">Ingenieros</label>
+                    <div className="relative">
+                      <button type="button" onClick={() => setShowEngDropdown(p => !p)}
+                        className="w-full flex items-center justify-between px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white text-sm text-left focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <span>{createForm.engineers.length === 0 ? 'Seleccionar ingenieros...' : `${createForm.engineers.length} seleccionado(s)`}</span>
+                        <ChevronDown className={`w-5 h-5 text-slate-500 transition-transform ${showEngDropdown ? 'rotate-180' : ''}`} />
+                      </button>
+                      {showEngDropdown && (
+                        <div className="absolute z-50 w-full mt-2 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl max-h-48 overflow-y-auto">
+                          {engineersList.map(eng => (
+                            <label key={eng.id} className="flex items-center gap-3 px-4 py-3 hover:bg-slate-800 cursor-pointer border-b border-slate-800 last:border-0">
+                              <input type="checkbox" checked={createForm.engineers.includes(eng.id)}
+                                onChange={() => toggleCreateEngineer(eng.id)}
+                                className="w-4 h-4 rounded border-slate-600 text-indigo-600" />
+                              <span className="text-slate-200 text-sm">{eng.displayName}</span>
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-300 mb-1">Vehículo</label>
+                    <input type="text" value={createForm.vehicle}
+                      onChange={e => setCreateForm(p => ({...p, vehicle: e.target.value}))}
+                      placeholder="Ej: Camioneta ETF-1"
+                      className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-300 mb-1">Equipamiento</label>
+                    <input type="text" value={createForm.equipment}
+                      onChange={e => setCreateForm(p => ({...p, equipment: e.target.value}))}
+                      placeholder="Ej: Sonómetro Class 1"
+                      className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="flex justify-end gap-3 pt-4 border-t border-slate-700">
+                <button type="button" onClick={() => setShowCreateModal(false)}
+                  className="px-6 py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-xl text-sm font-bold transition-all">
+                  Cancelar
+                </button>
+                <button type="submit" disabled={saving}
+                  className="px-8 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold transition-all disabled:opacity-50">
+                  {saving ? 'Guardando...' : 'Crear Proyecto'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </Layout>
   );
 }

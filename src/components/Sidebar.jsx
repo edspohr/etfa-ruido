@@ -1,4 +1,5 @@
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useMemo } from 'react';
 import { useAuth } from '../context/useAuth';
 import {
   PieChart, LayoutDashboard, FolderOpen, CheckCircle,
@@ -6,9 +7,25 @@ import {
   Activity, Grid, FilePlus, Calendar,
 } from 'lucide-react';
 
+const MODULE_ROUTES = {
+  rendiciones: ['/admin/projects', '/admin/approvals', '/admin/balances'],
+  operaciones: ['/admin/calendar', '/admin/tasks', '/admin/reports'],
+  financiero: ['/admin/invoicing', '/admin/analytics', '/admin'],
+};
+
 export default function Sidebar({ isOpen, setIsOpen }) {
   const { currentUser, userRole, logout } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
+
+  const activeModule = useMemo(() => {
+    const path = location.pathname;
+    if (path.startsWith('/admin/projects') || path.startsWith('/admin/approvals') || path.startsWith('/admin/balances')) return 'rendiciones';
+    if (path.startsWith('/admin/calendar') || path.startsWith('/admin/tasks') || path.startsWith('/admin/reports')) return 'operaciones';
+    if (path.startsWith('/admin/invoicing') || path.startsWith('/admin/analytics')) return 'financiero';
+    if (path === '/admin') return 'financiero';
+    return 'rendiciones';
+  }, [location.pathname]);
 
   const isActive = (path) => location.pathname === path;
   
@@ -99,62 +116,93 @@ export default function Sidebar({ isOpen, setIsOpen }) {
                 Mis Rendiciones
             </Link>
 
-            {/* Rendiciones */}
-            <p className={groupTitleClass}>Rendiciones</p>
-            <Link to="/admin/projects/new" className={linkClass('/admin/projects/new')} onClick={() => setIsOpen(false)}>
-                <FilePlus className="w-4 h-4 mr-3" />
-                Nuevo Proyecto
-            </Link>
-            <Link to="/admin/projects" className={linkClass('/admin/projects')} onClick={() => setIsOpen(false)}>
-                <FolderOpen className="w-4 h-4 mr-3" />
-                Proyectos
-            </Link>
-            <Link to="/admin/approvals" className={linkClass('/admin/approvals')} onClick={() => setIsOpen(false)}>
-                <CheckCircle className="w-4 h-4 mr-3" />
-                Aprobaciones
-            </Link>
-            <Link to="/admin/balances" className={linkClass('/admin/balances')} onClick={() => setIsOpen(false)}>
-                <Wallet className="w-4 h-4 mr-3" />
-                Saldos
-            </Link>
+            {/* Module selector */}
+            <p className={groupTitleClass}>Módulo</p>
+            <div className="flex gap-1 px-4 mb-4">
+              {[
+                { key: 'rendiciones', label: 'Rendiciones', to: '/admin/projects' },
+                { key: 'operaciones', label: 'Operaciones', to: '/admin/calendar' },
+                { key: 'financiero', label: 'Financiero', to: '/admin' },
+              ].map(({ key, label, to }) => (
+                <button
+                  key={key}
+                  onClick={() => { navigate(to); setIsOpen(false); }}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${
+                    activeModule === key
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
 
-            {/* Operaciones */}
-            <p className={groupTitleClass}>Operaciones</p>
-            <Link to="/admin/calendar" className={linkClass('/admin/calendar')} onClick={() => setIsOpen(false)}>
-                <Calendar className="w-4 h-4 mr-3" />
-                Calendario
-            </Link>
-            <Link to="/admin/tasks" className={linkClass('/admin/tasks')} onClick={() => setIsOpen(false)}>
-                <ClipboardList className="w-4 h-4 mr-3" />
-                Planner
-            </Link>
-            <Link to="/admin/reports" className={linkClass('/admin/reports')} onClick={() => setIsOpen(false)}>
-                <FileText className="w-4 h-4 mr-3" />
-                Informes
-            </Link>
+            {/* Rendiciones links */}
+            {activeModule === 'rendiciones' && (
+              <>
+                <Link to="/admin/projects/new" className={linkClass('/admin/projects/new')} onClick={() => setIsOpen(false)}>
+                    <FilePlus className="w-4 h-4 mr-3" />
+                    Nuevo Proyecto
+                </Link>
+                <Link to="/admin/projects" className={linkClass('/admin/projects')} onClick={() => setIsOpen(false)}>
+                    <FolderOpen className="w-4 h-4 mr-3" />
+                    Proyectos
+                </Link>
+                <Link to="/admin/approvals" className={linkClass('/admin/approvals')} onClick={() => setIsOpen(false)}>
+                    <CheckCircle className="w-4 h-4 mr-3" />
+                    Aprobaciones
+                </Link>
+                <Link to="/admin/balances" className={linkClass('/admin/balances')} onClick={() => setIsOpen(false)}>
+                    <Wallet className="w-4 h-4 mr-3" />
+                    Saldos
+                </Link>
+              </>
+            )}
 
-            {/* Financiero */}
-            <p className={groupTitleClass}>Financiero</p>
-            <Link to="/admin" className={linkClass('/admin')} onClick={() => setIsOpen(false)}>
-                <LayoutDashboard className="w-4 h-4 mr-3" />
-                Kanban
-            </Link>
-            <Link to="/admin/invoicing/generate" className={linkClass('/admin/invoicing/generate')} onClick={() => setIsOpen(false)}>
-                <FilePlus className="w-4 h-4 mr-3" />
-                Registro Factura
-            </Link>
-            <Link to="/admin/invoicing/reconciliation" className={linkClass('/admin/invoicing/reconciliation')} onClick={() => setIsOpen(false)}>
-                <Wallet className="w-4 h-4 mr-3" />
-                Conciliación
-            </Link>
-            <Link to="/admin/invoicing/history" className={linkClass('/admin/invoicing/history')} onClick={() => setIsOpen(false)}>
-                <FolderOpen className="w-4 h-4 mr-3" />
-                Historial Facturas
-            </Link>
-            <Link to="/admin/analytics" className={linkClass('/admin/analytics')} onClick={() => setIsOpen(false)}>
-                <BarChart3 className="w-4 h-4 mr-3" />
-                Analítica
-            </Link>
+            {/* Operaciones links */}
+            {activeModule === 'operaciones' && (
+              <>
+                <Link to="/admin/calendar" className={linkClass('/admin/calendar')} onClick={() => setIsOpen(false)}>
+                    <Calendar className="w-4 h-4 mr-3" />
+                    Calendario
+                </Link>
+                <Link to="/admin/tasks" className={linkClass('/admin/tasks')} onClick={() => setIsOpen(false)}>
+                    <ClipboardList className="w-4 h-4 mr-3" />
+                    Planner
+                </Link>
+                <Link to="/admin/reports" className={linkClass('/admin/reports')} onClick={() => setIsOpen(false)}>
+                    <FileText className="w-4 h-4 mr-3" />
+                    Informes
+                </Link>
+              </>
+            )}
+
+            {/* Financiero links */}
+            {activeModule === 'financiero' && (
+              <>
+                <Link to="/admin" className={linkClass('/admin')} onClick={() => setIsOpen(false)}>
+                    <LayoutDashboard className="w-4 h-4 mr-3" />
+                    Kanban
+                </Link>
+                <Link to="/admin/invoicing/generate" className={linkClass('/admin/invoicing/generate')} onClick={() => setIsOpen(false)}>
+                    <FilePlus className="w-4 h-4 mr-3" />
+                    Registro Factura
+                </Link>
+                <Link to="/admin/invoicing/reconciliation" className={linkClass('/admin/invoicing/reconciliation')} onClick={() => setIsOpen(false)}>
+                    <Wallet className="w-4 h-4 mr-3" />
+                    Conciliación
+                </Link>
+                <Link to="/admin/invoicing/history" className={linkClass('/admin/invoicing/history')} onClick={() => setIsOpen(false)}>
+                    <FolderOpen className="w-4 h-4 mr-3" />
+                    Historial Facturas
+                </Link>
+                <Link to="/admin/analytics" className={linkClass('/admin/analytics')} onClick={() => setIsOpen(false)}>
+                    <BarChart3 className="w-4 h-4 mr-3" />
+                    Analítica
+                </Link>
+              </>
+            )}
           </>
         )}
 

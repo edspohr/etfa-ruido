@@ -12,7 +12,6 @@ import UserExpenses from './pages/UserExpenses';
 import ExpenseForm from './pages/ExpenseForm';
 import ProtectedRoute from './components/ProtectedRoute';
 import { useAuth } from './context/useAuth';
-import AdminProjectWizard from './pages/AdminProjectWizard';
 import ProfessionalFieldReport from './pages/ProfessionalFieldReport';
 import AdminReportsV2 from './pages/AdminReportsV2';
 import NewReportManual from './pages/NewReportManual';
@@ -27,7 +26,6 @@ import UserReports from './pages/UserReports';
 import AdminAnalytics from './pages/AdminAnalytics';
 import AdminCalendar from './pages/AdminCalendar';
 import AdminTasks from './pages/AdminTasks';
-import ProfessionalProjects from './pages/ProfessionalProjects';
 import ProfessionalCalendar from './pages/ProfessionalCalendar';
 import ProfessionalTasks from './pages/ProfessionalTasks';
 
@@ -36,7 +34,7 @@ function RootRedirect() {
   const { currentUser, userRole } = useAuth();
   if (!currentUser) return <Navigate to="/login" />;
   if (userRole === 'admin') return <Navigate to="/admin" />;
-  if (userRole === 'professional') return <Navigate to="/mis-proyectos" />;
+  if (userRole === 'professional') return <Navigate to="/dashboard/expenses" />;
   return <Navigate to="/login" />;
 }
 
@@ -55,11 +53,6 @@ function App() {
         <Route path="/admin/expenses" element={<ProtectedRoute requiredRole="admin"><AdminDashboard /></ProtectedRoute>} />
         <Route path="/admin/projects" element={<ProtectedRoute requiredRole="admin"><AdminProjects /></ProtectedRoute>} />
         <Route path="/admin/projects/:id" element={<ProtectedRoute requiredRole="admin"><AdminProjectDetails /></ProtectedRoute>} />
-        <Route path="/admin/projects/new" element={
-          <ProtectedRoute requiredRole="admin">
-            <AdminProjectWizard />
-          </ProtectedRoute>
-        } />
         <Route path="/admin/reports" element={
           <ProtectedRoute requiredRole="admin">
             <AdminReportsV2 />
@@ -94,7 +87,6 @@ function App() {
         <Route path="/admin/invoicing/reconciliation" element={<ProtectedRoute requiredRole="admin"><AdminInvoicingReconciliation /></ProtectedRoute>} />
         
         {/* Professional Routes */}
-        <Route path="/mis-proyectos" element={<ProtectedRoute requiredRole={['professional', 'admin']}><ProfessionalProjects /></ProtectedRoute>} />
         <Route path="/mi-calendario" element={<ProtectedRoute requiredRole={['professional', 'admin']}><ProfessionalCalendar /></ProtectedRoute>} />
         <Route path="/mis-tareas" element={<ProtectedRoute requiredRole={['professional', 'admin']}><ProfessionalTasks /></ProtectedRoute>} />
         <Route path="/mis-tareas/informe/:calendarEventId" element={

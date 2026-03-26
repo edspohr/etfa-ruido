@@ -13,7 +13,7 @@ export function sortProjects(projects) {
     if (!codeA && codeB) return 1;
     if (codeA !== codeB) {
       // Natural sort: "ET-10" > "ET-9" (not lexicographic)
-      return codeA.localeCompare(codeB, 'es', { numeric: true });
+      return codeB.localeCompare(codeA, 'es', { numeric: true });
     }
     // 2. Secondary: name (case-insensitive)
     const nameA = (a?.name ?? '').trim().toLowerCase();

@@ -16,6 +16,7 @@ import { toast } from 'sonner';
 import Layout from '../components/Layout';
 import EmptyState from '../components/EmptyState';
 import { REPORT_STATUSES } from '../utils/reportSchema';
+import { isOlderThan60Days } from '../utils/dateUtils';
 
 export default function AdminReportsV2() {
   const [reports, setReports] = useState([]);
@@ -28,6 +29,7 @@ export default function AdminReportsV2() {
   const [loadingApuntes, setLoadingApuntes] = useState(false);
   const [assigneeSelections, setAssigneeSelections] = useState({}); // { reportId: userId }
   const [historyExpanded, setHistoryExpanded] = useState(false);
+  const [showHistorical, setShowHistorical] = useState(false);
 
   const fetchData = async () => {
     try {
@@ -148,8 +150,11 @@ export default function AdminReportsV2() {
 
   const pendingReports = reports.filter(r => r.status === REPORT_STATUSES.SUBMITTED);
   const inProgressReports = reports.filter(r => r.status === REPORT_STATUSES.IN_PROGRESS);
-  const historyReports = reports.filter(r => 
+  const historyReports = reports.filter(r =>
     r.status === REPORT_STATUSES.APPROVED || r.status === REPORT_STATUSES.REJECTED
+  );
+  const visibleHistoryReports = historyReports.filter(r =>
+    showHistorical || !isOlderThan60Days(r.updatedAt || r.createdAt)
   );
 
   if (loading) return <Layout title="Bandeja de Informes">Cargando...</Layout>;
@@ -346,7 +351,16 @@ export default function AdminReportsV2() {
           </button>
 
           {historyExpanded && (
-            <div className="overflow-x-auto border-t border-gray-100">
+            <>
+            <div className="flex justify-end px-6 pt-3 border-t border-gray-100">
+              <button
+                onClick={() => setShowHistorical(prev => !prev)}
+                className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 underline transition-colors"
+              >
+                {showHistorical ? 'Ocultar registros antiguos' : 'Mostrar registros anteriores a 60 días'}
+              </button>
+            </div>
+            <div className="overflow-x-auto">
               <table className="w-full text-left">
                 <thead className="bg-gray-50 text-xs font-bold text-gray-500 border-b border-gray-100">
                   <tr>
@@ -358,7 +372,7 @@ export default function AdminReportsV2() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {historyReports.map(report => (
+                  {visibleHistoryReports.map(report => (
                     <tr key={report.id} className="hover:bg-gray-50/50">
                       <td className="px-6 py-4">
                         <div className="flex flex-col">
@@ -387,16 +401,19 @@ export default function AdminReportsV2() {
                       </td>
                     </tr>
                   ))}
-                  {historyReports.length === 0 && (
+                  {visibleHistoryReports.length === 0 && (
                     <tr>
                       <td colSpan="5" className="px-6 py-8 text-center text-gray-400 italic text-sm">
-                        Sin historial de reportes.
+                        {historyReports.length > 0 && !showHistorical
+                          ? 'No hay revisiones recientes. Usa el botón para ver el historial completo.'
+                          : 'Sin historial de reportes.'}
                       </td>
                     </tr>
                   )}
                 </tbody>
               </table>
             </div>
+            </>
           )}
         </section>
 

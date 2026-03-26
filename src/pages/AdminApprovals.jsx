@@ -6,6 +6,7 @@ import { formatCurrency } from '../utils/format';
 import { CheckCircle, XCircle, Download, FileText } from 'lucide-react';
 import RejectionModal from '../components/RejectionModal';
 import { toast } from 'sonner';
+import { isOlderThan60Days } from '../utils/dateUtils';
 import { motion as Motion } from 'framer-motion';
 
 export default function AdminApprovals() {
@@ -20,6 +21,7 @@ export default function AdminApprovals() {
   // Date Range State for Export
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [showHistorical, setShowHistorical] = useState(false);
 
   const fetchPending = async () => {
       try {
@@ -213,6 +215,10 @@ export default function AdminApprovals() {
       window.open(url, '_blank');
   };
   
+  const visibleHistory = viewMode === 'history'
+    ? historyExpenses.filter(e => showHistorical || !isOlderThan60Days(e.date))
+    : historyExpenses;
+
   if (loading) return <Layout title="Aprobaciones"><p>Cargando...</p></Layout>;
 
   return (
@@ -264,25 +270,36 @@ export default function AdminApprovals() {
             </button>
         </div>
 
-        {(viewMode === 'pending' ? pendingExpenses : historyExpenses).length === 0 ? (
+        {(viewMode === 'pending' ? pendingExpenses : visibleHistory).length === 0 ? (
             <div className="p-8 text-center text-gray-500">
                 <p>No hay registros en esta vista.</p>
             </div>
         ) : (
+            <>
+            {viewMode === 'history' && (
+              <div className="flex justify-end px-4 pt-3">
+                <button
+                  onClick={() => setShowHistorical(prev => !prev)}
+                  className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 underline transition-colors"
+                >
+                  {showHistorical ? 'Ocultar registros antiguos' : 'Mostrar registros anteriores a 60 días'}
+                </button>
+              </div>
+            )}
             <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
                 <table className="w-full text-left">
                     <thead>
                         <tr className="bg-gray-50 border-b">
                             <th className="px-6 py-3 font-medium text-gray-500">Fecha</th>
                             <th className="px-6 py-3 font-medium text-gray-500">Profesional</th>
-                            <th className="px-6 py-3 font-medium text-gray-500">Proyecto</th>
+                            <th className="px-6 py-3 font-medium text-gray-500">Proyecto / Recurrencia</th>
                             <th className="px-6 py-3 font-medium text-gray-500">Monto</th>
                             {viewMode === 'history' && <th className="px-6 py-3 font-medium text-gray-500">Estado</th>}
                             <th className="px-6 py-3 font-medium text-gray-500">Acciones</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                        {(viewMode === 'pending' ? pendingExpenses : historyExpenses).map((e, index) => (
+                        {(viewMode === 'pending' ? pendingExpenses : visibleHistory).map((e, index) => (
                             <Motion.tr 
                                 key={e.id} 
                                 initial={{ opacity: 0, y: 10 }}
@@ -292,10 +309,15 @@ export default function AdminApprovals() {
                             >
                                 <td className="px-6 py-4 text-sm text-gray-600">{e.date}</td>
                                 <td className="px-6 py-4 font-medium text-gray-800">{e.userName || 'N/A'}</td>
-                                <div className="flex flex-col">
-                                    <td className="px-6 py-4 text-gray-600 text-sm font-medium">{e.projectName || 'N/A'}</td>
-                                    <span className="px-6 text-xs text-gray-400">{e.description}</span>
-                                </div>
+                                <td className="px-6 py-4 text-gray-600 text-sm font-medium">
+                                  <span className="block">{e.projectName || 'N/A'}</span>
+                                  {e.projectRecurrence && (
+                                    <span className="text-xs text-gray-400 font-normal">({e.projectRecurrence})</span>
+                                  )}
+                                  {e.description && (
+                                    <span className="block text-xs text-gray-400 mt-0.5">{e.description}</span>
+                                  )}
+                                </td>
                                 <td className="px-6 py-4 font-semibold">{formatCurrency(e.amount)}</td>
                                 {viewMode === 'history' && (
                                     <td className="px-6 py-4">
@@ -339,6 +361,7 @@ export default function AdminApprovals() {
                     </tbody>
                 </table>
             </div>
+            </>
         )}
       </div>
 

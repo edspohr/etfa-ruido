@@ -3,16 +3,19 @@ import Layout from '../components/Layout';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/useAuth';
 import { db } from '../lib/firebase';
-import { collection, query, where, getDocs, deleteDoc, doc, updateDoc, increment } from 'firebase/firestore';
+import { collection, query, where, getDocs, getDoc, deleteDoc, doc, updateDoc, increment } from 'firebase/firestore';
 import { formatCurrency } from '../utils/format';
 import { Trash2, AlertCircle, Copy } from 'lucide-react';
 import { toast } from 'sonner';
+import { isOlderThan60Days } from '../utils/dateUtils';
 
 export default function UserExpenses() {
   const navigate = useNavigate();
   const { currentUser } = useAuth();
   const [expenses, setExpenses] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [userBalance, setUserBalance] = useState(null);
+  const [showHistorical, setShowHistorical] = useState(false);
 
   useEffect(() => {
     async function fetchExpenses() {
@@ -27,6 +30,10 @@ export default function UserExpenses() {
             // Manual sort as workaround for missing index
             data.sort((a,b) => new Date(b.date) - new Date(a.date));
             setExpenses(data);
+            const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+            if (userDoc.exists()) {
+              setUserBalance(userDoc.data().balance ?? 0);
+            }
         } catch (error) {
             console.error("Error fetching expenses:", error);
         } finally {
@@ -67,6 +74,8 @@ export default function UserExpenses() {
       }
   };
 
+  const visibleExpenses = expenses.filter(e => showHistorical || !isOlderThan60Days(e.date));
+
   if (loading) return <Layout title="Mis Rendiciones">Cargando...</Layout>;
 
   return (
@@ -77,6 +86,22 @@ export default function UserExpenses() {
           className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-md transition-all flex items-center gap-2"
         >
           Nueva Rendición
+        </button>
+      </div>
+      {userBalance !== null && (
+        <div className="mb-4 bg-white rounded-xl border border-gray-100 shadow-sm px-6 py-4 flex items-center justify-between">
+          <span className="text-sm font-medium text-gray-600">Saldo Disponible</span>
+          <span className={`text-lg font-black ${userBalance >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+            {formatCurrency(userBalance)}
+          </span>
+        </div>
+      )}
+      <div className="flex justify-end mb-3">
+        <button
+          onClick={() => setShowHistorical(prev => !prev)}
+          className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 underline transition-colors"
+        >
+          {showHistorical ? 'Ocultar registros antiguos' : 'Mostrar registros anteriores a 60 días'}
         </button>
       </div>
        <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
@@ -91,7 +116,7 @@ export default function UserExpenses() {
                 </tr>
             </thead>
             <tbody>
-                {expenses.map(e => (
+                {visibleExpenses.map(e => (
                     <tr key={e.id} className="border-b last:border-0 hover:bg-gray-50">
                         <td className="px-6 py-4 text-gray-600">{e.date}</td>
                         <td className="px-6 py-4 text-gray-800 font-medium">{e.projectName || 'Sin Proyecto'}</td>
@@ -136,9 +161,13 @@ export default function UserExpenses() {
                         </td>
                     </tr>
                 ))}
-                {expenses.length === 0 && (
+                {visibleExpenses.length === 0 && (
                     <tr>
-                        <td colSpan="5" className="text-center py-8 text-gray-500">No tienes rendiciones registradas.</td>
+                        <td colSpan="5" className="text-center py-8 text-gray-500">
+                          {expenses.length > 0 && !showHistorical
+                            ? 'No hay rendiciones recientes. Haz clic en "Mostrar registros anteriores a 60 días" para ver el historial completo.'
+                            : 'No tienes rendiciones registradas.'}
+                        </td>
                     </tr>
                 )}
             </tbody>
