@@ -133,10 +133,6 @@ export default function Sidebar({ isOpen, setIsOpen }) {
             {/* Rendiciones links */}
             {activeModule === 'rendiciones' && (
               <>
-                <Link to="/admin/projects/new" className={linkClass('/admin/projects/new')} onClick={() => setIsOpen(false)}>
-                    <FilePlus className="w-4 h-4 mr-3" />
-                    Nuevo Proyecto
-                </Link>
                 <Link to="/admin/projects" className={linkClass('/admin/projects')} onClick={() => setIsOpen(false)}>
                     <FolderOpen className="w-4 h-4 mr-3" />
                     Proyectos

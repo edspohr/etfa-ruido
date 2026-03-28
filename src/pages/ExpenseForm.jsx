@@ -195,6 +195,12 @@ export default function ExpenseForm() {
     }
 
     // Common Validation
+    if (!formData.category) {
+        toast.error("Por favor selecciona una categoría.");
+        setLoading(false);
+        return;
+    }
+
     const totalAmount = Number(formData.amount);
     if (isNaN(totalAmount) || totalAmount === 0) {
         toast.error("Ingrese un monto válido (puede ser negativo para devoluciones/correcciones).");
