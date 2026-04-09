@@ -199,7 +199,7 @@ export default function AdminTasks() {
         setProjects(
           sortProjects(projSnap.docs.map(d => ({
             id:    d.id,
-            label: `${d.data().code ? `[${d.data().code}] ` : ''}${d.data().name}`,
+            label: `${d.data().code ? `[${d.data().code}] ` : ''}${d.data().recurrence ? `(${d.data().recurrence}) ` : ''}${d.data().name}`,
             value: d.id,
             ...d.data(),
           })))

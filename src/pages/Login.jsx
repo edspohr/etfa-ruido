@@ -16,7 +16,7 @@ export default function Login() {
        if (userRole === 'admin') {
          navigate('/admin');
        } else {
-         navigate('/mis-proyectos');
+         navigate('/mi-calendario');
        }
     }
   }, [currentUser, userRole, navigate]);

@@ -132,7 +132,11 @@ const RUT_PATTERNS = [
 
 /** Date patterns → normalized to YYYY-MM-DD */
 const DATE_PATTERNS = [
+  // Highest priority: explicit Chilean invoice label "Fecha Emisión:" or "Fecha de Emisión:"
+  { regex: /Fecha\s+(?:de\s+)?Emisi[oó]n\s*:\s*(\d{1,2})[/](\d{1,2})[/](\d{4})/i, fmt: ([, d, m, y]) => `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}` },
+  // Generic date with optional Fecha label prefix
   { regex: /(?:Fecha\s*(?:de\s*)?(?:Emisi[oó]n|Documento)?:?\s*)(\d{1,2})[/-](\d{1,2})[/-](\d{4})/i, fmt: ([, d, m, y]) => `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}` },
+  // DD/MM/YYYY fallback — NOTE: ambiguous with MM/DD/YYYY for days ≤ 12; assumes Chilean D/M/Y order
   { regex: /(\d{2})[/-](\d{2})[/-](\d{4})/, fmt: ([, d, m, y]) => `${y}-${m}-${d}` },
   { regex: /(\d{4})[/-](\d{2})[/-](\d{2})/, fmt: ([, y, m, d]) => `${y}-${m}-${d}` },
   {
@@ -255,24 +259,45 @@ export function extractInvoiceData(text, projects = []) {
   // ---- 6. Project matching ----
   let foundProjectCode = null;
   let foundProjectId = null;
+  let foundProject = null;
 
   if (projects.length > 0) {
     const lowerText = normalized.toLowerCase();
-    
-    // Sort by code length descending (longer codes first to avoid partial matches)
+    const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    // Pass 1: code-only match (longer codes first to avoid partial matches)
     const sortedByCode = [...projects]
       .filter(p => p.code && p.code.length >= 2)
       .sort((a, b) => b.code.length - a.code.length);
-    
+
+    let codeOnlyMatch = null;
     for (const p of sortedByCode) {
-      const code = p.code.toLowerCase();
-      // Use word boundary-ish matching to avoid false positives
-      const codeRegex = new RegExp(`\\b${code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+      const codeRegex = new RegExp(`\\b${escape(p.code)}\\b`, 'i');
       if (codeRegex.test(lowerText)) {
-        foundProjectCode = p.code;
-        foundProjectId = p.id;
+        codeOnlyMatch = p;
         break;
       }
+    }
+
+    // Pass 2: code + recurrence combinations — more specific, preferred over code-only
+    let codeRecurrenceMatch = null;
+    const withRecurrence = sortedByCode.filter(p => p.recurrence);
+    for (const p of withRecurrence) {
+      const code = p.code.toLowerCase();
+      const rec  = p.recurrence.toLowerCase().trim();
+      const patterns = [
+        `${code} ${rec}`,   // "ETF-001 A"
+        `${code}-${rec}`,   // "ETF-001-A"
+        `${code}${rec}`,    // "ETF-001A"
+      ];
+      const matched = patterns.some(pat => new RegExp(`\\b${escape(pat)}\\b`, 'i').test(lowerText));
+      if (matched) { codeRecurrenceMatch = p; break; }
+    }
+
+    foundProject = codeRecurrenceMatch || codeOnlyMatch;
+    if (foundProject) {
+      foundProjectCode = foundProject.code;
+      foundProjectId   = foundProject.id;
     }
 
     // Fallback: try by project name (only long names to avoid false positives)
@@ -280,11 +305,12 @@ export function extractInvoiceData(text, projects = []) {
       const sortedByName = [...projects]
         .filter(p => p.name && p.name.length >= 6)
         .sort((a, b) => b.name.length - a.name.length);
-      
+
       for (const p of sortedByName) {
         if (lowerText.includes(p.name.toLowerCase())) {
           foundProjectCode = p.code || null;
           foundProjectId = p.id;
+          foundProject = p;
           break;
         }
       }
@@ -292,12 +318,13 @@ export function extractInvoiceData(text, projects = []) {
   }
 
   return {
-    rut:         foundRut,
-    amount:      bestAmount,
-    date:        foundDate,
-    projectCode: foundProjectCode,
-    projectId:   foundProjectId,
-    clientName:  foundClientName,
+    rut:               foundRut,
+    amount:            bestAmount,
+    date:              foundDate,
+    projectCode:       foundProjectCode,
+    projectId:         foundProjectId,
+    projectRecurrence: foundProject?.recurrence || null,
+    clientName:        foundClientName,
     _debug: {
       amountLabel: bestLabel,
       amountWeight: bestWeight,

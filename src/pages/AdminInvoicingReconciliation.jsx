@@ -8,7 +8,7 @@ import {
 import * as XLSX from 'xlsx';
 import {
   collection, query, where, getDocs, writeBatch, doc,
-  serverTimestamp, getDoc, orderBy
+  serverTimestamp, getDoc
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { formatCurrency } from '../utils/format';
@@ -80,10 +80,14 @@ export default function AdminInvoicingReconciliation() {
         const amountDiff = Math.abs(invAmount - mov.amount);
         const amountPct = invAmount > 0 ? amountDiff / invAmount * 100 : 100;
         
-        if (amountDiff < 10)        { score += 50; reasons.push('Monto exacto'); }
+        if (amountDiff < 1)         { score += 60; reasons.push('Monto exacto'); }
+        else if (amountDiff < 10)   { score += 50; reasons.push('Monto exacto'); }
         else if (amountDiff < 100)  { score += 35; reasons.push('Monto similar (±$100)'); }
         else if (amountPct < 1)     { score += 25; reasons.push('Monto ~1% diferencia'); }
         else if (amountPct < 5)     { score += 10; reasons.push('Monto ~5% diferencia'); }
+        else if (Math.abs(Math.round(invAmount * 1.19) - mov.amount) < 100) {
+          score += 45; reasons.push('Monto + IVA coincide');
+        }
 
         // 2. Date proximity
         const movDate = parseDisplayDate(mov.date);
@@ -373,7 +377,7 @@ export default function AdminInvoicingReconciliation() {
       }
       toast.success('Base de conciliación limpiada.');
       setMovements([]); setBankStatements([]); setSuggestions({}); setMatches([]);
-    } catch (e) { toast.error('Error.'); } finally { setLoading(false); }
+    } catch { toast.error('Error.'); } finally { setLoading(false); }
   };
 
   // ── Manual match ──────────────────────────────────────────────────────────
@@ -417,6 +421,14 @@ export default function AdminInvoicingReconciliation() {
             billingStatus:   'paid',
             lastPaymentDate: serverTimestamp(),
           });
+          const logRef = doc(collection(db, 'projects', m.invoice.projectId, 'logs'));
+          batch.set(logRef, {
+            type:      'status_change',
+            content:   `Pago conciliado: ${m.movement.description} por ${formatCurrency(m.movement.amount)}`,
+            userName:  'Admin',
+            userRole:  'admin',
+            timestamp: serverTimestamp(),
+          });
         }
 
         if (m.movement.id) {
@@ -429,7 +441,8 @@ export default function AdminInvoicingReconciliation() {
       });
 
       await batch.commit();
-      toast.success(`${matches.length} facturas conciliadas.`);
+      const projectCount = new Set(matches.filter(m => m.invoice.projectId && !['multi','manual'].includes(m.invoice.projectId)).map(m => m.invoice.projectId)).size;
+      toast.success(`${matches.length} factura(s) conciliada(s). ${projectCount > 0 ? `${projectCount} proyecto(s) movido(s) a Pagado.` : ''}`);
       setMatches([]);
       setSuggestions({});
       await fetchPending();
@@ -462,8 +475,6 @@ export default function AdminInvoicingReconciliation() {
   });
 
   // Stats
-  const totalCredits = movements.filter(m => m.amount > 0).reduce((s, m) => s + m.amount, 0);
-  const totalDebits = movements.filter(m => m.amount < 0).reduce((s, m) => s + Math.abs(m.amount), 0);
   const unreconciledCredits = movements.filter(m => m.amount > 0 && !m.reconciled && !matches.some(mt => mt.movement.id === m.id)).reduce((s, m) => s + m.amount, 0);
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -701,7 +712,9 @@ export default function AdminInvoicingReconciliation() {
                                           <span className="font-bold text-sm text-slate-700">{formatCurrency(sug.invoice.totalAmount)}</span>
                                           <ScoreBadge score={sug.score} />
                                           {sug.reasons.slice(0, 3).map((r, ri) => (
-                                            <span key={ri} className="text-[9px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{r}</span>
+                                            r.includes('IVA')
+                                              ? <span key={ri} className="text-[9px] text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded border border-blue-200">{r}</span>
+                                              : <span key={ri} className="text-[9px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{r}</span>
                                           ))}
                                         </div>
                                       </div>
@@ -760,14 +773,17 @@ export default function AdminInvoicingReconciliation() {
                   })
                   .map((inv, i) => {
                     const isMatched       = matches.some((m) => m.invoice.id === inv.id);
-                    const isExactCandidate = manualMatchOpen && activeMovement && Math.abs(Number(inv.totalAmount) - activeMovement.amount) < 100;
-                    
+                    const isExactCandidate  = manualMatchOpen && activeMovement && Math.abs(Number(inv.totalAmount) - activeMovement.amount) < 100;
+                    const isApproxCandidate = manualMatchOpen && activeMovement &&
+                      Math.abs(Number(inv.totalAmount) - activeMovement.amount) >= 100 &&
+                      Math.abs(Number(inv.totalAmount) - activeMovement.amount) < 1000;
+
                     return (
                       <div
                         key={i}
                         className={`p-3 rounded-xl border transition relative cursor-pointer ${
                           manualMatchOpen
-                            ? `hover:ring-2 hover:ring-indigo-500 ${isExactCandidate ? 'bg-indigo-50 border-indigo-400 ring-1 ring-indigo-200 shadow-md' : 'bg-white border-slate-200 opacity-80'}`
+                            ? `hover:ring-2 hover:ring-indigo-500 ${isExactCandidate ? 'bg-indigo-50 border-indigo-400 ring-1 ring-indigo-200 shadow-md' : isApproxCandidate ? 'bg-amber-50 border-amber-300 ring-1 ring-amber-100' : 'bg-white border-slate-200 opacity-80'}`
                             : isMatched
                             ? 'bg-emerald-50 border-emerald-200 opacity-50'
                             : 'bg-white border-slate-100 hover:border-slate-300 hover:shadow-sm'
@@ -776,6 +792,9 @@ export default function AdminInvoicingReconciliation() {
                       >
                         {isExactCandidate && (
                           <span className="absolute -top-1.5 -right-1.5 bg-indigo-600 text-white text-[8px] font-bold px-1.5 py-0.5 rounded-full shadow animate-bounce">Match</span>
+                        )}
+                        {isApproxCandidate && (
+                          <span className="absolute -top-1.5 -right-1.5 bg-amber-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded-full shadow">Aprox</span>
                         )}
                         <div className="flex justify-between items-start mb-1">
                           <span className="text-xs font-bold text-indigo-600 truncate max-w-[140px]">{inv.clientName}</span>

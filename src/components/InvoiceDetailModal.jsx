@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { X, AlertTriangle, Trash2, FileText } from 'lucide-react';
-import { doc, getDocs, collection, query, where, writeBatch, serverTimestamp, getDoc } from 'firebase/firestore';
+import { doc, getDocs, collection, query, where, writeBatch, serverTimestamp, getDoc, increment, arrayUnion } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { formatCurrency } from '../utils/format';
 import jsPDF from 'jspdf';
@@ -12,6 +12,10 @@ export default function InvoiceDetailModal({ invoice, isOpen, onClose, onUpdate 
     const [expenses, setExpenses] = useState([]);
     const [loading, setLoading] = useState(false);
     const [processing, setProcessing] = useState(false);
+    const [showLinkPanel, setShowLinkPanel] = useState(false);
+    const [unlinkedExpenses, setUnlinkedExpenses] = useState([]);
+    const [selectedUnlinked, setSelectedUnlinked] = useState([]);
+    const [linkingExpenses, setLinkingExpenses] = useState(false);
 
     useEffect(() => {
         if (isOpen && invoice) {
@@ -48,6 +52,59 @@ export default function InvoiceDetailModal({ invoice, isOpen, onClose, onUpdate 
             fetchData();
         }
     }, [isOpen, invoice]);
+
+    const fetchUnlinkedExpenses = async () => {
+        if (!invoice.projectId) return;
+        try {
+            const q = query(
+                collection(db, 'expenses'),
+                where('projectId', '==', invoice.projectId),
+                where('status', '==', 'approved')
+            );
+            const snap = await getDocs(q);
+            const available = snap.docs
+                .map(d => ({ id: d.id, ...d.data() }))
+                .filter(e => !e.invoiceId);
+            setUnlinkedExpenses(available);
+        } catch (e) {
+            console.error('Error fetching unlinked expenses:', e);
+            toast.error('Error al cargar gastos disponibles.');
+        }
+    };
+
+    const handleLinkExpenses = async () => {
+        if (selectedUnlinked.length === 0) return;
+        setLinkingExpenses(true);
+        try {
+            const batch = writeBatch(db);
+            const toLink = unlinkedExpenses.filter(e => selectedUnlinked.includes(e.id));
+            const sum = toLink.reduce((acc, e) => acc + (Number(e.amount) || 0), 0);
+
+            toLink.forEach(e => {
+                batch.update(doc(db, 'expenses', e.id), {
+                    invoiceId: invoice.id,
+                    invoiceStatus: 'issued'
+                });
+            });
+
+            batch.update(doc(db, 'invoices', invoice.id), {
+                totalExpenses: increment(sum),
+                expenseIds: arrayUnion(...selectedUnlinked)
+            });
+
+            await batch.commit();
+            toast.success(`${toLink.length} gasto(s) vinculado(s) correctamente.`);
+            setShowLinkPanel(false);
+            setSelectedUnlinked([]);
+            setUnlinkedExpenses([]);
+            if (onUpdate) onUpdate();
+        } catch (e) {
+            console.error('Error linking expenses:', e);
+            toast.error('Error al vincular gastos.');
+        } finally {
+            setLinkingExpenses(false);
+        }
+    };
 
     const handleDownloadPDF = () => {
         const doc = new jsPDF();
@@ -194,9 +251,11 @@ export default function InvoiceDetailModal({ invoice, isOpen, onClose, onUpdate 
                     {/* Invoice Meta */}
                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 p-4 bg-slate-50 rounded-xl border border-slate-100 text-sm">
                         <div>
-                            <p className="text-xs text-slate-400 uppercase font-bold">Fecha Emisión</p>
+                            <p className="text-xs text-slate-400 uppercase font-bold">Fecha Factura</p>
                             <p className="font-bold text-slate-700">
-                                {invoice.createdAt?.seconds ? new Date(invoice.createdAt.seconds * 1000).toLocaleDateString() : 'N/A'}
+                                {invoice.issueDate
+                                    ? (() => { const [y,m,d] = invoice.issueDate.split('-'); return `${d}/${m}/${y}`; })()
+                                    : invoice.createdAt?.seconds ? new Date(invoice.createdAt.seconds * 1000).toLocaleDateString('es-CL') : 'N/A'}
                             </p>
                         </div>
                         <div>
@@ -250,6 +309,60 @@ export default function InvoiceDetailModal({ invoice, isOpen, onClose, onUpdate 
                             </div>
                         )}
                     </div>
+
+                    {/* Link Unlinked Expenses */}
+                    {invoice.status !== 'void' && (
+                        <div>
+                            {!showLinkPanel ? (
+                                <button
+                                    onClick={() => { setShowLinkPanel(true); fetchUnlinkedExpenses(); }}
+                                    className="text-xs text-indigo-600 hover:text-indigo-800 font-medium underline"
+                                >
+                                    Vincular Gastos
+                                </button>
+                            ) : (
+                                <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4">
+                                    <p className="text-xs font-bold text-indigo-700 uppercase tracking-wide mb-3">Gastos disponibles para vincular</p>
+                                    {unlinkedExpenses.length === 0 ? (
+                                        <p className="text-sm text-slate-400 italic">No hay gastos aprobados sin factura para este proyecto.</p>
+                                    ) : (
+                                        <div className="space-y-2 max-h-48 overflow-y-auto mb-3">
+                                            {unlinkedExpenses.map(e => (
+                                                <label key={e.id} className="flex items-center gap-3 bg-white rounded-lg px-3 py-2 border border-indigo-100 cursor-pointer hover:border-indigo-300 transition">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedUnlinked.includes(e.id)}
+                                                        onChange={() => setSelectedUnlinked(prev =>
+                                                            prev.includes(e.id) ? prev.filter(id => id !== e.id) : [...prev, e.id]
+                                                        )}
+                                                        className="w-4 h-4 rounded border-slate-300 text-indigo-600"
+                                                    />
+                                                    <span className="text-xs text-slate-500 w-20 shrink-0">{e.date}</span>
+                                                    <span className="text-xs text-slate-700 flex-1 truncate">{e.description || e.category}</span>
+                                                    <span className="text-xs font-bold text-slate-800 shrink-0">{e.amount?.toLocaleString('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 })}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    )}
+                                    <div className="flex gap-2 justify-end mt-2">
+                                        <button
+                                            onClick={() => { setShowLinkPanel(false); setSelectedUnlinked([]); setUnlinkedExpenses([]); }}
+                                            className="text-sm text-slate-500 hover:text-slate-700 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition"
+                                        >
+                                            Cancelar
+                                        </button>
+                                        <button
+                                            onClick={handleLinkExpenses}
+                                            disabled={selectedUnlinked.length === 0 || linkingExpenses}
+                                            className="text-sm bg-indigo-600 text-white px-4 py-1.5 rounded-lg hover:bg-indigo-700 transition font-medium disabled:opacity-50"
+                                        >
+                                            {linkingExpenses ? 'Vinculando...' : `Confirmar Vinculación (${selectedUnlinked.length})`}
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     {/* Custom Items */}
                     {invoice.customItems && invoice.customItems.length > 0 && (

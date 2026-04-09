@@ -42,6 +42,14 @@ const matchesAny = (cell, keywords) => {
 // ---------------------------------------------------------------------------
 // DATE PARSER
 // ---------------------------------------------------------------------------
+/**
+ * Converts a raw cell value from an Excel bank statement into "DD/MM/YYYY".
+ *
+ * Expected behavior examples:
+ * // Expected: 45678 (Excel serial) → "15/06/2025"
+ * // Expected: "15/06/2025" → "15/06/2025"
+ * // Expected: "2025-06-15" → "15/06/2025"
+ */
 export function parseExcelDate(raw) {
   if (raw == null || raw === '') return null;
 
@@ -58,7 +66,7 @@ export function parseExcelDate(raw) {
   const s = String(raw).trim();
 
   // 2. DD/MM/YYYY or DD-MM-YYYY
-  const dmy = s.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})$/);
+  const dmy = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})$/);
   if (dmy) {
     const [, d, m, y] = dmy;
     const year = y.length === 2 ? `20${y}` : y;
@@ -66,7 +74,7 @@ export function parseExcelDate(raw) {
   }
 
   // 3. YYYY-MM-DD (ISO)
-  const iso = s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+  const iso = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
   if (iso) {
     const [, y, m, d] = iso;
     return `${d.padStart(2, '0')}/${m.padStart(2, '0')}/${y}`;

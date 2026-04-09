@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
 import { db } from '../lib/firebase';
-import { collection, query, where, getDocs, doc, updateDoc, increment, writeBatch, orderBy, limit } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, increment, writeBatch, orderBy, limit } from 'firebase/firestore';
 import { formatCurrency } from '../utils/format';
 import { CheckCircle, XCircle, Download, FileText } from 'lucide-react';
 import RejectionModal from '../components/RejectionModal';
@@ -104,7 +104,7 @@ export default function AdminApprovals() {
                 e.userName || "",
                 project?.code || "",
                 e.projectName || "",
-                project?.recurrence || "",
+                project?.recurrence || e.projectRecurrence || "",
                 `"${(e.description || "").replace(/"/g, '""')}"`, // Escape quotes
                 e.category || "",
                 e.amount || 0,
@@ -124,7 +124,7 @@ export default function AdminApprovals() {
           const url = URL.createObjectURL(blob);
           const link = document.createElement("a");
           link.setAttribute("href", url);
-          link.setAttribute("download", `rendiciones_etfa_${startDate || 'inicio'}_alu_${endDate || 'fin'}.csv`);
+          link.setAttribute("download", `rendiciones_etfa_${startDate || 'inicio'}_al_${endDate || 'fin'}.csv`);
           document.body.appendChild(link);
           link.click();
           document.body.removeChild(link);
@@ -172,34 +172,28 @@ export default function AdminApprovals() {
   const handleConfirmRejection = async (expense, reason) => {
       try {
           const batch = writeBatch(db);
-          
+
           // 1. Mark as rejected and add reason
           const expenseRef = doc(db, "expenses", expense.id);
-          batch.update(expenseRef, { 
+          batch.update(expenseRef, {
               status: "rejected",
-              rejectionReason: reason 
+              rejectionReason: reason
           });
 
-          // 2. Refund User (Fix: Do NOT override to 'user_caja_chica' if it was a personal submission)
-          // The expense.userId contains the ID of the balance that was credited.
-          // We simply reverse it.
-          
+          // 2. Refund User balance inside the same batch
           let targetUserId = expense.userId;
-          // Note: If the expense was "isCompanyExpense: true", usually userId is "company_expense".
-          // In that case, we don't refund a user balance.
-          
           if (targetUserId && !expense.isCompanyExpense) {
               const userRef = doc(db, "users", targetUserId);
-              // Reversing credit: If amount was +1000 (User got +1000), we do -1000.
-              // If it was a correction (-1000), we do +1000.
-              // So, decrement by expense.amount.
-              await updateDoc(userRef, { balance: increment(-expense.amount) });
+              batch.update(userRef, { balance: increment(-expense.amount) });
           }
 
-          toast.success("Gasto rechazado y saldo devuelto.");
+          await batch.commit();
+
+          // Optimistic update: remove from pending list immediately
+          setPendingExpenses(prev => prev.filter(e => e.id !== expense.id));
           setRejectionModalOpen(false);
           setSelectedExpenseToReject(null);
-          // Refresh
+          toast.success("Gasto rechazado y saldo devuelto.");
           fetchPending();
       } catch (e) {
           console.error("Error rejecting:", e);

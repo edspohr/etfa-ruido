@@ -88,6 +88,25 @@ function TaskRow({ task, onStatusChange }) {
         completedAt: newStatus === 'completado' ? serverTimestamp() : null,
       });
       onStatusChange(task.id, newStatus);
+
+      if (newStatus === 'completado' && task.calendarEventId && task.type === 'reporte_tecnico') {
+        try {
+          const rSnap = await getDocs(query(
+            collection(db, 'reports'),
+            where('calendarEventId', '==', task.calendarEventId),
+            where('status', '==', 'draft')
+          ));
+          if (!rSnap.empty) {
+            await updateDoc(doc(db, 'reports', rSnap.docs[0].id), {
+              status:      'submitted',
+              submittedAt: serverTimestamp(),
+            });
+            toast.success('Informe asociado enviado automáticamente a revisión.');
+          }
+        } catch (err) {
+          console.error('Auto-submit report error:', err);
+        }
+      }
     } catch (err) {
       console.error(err);
       setLocalStatus(prev);

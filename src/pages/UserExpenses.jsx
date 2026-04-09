@@ -75,6 +75,8 @@ export default function UserExpenses() {
   };
 
   const visibleExpenses = expenses.filter(e => showHistorical || !isOlderThan60Days(e.date));
+  const approvedCount = visibleExpenses.filter(e => e.status === 'approved').length;
+  const rejectedCount = visibleExpenses.filter(e => e.status === 'rejected').length;
 
   if (loading) return <Layout title="Mis Rendiciones">Cargando...</Layout>;
 
@@ -96,6 +98,11 @@ export default function UserExpenses() {
           </span>
         </div>
       )}
+      {(approvedCount > 0 || rejectedCount > 0) && (
+        <p className="text-sm text-gray-500 mb-3">
+          Tienes <span className="font-bold text-emerald-600">{approvedCount} aprobadas</span> y <span className="font-bold text-rose-600">{rejectedCount} rechazadas</span>
+        </p>
+      )}
       <div className="flex justify-end mb-3">
         <button
           onClick={() => setShowHistorical(prev => !prev)}
@@ -116,7 +123,7 @@ export default function UserExpenses() {
                 </tr>
             </thead>
             <tbody>
-                {visibleExpenses.map(e => (
+                {visibleExpenses.map((e, index) => (
                     <tr key={e.id} className="border-b last:border-0 hover:bg-gray-50">
                         <td className="px-6 py-4 text-gray-600">{e.date}</td>
                         <td className="px-6 py-4 text-gray-800 font-medium">{e.projectName || 'Sin Proyecto'}</td>
@@ -124,10 +131,13 @@ export default function UserExpenses() {
                         <td className="px-6 py-4">
                             <div className="flex items-center gap-2">
                                     <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${
-                                      e.status === 'approved' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 
+                                      e.status === 'approved' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' :
                                       e.status === 'pending' ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-rose-100 text-rose-700 border-rose-200'}`}>
                                       {e.status === 'approved' ? 'Aprobado' : e.status === 'pending' ? 'Pendiente' : 'Rechazado'}
                                     </span>
+                                {index < 10 && e.status !== 'pending' && (
+                                    <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-700 text-[9px] font-bold rounded-full">Nuevo</span>
+                                )}
                                 {e.status === 'rejected' && e.rejectionReason && (
                                     <div className="group relative">
                                         <AlertCircle className="w-4 h-4 text-red-500 cursor-help" />

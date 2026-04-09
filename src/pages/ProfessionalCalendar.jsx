@@ -3,7 +3,7 @@ import Layout from '../components/Layout';
 import EmptyState from '../components/EmptyState';
 import FieldClosureModal from '../components/FieldClosureModal';
 import { db } from '../lib/firebase';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { collection, getDocs } from 'firebase/firestore';
 import {
   format, startOfWeek, addDays, addWeeks, subWeeks,
   getWeek, differenceInDays, parseISO, isToday,
@@ -78,20 +78,17 @@ export default function ProfessionalCalendar() {
 
   const refreshEvents = async () => {
     if (!currentUser) return;
-    // NOTE: array-contains on `ingenieros` — single-field index, no extra Firestore index needed
-    const snap = await getDocs(
-      query(
-        collection(db, 'calendar_events'),
-        where('ingenieros', 'array-contains', currentUser.uid)
-      )
-    );
+    const snap = await getDocs(collection(db, 'calendar_events'));
     setEvents(snap.docs.map(d => ({ id: d.id, ...d.data() })));
   };
 
   useEffect(() => {
     if (!currentUser) return;
-    setLoading(true);
-    refreshEvents().finally(() => setLoading(false));
+    const load = async () => {
+      setLoading(true);
+      try { await refreshEvents(); } finally { setLoading(false); }
+    };
+    load();
   }, [currentUser]);
 
   // ── Events positioned for current week ───────────────────────────────────
@@ -140,6 +137,13 @@ export default function ProfessionalCalendar() {
       const label      = `${ev.projectCode ? `[${ev.projectCode}] ` : ''}${
         ev.ingenierosNames?.join(', ') || ev.title || ev.projectName
       }`;
+      const tooltip = [
+        ev.projectName,
+        `${ev.startDate} → ${ev.endDate}`,
+        ev.vehiculo     ? `Vehículo: ${ev.vehiculo}`       : null,
+        ev.equipamiento ? `Equipo: ${ev.equipamiento}`     : null,
+      ].filter(Boolean).join('\n');
+      const canClose = (ev.ingenieros || []).includes(currentUser?.uid);
 
       cells.push(
         <div
@@ -152,7 +156,7 @@ export default function ProfessionalCalendar() {
             ev.continuesLeft  ? 'rounded-l-none pl-1' : '',
             ev.continuesRight ? 'rounded-r-none pr-1' : '',
           ].join(' ')}
-          title={label}
+          title={tooltip}
         >
           <span className="truncate leading-none">{label}</span>
 
@@ -162,7 +166,7 @@ export default function ProfessionalCalendar() {
             </span>
           )}
 
-          {!isClosed && (
+          {!isClosed && canClose && (
             <button
               className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 bg-red-600 hover:bg-red-700 text-white text-[9px] font-black px-1.5 py-0.5 rounded transition-opacity pointer-events-auto whitespace-nowrap"
               onClick={e => { e.stopPropagation(); setClosureEvent(ev); }}

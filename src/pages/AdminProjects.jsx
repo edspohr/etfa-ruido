@@ -7,6 +7,7 @@ import { formatCurrency } from '../utils/format';
 import { Plus, DollarSign, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
 
 import { sortProjects } from '../utils/sort';
+import { isSystemUser } from '../utils/userUtils';
 import { toast } from 'sonner';
 import SearchableSelect from '../components/SearchableSelect';
 
@@ -49,7 +50,7 @@ export default function AdminProjects() {
         // Logic: If 'Caja Chica' project selected -> Auto-assign to hidden user. 
         const uQuery = query(collection(db, "users"), where("role", "in", ["professional", "admin"]));
         const uSnap = await getDocs(uQuery);
-        const uData = uSnap.docs.map(d => ({id: d.id, ...d.data()}));
+        const uData = uSnap.docs.map(d => ({id: d.id, ...d.data()})).filter(u => !isSystemUser(u));
         setUsers(uData);
 
         // Clients for create modal
@@ -510,19 +511,19 @@ export default function AdminProjects() {
                       className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-slate-300 mb-1">Teléfono / WhatsApp</label>
+                    <label className="block text-sm font-semibold text-slate-300 mb-1">Teléfono / WhatsApp <span className="font-normal text-slate-500">(opcional)</span></label>
                     <input type="text" value={createForm.contactPhone}
                       onChange={e => setCreateForm(p => ({...p, contactPhone: e.target.value}))}
                       className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-slate-300 mb-1">Email</label>
+                    <label className="block text-sm font-semibold text-slate-300 mb-1">Email <span className="font-normal text-slate-500">(opcional)</span></label>
                     <input type="email" value={createForm.contactEmail}
                       onChange={e => setCreateForm(p => ({...p, contactEmail: e.target.value}))}
                       className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-slate-300 mb-1">Cargo</label>
+                    <label className="block text-sm font-semibold text-slate-300 mb-1">Cargo <span className="font-normal text-slate-500">(opcional)</span></label>
                     <input type="text" value={createForm.contactPosition}
                       onChange={e => setCreateForm(p => ({...p, contactPosition: e.target.value}))}
                       className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500" />

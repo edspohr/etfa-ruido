@@ -79,5 +79,10 @@ service cloud.firestore {
     match /tasks/{taskId} {
       allow read, write: if request.auth != null;
     }
+
+    // RESOURCES: Equipment and vehicle registry
+    match /resources/{resourceId} {
+      allow read, write: if request.auth != null;
+    }
   }
 }

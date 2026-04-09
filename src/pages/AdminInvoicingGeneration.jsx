@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import Layout from '../components/Layout';
-import { ArrowLeft, Save, Search, CheckCircle, AlertCircle, Plus, Trash2, Upload, FileText, Loader, RefreshCw, DollarSign } from 'lucide-react';
+import { ArrowLeft, Save, Search, CheckCircle, AlertCircle, AlertTriangle, Plus, Trash2, Upload, FileText, Loader, RefreshCw, DollarSign } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { collection, query, where, getDocs, addDoc, writeBatch, doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
@@ -348,7 +348,8 @@ export default function AdminInvoicingGeneration() {
               
               projectId: selectedProjectId || (projectNames.length === 1 ? selectedExpDocs[0].projectId : 'multi'),
               projectName: displayProjectName,
-              projectRecurrence: selectedProject?.recurrence || 'N/A',
+              projectCode: selectedProject?.code || '',
+              projectRecurrence: selectedProject?.recurrence || '',
               
               glosa: glosa,
               references: references,
@@ -524,7 +525,7 @@ export default function AdminInvoicingGeneration() {
           matchedProject = projects.find(p => p.id === extractedProjectId) || null;
         }
 
-        results.push({
+        const entry = {
           fileName:    file.name,
           status:      extractedAmount > 0 ? 'ok' : 'error',
           error:       extractedAmount > 0 ? null : 'Monto no detectado — ingresa manualmente',
@@ -535,11 +536,50 @@ export default function AdminInvoicingGeneration() {
           amount:      extractedAmount,
           observaciones: '',
           include:     extractedAmount > 0,
-        });
+        };
+
+        // Firestore duplicate check
+        if (extractedRut && extractedAmount > 0) {
+          try {
+            const cleanRut = extractedRut.replace(/[.-]/g, '').toUpperCase();
+            const dupQ = query(
+              collection(db, 'invoices'),
+              where('clientRut', '==', cleanRut),
+              where('totalAmount', '==', extractedAmount)
+            );
+            const dupSnap = await getDocs(dupQ);
+            const existingNonVoid = dupSnap.docs.find(d => d.data().status !== 'void');
+            if (existingNonVoid) {
+              entry.status = 'warning';
+              entry.error  = 'Posible duplicado: ya existe una factura con este RUT y monto en el sistema';
+            }
+          } catch { /* ignore — non-critical check */ }
+        }
+
+        results.push(entry);
       } catch (e) {
         results.push({ fileName: file.name, status: 'error', error: e.message, rut: '', razonSocial: '', project: '', amount: 0, include: false });
       }
     }
+
+    // Local duplicate check: group by rut + amount within this batch
+    const groups = {};
+    results.forEach((r, i) => {
+      if (!r.rut || !r.amount) return;
+      const key = `${r.rut}_${r.amount}`;
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(i);
+    });
+    Object.values(groups).forEach(indices => {
+      if (indices.length > 1) {
+        indices.forEach(i => {
+          if (results[i].status !== 'error') {
+            results[i].status = 'warning';
+            results[i].error  = 'Posible duplicado en este lote (mismo RUT y monto)';
+          }
+        });
+      }
+    });
 
     setBatchInvoices(results);
     setBatchProcessing(false);
@@ -574,12 +614,15 @@ export default function AdminInvoicingGeneration() {
           }, { merge: true });
         }
 
+        const matchedProject = projects.find(p => p.id === inv.projectId);
         const invoiceData = {
           clientId: inv.rut ? inv.rut.replace(/[.-]/g, '').toUpperCase() : 'desconocido',
           clientName: inv.razonSocial || 'Sin Razón Social',
           clientRut: inv.rut || '',
           projectId: inv.projectId || 'manual',
           projectName: inv.project || 'Varios / Sin Proyecto',
+          projectCode: matchedProject?.code || '',
+          projectRecurrence: matchedProject?.recurrence || '',
           glosa: `Generado desde: ${inv.fileName}`,
           observaciones: inv.observaciones || '',
           documentType: 'electronic_invoice',
@@ -1201,7 +1244,7 @@ export default function AdminInvoicingGeneration() {
                       <tbody>
                         {batchInvoices.map((inv, idx) => (
                           <tr key={idx} className={`border-b border-slate-50 transition-colors ${
-                            inv.status === 'error' ? 'bg-rose-50/50' : inv.include ? 'bg-indigo-50/30 hover:bg-indigo-50/50' : 'hover:bg-slate-50'
+                            inv.status === 'error' ? 'bg-rose-50/50' : inv.status === 'warning' ? 'bg-amber-50/50' : inv.include ? 'bg-indigo-50/30 hover:bg-indigo-50/50' : 'hover:bg-slate-50'
                           }`}>
                             <td className="py-3 px-4">
                               <input 
@@ -1248,10 +1291,15 @@ export default function AdminInvoicingGeneration() {
                             <td className="py-3 px-4 text-center">
                               {inv.status === 'ok' ? (
                                 <span className="inline-flex items-center gap-1 text-emerald-600 text-xs font-bold"><CheckCircle className="w-4 h-4" /> OK</span>
+                              ) : inv.status === 'warning' ? (
+                                <span className="inline-flex flex-col items-center gap-1 text-amber-600 text-[10px] font-bold text-center leading-tight">
+                                  <span className="flex items-center gap-1"><AlertTriangle className="w-3.5 h-3.5" /> Advertencia</span>
+                                  {inv.error && <span className="font-normal opacity-80 max-w-[120px]">{inv.error}</span>}
+                                </span>
                               ) : (
                                 <span className="inline-flex flex-col items-center gap-1 text-rose-500 text-[10px] font-bold text-center leading-tight">
-                                    <span className="flex items-center gap-1"><AlertCircle className="w-3.5 h-3.5" /> Error</span>
-                                    {inv.error && <span className="font-normal opacity-80 max-w-[120px]">{inv.error}</span>}
+                                  <span className="flex items-center gap-1"><AlertCircle className="w-3.5 h-3.5" /> Error</span>
+                                  {inv.error && <span className="font-normal opacity-80 max-w-[120px]">{inv.error}</span>}
                                 </span>
                               )}
                             </td>

@@ -4,24 +4,26 @@ import { useAuth } from '../context/useAuth';
 import {
   PieChart, LayoutDashboard, FolderOpen, CheckCircle,
   FileText, UserCircle, Receipt, LogOut, Wallet, ClipboardList, BarChart3,
-  Activity, Grid, FilePlus, Calendar,
+  Activity, Grid, FilePlus, Calendar, Wrench,
 } from 'lucide-react';
+import useNotificationCounts from '../hooks/useNotificationCounts';
 
 const MODULE_ROUTES = {
   rendiciones: ['/admin/projects', '/admin/approvals', '/admin/balances'],
-  operaciones: ['/admin/calendar', '/admin/tasks', '/admin/reports'],
+  operaciones: ['/admin/calendar', '/admin/tasks', '/admin/reports', '/admin/resources'],
   financiero: ['/admin/invoicing', '/admin/analytics', '/admin'],
 };
 
 export default function Sidebar({ isOpen, setIsOpen }) {
   const { currentUser, userRole, logout } = useAuth();
+  const { pendingExpenses, pendingReports } = useNotificationCounts();
   const location = useLocation();
   const navigate = useNavigate();
 
   const activeModule = useMemo(() => {
     const path = location.pathname;
     if (path.startsWith('/admin/projects') || path.startsWith('/admin/approvals') || path.startsWith('/admin/balances')) return 'rendiciones';
-    if (path.startsWith('/admin/calendar') || path.startsWith('/admin/tasks') || path.startsWith('/admin/reports')) return 'operaciones';
+    if (path.startsWith('/admin/calendar') || path.startsWith('/admin/tasks') || path.startsWith('/admin/reports') || path.startsWith('/admin/resources')) return 'operaciones';
     if (path.startsWith('/admin/invoicing') || path.startsWith('/admin/analytics')) return 'financiero';
     if (path === '/admin') return 'financiero';
     return 'rendiciones';
@@ -140,6 +142,11 @@ export default function Sidebar({ isOpen, setIsOpen }) {
                 <Link to="/admin/approvals" className={linkClass('/admin/approvals')} onClick={() => setIsOpen(false)}>
                     <CheckCircle className="w-4 h-4 mr-3" />
                     Aprobaciones
+                    {userRole === 'admin' && pendingExpenses > 0 && (
+                      <span className="ml-auto bg-rose-500 text-white text-[10px] font-bold min-w-[18px] h-[18px] flex items-center justify-center rounded-full">
+                        {pendingExpenses}
+                      </span>
+                    )}
                 </Link>
                 <Link to="/admin/balances" className={linkClass('/admin/balances')} onClick={() => setIsOpen(false)}>
                     <Wallet className="w-4 h-4 mr-3" />
@@ -162,6 +169,15 @@ export default function Sidebar({ isOpen, setIsOpen }) {
                 <Link to="/admin/reports" className={linkClass('/admin/reports')} onClick={() => setIsOpen(false)}>
                     <FileText className="w-4 h-4 mr-3" />
                     Informes
+                    {userRole === 'admin' && pendingReports > 0 && (
+                      <span className="ml-auto bg-rose-500 text-white text-[10px] font-bold min-w-[18px] h-[18px] flex items-center justify-center rounded-full">
+                        {pendingReports}
+                      </span>
+                    )}
+                </Link>
+                <Link to="/admin/resources" className={linkClass('/admin/resources')} onClick={() => setIsOpen(false)}>
+                    <Wrench className="w-4 h-4 mr-3" />
+                    Recursos
                 </Link>
               </>
             )}
@@ -172,6 +188,10 @@ export default function Sidebar({ isOpen, setIsOpen }) {
                 <Link to="/admin" className={linkClass('/admin')} onClick={() => setIsOpen(false)}>
                     <LayoutDashboard className="w-4 h-4 mr-3" />
                     Kanban
+                </Link>
+                <Link to="/admin/expenses" className={linkClass('/admin/expenses')} onClick={() => setIsOpen(false)}>
+                    <Receipt className="w-4 h-4 mr-3" />
+                    Proyectos y Gastos
                 </Link>
                 <Link to="/admin/invoicing/generate" className={linkClass('/admin/invoicing/generate')} onClick={() => setIsOpen(false)}>
                     <FilePlus className="w-4 h-4 mr-3" />

@@ -10,7 +10,7 @@ import {
   getWeek, differenceInDays, parseISO, isToday,
 } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, ChevronDown, X, Trash2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, X, Trash2, Download } from 'lucide-react';
 import SearchableSelect from '../components/SearchableSelect';
 import { toast } from 'sonner';
 import FieldClosureModal from '../components/FieldClosureModal';
@@ -62,6 +62,7 @@ const EMPTY_FORM = {
   startTime:    '',
   endTime:      '',
   allDay:       true,
+  includeFlash: true,
   ingenieros:   [],
   vehiculo:     '',
   equipamiento: '',
@@ -76,6 +77,7 @@ export default function AdminCalendar() {
   const [events,        setEvents]        = useState([]);
   const [projects,      setProjects]      = useState([]);
   const [professionals, setProfessionals] = useState([]);
+  const [resources,     setResources]     = useState([]);
   const [loading,       setLoading]       = useState(true);
 
   // Modal
@@ -86,6 +88,9 @@ export default function AdminCalendar() {
   const [formData,      setFormData]      = useState({ ...EMPTY_FORM });
   const [showIngDropdown, setShowIngDropdown] = useState(false);
   const [detailEvent,   setDetailEvent]   = useState(null);
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportFrom,    setExportFrom]    = useState('');
+  const [exportTo,      setExportTo]      = useState('');
 
   // ── Computed week values ──────────────────────────────────────────────────
 
@@ -120,22 +125,24 @@ export default function AdminCalendar() {
     const init = async () => {
       setLoading(true);
       try {
-        const [projSnap, usersSnap, evSnap] = await Promise.all([
+        const [projSnap, usersSnap, evSnap, resSnap] = await Promise.all([
           getDocs(query(collection(db, 'projects'), where('status', '!=', 'deleted'))),
           getDocs(query(collection(db, 'users'),    where('role',   'in', ['professional', 'admin']))),
           getDocs(collection(db, 'calendar_events')),
+          getDocs(collection(db, 'resources')),
         ]);
 
         setProjects(
           sortProjects(projSnap.docs.map(d => ({
             id:    d.id,
-            label: `${d.data().code ? `[${d.data().code}] ` : ''}${d.data().name}`,
+            label: `${d.data().code ? `[${d.data().code}] ` : ''}${d.data().recurrence ? `(${d.data().recurrence}) ` : ''}${d.data().name}`,
             value: d.id,
             ...d.data(),
           })))
         );
         setProfessionals(usersSnap.docs.map(d => ({ id: d.id, ...d.data() })));
         setEvents(evSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+        setResources(resSnap.docs.map(d => ({ id: d.id, ...d.data() })));
       } catch (e) {
         console.error(e);
         toast.error('Error al cargar datos del calendario.');
@@ -194,6 +201,7 @@ export default function AdminCalendar() {
       startTime:    ev.startTime    || '',
       endTime:      ev.endTime      || '',
       allDay:       ev.allDay !== false,
+      includeFlash: ev.includeFlash !== false,
       ingenieros:   ev.ingenieros   || [],
       vehiculo:     ev.vehiculo     || '',
       equipamiento: ev.equipamiento || '',
@@ -257,6 +265,7 @@ export default function AdminCalendar() {
         startTime:      formData.allDay ? null : (formData.startTime || null),
         endTime:        formData.allDay ? null : (formData.endTime   || null),
         allDay:         formData.allDay,
+        includeFlash:   formData.includeFlash,
         ingenieros:     formData.ingenieros,
         ingenierosNames,
         vehiculo:       formData.vehiculo,
@@ -267,13 +276,60 @@ export default function AdminCalendar() {
         await updateDoc(doc(db, 'calendar_events', editingEvent.id), payload);
         toast.success('Evento actualizado.');
       } else {
-        await addDoc(collection(db, 'calendar_events'), {
+        const newEventRef = await addDoc(collection(db, 'calendar_events'), {
           ...payload,
           status:    'scheduled',
           closedAt:  null,
           createdBy: 'admin',
           createdAt: serverTimestamp(),
         });
+
+        // Flash task
+        if (formData.includeFlash) {
+          await addDoc(collection(db, 'tasks'), {
+            type:             'reporte_flash',
+            title:            `Reporte Flash — ${formData.projectName}`,
+            projectId:        formData.projectId,
+            projectName:      formData.projectName,
+            projectCode:      formData.projectCode,
+            assignedTo:       formData.ingenieros,
+            assignedToNames:  ingenierosNames,
+            dueDate:          format(addDays(new Date(formData.endDate), 2), 'yyyy-MM-dd'),
+            status:           'pendiente',
+            calendarEventId:  newEventRef.id,
+            createdBy:        'system',
+            createdAt:        serverTimestamp(),
+            completedAt:      null,
+            notes:            '',
+          });
+        }
+
+        // Reporte técnico task (always, +4 days after end)
+        const dueDateRT = format(addDays(new Date(formData.endDate), 4), 'yyyy-MM-dd');
+        const existingRT = await getDocs(query(
+          collection(db, 'tasks'),
+          where('calendarEventId', '==', newEventRef.id),
+          where('type', '==', 'reporte_tecnico')
+        ));
+        if (existingRT.empty) {
+          await addDoc(collection(db, 'tasks'), {
+            type:             'reporte_tecnico',
+            title:            `Reporte Técnico — ${formData.projectName}`,
+            projectId:        formData.projectId,
+            projectName:      formData.projectName,
+            projectCode:      formData.projectCode,
+            assignedTo:       formData.ingenieros,
+            assignedToNames:  ingenierosNames,
+            dueDate:          dueDateRT,
+            status:           'pendiente',
+            calendarEventId:  newEventRef.id,
+            createdBy:        'system',
+            createdAt:        serverTimestamp(),
+            completedAt:      null,
+            notes:            '',
+          });
+        }
+
         toast.success('Evento creado.');
       }
       closeModal();
@@ -304,6 +360,59 @@ export default function AdminCalendar() {
     setClosureEvent(ev);
   };
 
+  // ── CSV export ────────────────────────────────────────────────────────────
+
+  const handleExportCSV = () => {
+    const filtered = events.filter(ev =>
+      ev.startDate <= exportTo && ev.endDate >= exportFrom
+    );
+    const header = 'Fecha Inicio,Fecha Fin,Proyecto,Código,Recurrencia,Ingenieros,Vehículo,Equipamiento,Estado';
+    const rows = filtered.map(ev => [
+      ev.startDate,
+      ev.endDate,
+      `"${(ev.projectName || '').replace(/"/g, '""')}"`,
+      ev.projectCode || '',
+      ev.recurrence  || '',
+      `"${(ev.ingenierosNames || []).join(', ').replace(/"/g, '""')}"`,
+      `"${(ev.vehiculo        || '').replace(/"/g, '""')}"`,
+      `"${(ev.equipamiento    || '').replace(/"/g, '""')}"`,
+      ev.status || '',
+    ].join(','));
+    const csv = [header, ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `calendario_etfa_${exportFrom}_${exportTo}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setShowExportModal(false);
+  };
+
+  // ── ICS download ──────────────────────────────────────────────────────────
+
+  const handleDownloadICS = (ev) => {
+    const icsContent = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//ETFA Ruido//Calendar//ES',
+      'BEGIN:VEVENT',
+      `DTSTART;VALUE=DATE:${ev.startDate.replace(/-/g, '')}`,
+      `DTEND;VALUE=DATE:${ev.endDate.replace(/-/g, '')}`,
+      `SUMMARY:${ev.projectName || ev.title}`,
+      `DESCRIPTION:Ingenieros: ${(ev.ingenierosNames || []).join(', ')}\\nVehículo: ${ev.vehiculo || 'N/A'}\\nEquipo: ${ev.equipamiento || 'N/A'}`,
+      'END:VEVENT',
+      'END:VCALENDAR',
+    ].join('\r\n');
+    const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `evento_${ev.projectCode || ev.id}.ics`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   // ── Lane renderer ─────────────────────────────────────────────────────────
 
   const renderLane = (lane) => {
@@ -329,6 +438,12 @@ export default function AdminCalendar() {
       const label      = `${ev.projectCode ? `[${ev.projectCode}] ` : ''}${
         ev.ingenierosNames?.join(', ') || ev.title || ev.projectName
       }`;
+      const tooltip = [
+        ev.projectName,
+        `${ev.startDate} → ${ev.endDate}`,
+        ev.vehiculo     ? `Vehículo: ${ev.vehiculo}`   : null,
+        ev.equipamiento ? `Equipo: ${ev.equipamiento}` : null,
+      ].filter(Boolean).join('\n');
 
       cells.push(
         <div
@@ -342,7 +457,7 @@ export default function AdminCalendar() {
             ev.continuesRight ? 'rounded-r-none pr-1' : '',
           ].join(' ')}
           onClick={e => { e.stopPropagation(); setDetailEvent(ev); }}
-          title={label}
+          title={tooltip}
         >
           <span className="truncate leading-none">{label}</span>
 
@@ -404,6 +519,13 @@ export default function AdminCalendar() {
             className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold transition-colors"
           >
             Hoy
+          </button>
+          <button
+            onClick={() => setShowExportModal(true)}
+            className="flex items-center gap-1.5 px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-xl text-sm font-medium transition-colors"
+            title="Exportar calendario a CSV"
+          >
+            <Download className="w-4 h-4" />
           </button>
           <button
             onClick={goToNextWeek}
@@ -531,6 +653,13 @@ export default function AdminCalendar() {
                   <p className="text-slate-200 text-sm">{detailEvent.equipamiento}</p>
                 </div>
               )}
+              {/* Recurrencia */}
+              {detailEvent.recurrence && (
+                <div>
+                  <p className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-1">Recurrencia</p>
+                  <p className="text-slate-200 text-sm">{detailEvent.recurrence}</p>
+                </div>
+              )}
               {/* Status */}
               <div>
                 <p className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-1">Estado</p>
@@ -555,6 +684,13 @@ export default function AdminCalendar() {
                   Cerrar terreno
                 </button>
               )}
+              <button
+                onClick={() => handleDownloadICS(detailEvent)}
+                className="w-full py-2.5 px-4 bg-slate-700/50 hover:bg-slate-700 text-slate-300 text-sm font-medium rounded-xl transition-colors flex items-center justify-center gap-2"
+              >
+                <Download className="w-4 h-4" />
+                Agregar a mi calendario
+              </button>
             </div>
           </div>
         </div>
@@ -648,6 +784,12 @@ export default function AdminCalendar() {
                 <span className="text-sm font-medium text-slate-300">Día completo</span>
               </label>
 
+              {/* Incluir Reporte Flash */}
+              <label className="flex items-center gap-2.5 cursor-pointer">
+                <input type="checkbox" checked={formData.includeFlash} onChange={e => setFormData(f => ({...f, includeFlash: e.target.checked}))} className="w-4 h-4 rounded border-slate-600 accent-indigo-500" />
+                <span className="text-sm font-medium text-slate-300">Incluir Reporte Flash</span>
+              </label>
+
               {!formData.allDay && (
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -733,24 +875,22 @@ export default function AdminCalendar() {
               {/* Vehículo */}
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-1.5">Vehículo</label>
-                <input
-                  type="text"
+                <SearchableSelect
+                  options={resources.filter(r => r.type === 'vehiculo').map(r => ({ value: r.name, label: `[${r.code}] ${r.name}` }))}
                   value={formData.vehiculo}
-                  onChange={e => setFormData(f => ({ ...f, vehiculo: e.target.value }))}
-                  placeholder="Ej: Auto arrendado KIA - Patente XY1234"
-                  className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-slate-100 text-sm placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  onChange={val => setFormData(f => ({ ...f, vehiculo: val }))}
+                  placeholder="Seleccionar o escribir vehículo..."
                 />
               </div>
 
               {/* Equipamiento */}
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-1.5">Equipamiento</label>
-                <input
-                  type="text"
+                <SearchableSelect
+                  options={resources.filter(r => r.type === 'sonometro' || r.type === 'otro').map(r => ({ value: r.name, label: `[${r.code}] ${r.name}` }))}
                   value={formData.equipamiento}
-                  onChange={e => setFormData(f => ({ ...f, equipamiento: e.target.value }))}
-                  placeholder="Ej: SLM5253 + KIA + GRM"
-                  className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-slate-100 text-sm placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  onChange={val => setFormData(f => ({ ...f, equipamiento: val }))}
+                  placeholder="Seleccionar o escribir equipamiento..."
                 />
               </div>
 
@@ -789,6 +929,35 @@ export default function AdminCalendar() {
           </div>
         </div>
       )}
+      {/* ── Export CSV modal ── */}
+      {showExportModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setShowExportModal(false)}>
+          <div className="bg-slate-800 border border-slate-700 rounded-2xl w-full max-w-sm shadow-2xl p-6" onClick={e => e.stopPropagation()}>
+            <h3 className="text-white font-bold text-base mb-4">Exportar calendario a CSV</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1">Desde</label>
+                <input type="date" value={exportFrom} onChange={e => setExportFrom(e.target.value)} className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-slate-100 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1">Hasta</label>
+                <input type="date" value={exportTo} onChange={e => setExportTo(e.target.value)} className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-slate-100 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+              </div>
+            </div>
+            <div className="flex gap-2 mt-5">
+              <button onClick={() => setShowExportModal(false)} className="flex-1 py-2 px-4 text-sm font-medium text-slate-400 hover:text-slate-200 transition-colors">Cancelar</button>
+              <button
+                onClick={handleExportCSV}
+                disabled={!exportFrom || !exportTo}
+                className="flex-1 py-2 px-4 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-sm font-semibold transition-colors"
+              >
+                Descargar CSV
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <FieldClosureModal
         isOpen={!!closureEvent}
         calendarEvent={closureEvent}

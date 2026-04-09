@@ -27,6 +27,7 @@ import UserReports from './pages/UserReports';
 import AdminAnalytics from './pages/AdminAnalytics';
 import AdminCalendar from './pages/AdminCalendar';
 import AdminTasks from './pages/AdminTasks';
+import AdminResources from './pages/AdminResources';
 import ProfessionalCalendar from './pages/ProfessionalCalendar';
 import ProfessionalTasks from './pages/ProfessionalTasks';
 
@@ -75,6 +76,9 @@ function App() {
 
         {/* Tasks / Planner Module */}
         <Route path="/admin/tasks" element={<ProtectedRoute requiredRole="admin"><AdminTasks /></ProtectedRoute>} />
+
+        {/* Resources Module */}
+        <Route path="/admin/resources" element={<ProtectedRoute requiredRole="admin"><AdminResources /></ProtectedRoute>} />
 
         {/* Reports Module */}
         <Route path="/admin/reports" element={<ProtectedRoute requiredRole="admin"><AdminReportsV2 /></ProtectedRoute>} />

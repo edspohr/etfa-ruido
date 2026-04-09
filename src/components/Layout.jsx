@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import Sidebar from './Sidebar';
-import { Menu, FolderOpen, Calendar, ClipboardList, Receipt } from 'lucide-react';
+import { Menu, Calendar, ClipboardList, Receipt } from 'lucide-react';
 import { useAuth } from '../context/useAuth';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
@@ -9,9 +9,8 @@ import PageTransition from './PageTransition';
 import { useLocation, Link } from 'react-router-dom';
 
 const PROF_NAV = [
-  { to: '/mis-proyectos',     icon: FolderOpen,    label: 'Proyectos' },
-  { to: '/mi-calendario',     icon: Calendar,      label: 'Calendario' },
-  { to: '/mis-tareas',        icon: ClipboardList, label: 'Tareas' },
+  { to: '/mi-calendario',      icon: Calendar,      label: 'Calendario' },
+  { to: '/mis-tareas',         icon: ClipboardList, label: 'Tareas' },
   { to: '/dashboard/expenses', icon: Receipt,       label: 'Rendiciones' },
 ];
 
@@ -21,7 +20,7 @@ export default function Layout({ children, title, isFullWidth = false }) {
   const [mustChangePass, setMustChangePass] = useState(false);
   const location = useLocation();
   const isProfessional = userRole && userRole !== 'admin';
-  const isOnProfessionalRoute = ['/mis-proyectos', '/mi-calendario', '/mis-tareas', '/mis-tareas/informe', '/informes/nuevo', '/dashboard/expenses', '/dashboard/reports'].some(route => location.pathname === route || location.pathname.startsWith(route + '/'));
+  const isOnProfessionalRoute = ['/mi-calendario', '/mis-tareas', '/mis-tareas/informe', '/informes/nuevo', '/dashboard/expenses', '/dashboard/reports'].some(route => location.pathname === route || location.pathname.startsWith(route + '/'));
   const showBottomNav = isProfessional || (userRole === 'admin' && isOnProfessionalRoute);
 
   useEffect(() => {

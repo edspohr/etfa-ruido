@@ -147,31 +147,28 @@ export default function AdminUserSeeder() {
   };
 
   // Manual User Creation Function
-  const [newUser, setNewUser] = useState({ displayName: '', email: '', role: 'professional' });
+  const [newUser, setNewUser] = useState({ displayName: '', email: '', role: 'professional', code: '' });
   const handleCreateSingleUser = async (e) => {
       e.preventDefault();
       if (!newUser.email || !newUser.displayName) return;
-      
+
       setProcessing(true);
       try {
-          // 1. Create in Firestore
-          // Generate a simple ID or letting Firestore do it? 
-          // Seeder uses custom IDs like 'user_xxx'. Let's stick to auth-like or random.
-          // Let's use a random ID for Firestore doc first, then the Seeder logic below will migrate it to Auth UID.
-          // OR we can just wait for Seeder to pick it up.
-          
           const tempId = `user_${newUser.email.split('@')[0]}_${Date.now().toString().slice(-4)}`;
-          
+
           await setDoc(doc(db, "users", tempId), {
-              ...newUser,
+              displayName: newUser.displayName,
+              email: newUser.email,
+              role: newUser.role,
+              ...(newUser.code ? { code: newUser.code } : {}),
               balance: 0,
               forcePasswordChange: true,
               createdAt: new Date().toISOString()
           });
 
           addLog(`✅ Usuario Firestore creado: ${newUser.displayName} (${tempId})`);
-          addLog("Ahora presiona 'Crear Cuentas' arriba para generar su acceso (Auth).");
-          setNewUser({ displayName: '', email: '', role: 'professional' });
+          addLog("Ahora ejecuta 'Crear Cuentas y Unificar' para generar su acceso (Auth).");
+          setNewUser({ displayName: '', email: '', role: 'professional', code: '' });
       } catch (e) {
           console.error(e);
           addLog("Error creando usuario: " + e.message);
@@ -183,54 +180,46 @@ export default function AdminUserSeeder() {
   return (
     <Layout title="Administración de Usuarios">
         <div className="bg-white p-6 rounded-lg shadow-sm max-w-2xl mx-auto">
-            <h2 className="text-xl font-bold mb-4">Provisión Masiva de Cuentas</h2>
-            
-            <div className="bg-yellow-50 p-4 rounded border border-yellow-200 mb-6 text-sm text-yellow-800">
-                <p className="font-bold">Instrucciones:</p>
-                <ol className="list-decimal ml-5 mt-2 space-y-1">
-                    <li>Asegúrate de haber presionado "Generar Datos de Prueba" antes de esto (para tener los perfiles base).</li>
-                    <li>Este proceso creará cuentas de Email/Password ("gastos2026") en Firebase Authentication.</li>
-                    <li>Migrará automáticamente los perfiles de Firestore para coincidir con los nuevos UIDs.</li>
-                    <li>Puede tardar unos segundos. No cierres la ventana.</li>
-                </ol>
-            </div>
 
-            <button 
-                onClick={handleCreateAccounts}
-                disabled={processing}
-                className="w-full bg-blue-600 text-white py-3 rounded font-bold hover:bg-blue-700 disabled:opacity-50"
-            >
-                {processing ? 'Procesando...' : 'Crear Cuentas y Unificar (gastos2026)'}
-            </button>
-            
-            <div className="mt-8 pt-8 border-t border-gray-200">
-                <h3 className="font-bold text-gray-700 mb-4">Agregar Nuevo Usuario (Firestore)</h3>
-                <form onSubmit={handleCreateSingleUser} className="space-y-4">
+            {/* Single User Form — TOP */}
+            <h3 className="font-bold text-gray-800 text-lg mb-4">Agregar Nuevo Usuario</h3>
+            <form onSubmit={handleCreateSingleUser} className="space-y-4 mb-8">
+                <div>
+                    <label className="block text-sm text-gray-600">Nombre</label>
+                    <input
+                        type="text"
+                        required
+                        className="w-full border p-2 rounded"
+                        value={newUser.displayName}
+                        onChange={e => setNewUser({...newUser, displayName: e.target.value})}
+                        placeholder="Ej: Juan Pérez"
+                    />
+                </div>
+                <div>
+                    <label className="block text-sm text-gray-600">Email</label>
+                    <input
+                        type="email"
+                        required
+                        className="w-full border p-2 rounded"
+                        value={newUser.email}
+                        onChange={e => setNewUser({...newUser, email: e.target.value})}
+                        placeholder="Ej: juan@etfa-ruido.cl"
+                    />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
                     <div>
-                        <label className="block text-sm text-gray-600">Nombre</label>
-                        <input 
-                            type="text" 
-                            required
+                        <label className="block text-sm text-gray-600">Código</label>
+                        <input
+                            type="text"
                             className="w-full border p-2 rounded"
-                            value={newUser.displayName}
-                            onChange={e => setNewUser({...newUser, displayName: e.target.value})}
-                            placeholder="Ej: Terreno"
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-sm text-gray-600">Email</label>
-                        <input 
-                            type="email" 
-                            required
-                            className="w-full border p-2 rounded"
-                            value={newUser.email}
-                            onChange={e => setNewUser({...newUser, email: e.target.value})}
-                            placeholder="Ej: terreno@etfa-ruido.cl"
+                            value={newUser.code}
+                            onChange={e => setNewUser({...newUser, code: e.target.value})}
+                            placeholder="Ej: PMS"
                         />
                     </div>
                     <div>
                         <label className="block text-sm text-gray-600">Rol</label>
-                        <select 
+                        <select
                             className="w-full border p-2 rounded"
                             value={newUser.role}
                             onChange={e => setNewUser({...newUser, role: e.target.value})}
@@ -239,15 +228,40 @@ export default function AdminUserSeeder() {
                             <option value="admin">Administrador</option>
                         </select>
                     </div>
-                    <button 
-                        type="submit"
+                </div>
+                <button
+                    type="submit"
+                    disabled={processing}
+                    className="w-full bg-green-600 text-white py-2 rounded font-bold hover:bg-green-700 disabled:opacity-50"
+                >
+                    Agregar a la Base de Datos
+                </button>
+            </form>
+
+            {/* Bulk Section — secondary / collapsible */}
+            <details className="bg-gray-50 border border-gray-200 rounded-lg">
+                <summary className="px-5 py-3 cursor-pointer text-sm font-bold text-gray-500 select-none">
+                    Provisión Masiva (Avanzado)
+                </summary>
+                <div className="px-5 pb-5 pt-3 space-y-4">
+                    <div className="bg-yellow-50 p-4 rounded border border-yellow-200 text-sm text-yellow-800">
+                        <p className="font-bold">Instrucciones:</p>
+                        <ol className="list-decimal ml-5 mt-2 space-y-1">
+                            <li>Asegúrate de haber agregado los perfiles base con el formulario de arriba.</li>
+                            <li>Este proceso creará cuentas de Email/Password ("gastos2026") en Firebase Authentication.</li>
+                            <li>Migrará automáticamente los perfiles de Firestore para coincidir con los nuevos UIDs.</li>
+                            <li>Puede tardar unos segundos. No cierres la ventana.</li>
+                        </ol>
+                    </div>
+                    <button
+                        onClick={handleCreateAccounts}
                         disabled={processing}
-                        className="w-full bg-green-600 text-white py-2 rounded font-bold hover:bg-green-700 disabled:opacity-50"
+                        className="w-full bg-blue-600 text-white py-3 rounded font-bold hover:bg-blue-700 disabled:opacity-50 text-sm"
                     >
-                        Agregar a la Base de Datos
+                        {processing ? 'Procesando...' : 'Crear Cuentas y Unificar (gastos2026)'}
                     </button>
-                </form>
-            </div>
+                </div>
+            </details>
 
             <div className="mt-6 bg-gray-900 text-green-400 p-4 rounded font-mono text-xs h-64 overflow-y-auto">
                 {logs.length === 0 ? <p className="text-gray-500">// Esperando iniciar...</p> : logs.map((l, i) => <p key={i}>{l}</p>)}

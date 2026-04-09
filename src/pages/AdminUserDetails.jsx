@@ -15,6 +15,8 @@ import {
 } from "firebase/firestore";
 import { formatCurrency } from "../utils/format";
 import { sortProjects } from "../utils/sort";
+import SearchableSelect from "../components/SearchableSelect";
+import { isSystemUser } from "../utils/userUtils";
 import {
   ArrowLeft,
   CheckCircle,
@@ -348,6 +350,11 @@ export default function AdminUserDetails() {
 
   return (
     <Layout title={`Profesional: ${user.displayName}`}>
+      {isSystemUser(user) && (
+        <div className="mb-4 bg-yellow-50 border border-yellow-300 text-yellow-800 text-sm px-4 py-3 rounded-lg">
+          Esta es una cuenta de sistema y no representa un profesional real.
+        </div>
+      )}
       <div className="mb-6">
         <Link
           to="/admin/balances"
@@ -625,36 +632,22 @@ export default function AdminUserDetails() {
                   </p>
                   <form onSubmit={handleTransferFunds} className="space-y-4">
                       <div>
-                          <label className="block text-sm font-medium text-gray-700">Proyecto Origen (Extrae Fondos)</label>
-                          <select 
-                              className="mt-1 w-full p-2 border rounded"
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Proyecto Origen (Extrae Fondos)</label>
+                          <SearchableSelect
+                              options={sortProjects(projectsList).map(p => ({ value: p.id, label: `${p.code ? `[${p.code}] ` : ''}${p.recurrence ? `(${p.recurrence}) ` : ''}${p.name}` }))}
                               value={transferForm.sourceProjectId}
-                              onChange={e => setTransferForm({...transferForm, sourceProjectId: e.target.value})}
-                              required
-                          >
-                              <option value="">Seleccionar Proyecto...</option>
-                              {projectsList.map(p => (
-                                  <option key={p.id} value={p.id}>
-                                      {p.code ? `[${p.code}] ` : ''}{p.recurrence ? `(${p.recurrence}) ` : ''}{p.name}
-                                  </option>
-                              ))}
-                          </select>
+                              onChange={val => setTransferForm({...transferForm, sourceProjectId: val})}
+                              placeholder="Seleccionar Proyecto..."
+                          />
                       </div>
                       <div>
-                          <label className="block text-sm font-medium text-gray-700">Proyecto Destino (Recibe Fondos)</label>
-                          <select 
-                              className="mt-1 w-full p-2 border rounded"
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Proyecto Destino (Recibe Fondos)</label>
+                          <SearchableSelect
+                              options={sortProjects(projectsList).map(p => ({ value: p.id, label: `${p.code ? `[${p.code}] ` : ''}${p.recurrence ? `(${p.recurrence}) ` : ''}${p.name}` }))}
                               value={transferForm.targetProjectId}
-                              onChange={e => setTransferForm({...transferForm, targetProjectId: e.target.value})}
-                              required
-                          >
-                              <option value="">Seleccionar Proyecto...</option>
-                              {projectsList.map(p => (
-                                  <option key={p.id} value={p.id}>
-                                      {p.code ? `[${p.code}] ` : ''}{p.recurrence ? `(${p.recurrence}) ` : ''}{p.name}
-                                  </option>
-                              ))}
-                          </select>
+                              onChange={val => setTransferForm({...transferForm, targetProjectId: val})}
+                              placeholder="Seleccionar Proyecto..."
+                          />
                       </div>
                       <div>
                           <label className="block text-sm font-medium text-gray-700">Monto a Reasignar ($)</label>

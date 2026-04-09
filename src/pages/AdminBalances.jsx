@@ -7,6 +7,7 @@ import { Wallet, ArrowRight, RefreshCw } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { recalculateAllUserBalances } from '../utils/fixBalances';
 import { toast } from 'sonner';
+import { isSystemUser } from '../utils/userUtils';
 
 export default function AdminBalances() {
   const [professionals, setProfessionals] = useState([]);
@@ -21,7 +22,7 @@ export default function AdminBalances() {
       try {
           const q = query(collection(db, "users"), where("role", "in", ["professional", "admin"]));
           const snapshot = await getDocs(q);
-          const data = snapshot.docs.map(d => ({id: d.id, ...d.data()}));
+          const data = snapshot.docs.map(d => ({id: d.id, ...d.data()})).filter(u => !isSystemUser(u));
           setProfessionals(data);
       } catch (e) {
           console.error("Error fetching professionals:", e);

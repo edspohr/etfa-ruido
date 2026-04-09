@@ -57,7 +57,9 @@ export default function AdminInvoicingHistory() {
     // Date range filter
     if (dateRange.from || dateRange.to) {
       res = res.filter(inv => {
-        const invDate = inv.createdAt?.seconds ? new Date(inv.createdAt.seconds * 1000) : null;
+        const invDate = inv.issueDate
+          ? new Date(inv.issueDate + 'T00:00:00')
+          : inv.createdAt?.seconds ? new Date(inv.createdAt.seconds * 1000) : null;
         if (!invDate) return true;
         if (dateRange.from && invDate < new Date(dateRange.from + 'T00:00:00')) return false;
         if (dateRange.to && invDate > new Date(dateRange.to + 'T23:59:59')) return false;
@@ -69,9 +71,9 @@ export default function AdminInvoicingHistory() {
     res.sort((a, b) => {
       let cmp = 0;
       if (sortField === 'date') {
-        const dA = a.createdAt?.seconds || 0;
-        const dB = b.createdAt?.seconds || 0;
-        cmp = dA - dB;
+        const dA = a.issueDate || (a.createdAt?.seconds ? new Date(a.createdAt.seconds * 1000).toISOString().split('T')[0] : '');
+        const dB = b.issueDate || (b.createdAt?.seconds ? new Date(b.createdAt.seconds * 1000).toISOString().split('T')[0] : '');
+        cmp = dA.localeCompare(dB);
       } else if (sortField === 'amount') {
         cmp = (Number(a.totalAmount) || 0) - (Number(b.totalAmount) || 0);
       } else if (sortField === 'client') {
@@ -229,14 +231,15 @@ export default function AdminInvoicingHistory() {
               <thead className="bg-slate-50 text-xs text-slate-500 uppercase tracking-wider">
                 <tr>
                   <th className="px-4 py-3 text-left cursor-pointer hover:text-slate-700" onClick={() => toggleSort('date')}>
-                    <span className="flex items-center gap-1">Fecha <ArrowUpDown className="w-3 h-3" /></span>
+                    <span className="flex items-center gap-1">Fecha Factura <ArrowUpDown className="w-3 h-3" /></span>
                   </th>
                   <th className="px-4 py-3 text-left cursor-pointer hover:text-slate-700" onClick={() => toggleSort('client')}>
                     <span className="flex items-center gap-1">Cliente <ArrowUpDown className="w-3 h-3" /></span>
                   </th>
                   <th className="px-4 py-3 text-left">Proyecto</th>
+                  <th className="px-4 py-3 text-right">Gastos</th>
                   <th className="px-4 py-3 text-right cursor-pointer hover:text-slate-700" onClick={() => toggleSort('amount')}>
-                    <span className="flex items-center gap-1 justify-end">Monto <ArrowUpDown className="w-3 h-3" /></span>
+                    <span className="flex items-center gap-1 justify-end">Monto Neto <ArrowUpDown className="w-3 h-3" /></span>
                   </th>
                   <th className="px-4 py-3 text-center">Estado</th>
                   <th className="px-4 py-3 text-center">Acciones</th>
@@ -250,15 +253,30 @@ export default function AdminInvoicingHistory() {
                     onClick={() => { setSelectedInvoice(inv); setIsModalOpen(true); }}
                   >
                     <td className="px-4 py-3 text-slate-600 text-xs">
-                      {inv.createdAt?.seconds ? new Date(inv.createdAt.seconds * 1000).toLocaleDateString() : '-'}
+                      {inv.issueDate
+                        ? (() => { const [y,m,d] = inv.issueDate.split('-'); return `${d}/${m}/${y}`; })()
+                        : inv.createdAt?.seconds ? new Date(inv.createdAt.seconds * 1000).toLocaleDateString('es-CL') : '-'}
                     </td>
                     <td className="px-4 py-3">
                       <p className={`font-bold text-slate-800 text-sm ${inv.paymentStatus === 'void' ? 'line-through' : ''}`}>{inv.clientName || '-'}</p>
                       {inv.clientRut && <p className="text-[10px] text-slate-400 font-mono">{inv.clientRut}</p>}
                     </td>
                     <td className="px-4 py-3">
+                      {inv.projectCode && (
+                        <span className="text-[10px] font-mono font-bold bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded border border-indigo-100 mr-1">{inv.projectCode}</span>
+                      )}
                       <p className="text-indigo-600 text-xs font-medium truncate max-w-[200px]">{inv.projectName || '-'}</p>
-                      {inv.documentType && <p className="text-[10px] text-slate-400 capitalize">{inv.documentType.replace('_', ' ')}</p>}
+                      {inv.projectRecurrence && (
+                        <span className="text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{inv.projectRecurrence}</span>
+                      )}
+                      {inv.documentType && <p className="text-[10px] text-slate-400 capitalize mt-0.5">{inv.documentType.replace('_', ' ')}</p>}
+                    </td>
+                    <td className="px-4 py-3 text-right text-xs">
+                      {inv.totalExpenses ? (
+                        <span className="font-mono text-slate-600">{formatCurrency(inv.totalExpenses)}</span>
+                      ) : (
+                        <span className="text-slate-300">—</span>
+                      )}
                     </td>
                     <td className={`px-4 py-3 text-right font-bold ${inv.paymentStatus === 'void' ? 'line-through text-slate-400' : 'text-slate-800'}`}>
                       {formatCurrency(inv.totalAmount)}
