@@ -4,7 +4,7 @@ import Layout from '../components/Layout';
 import { db } from '../lib/firebase';
 import { collection, getDocs } from 'firebase/firestore';
 // import { seedDatabase } from '../lib/seedData';
-import { formatCurrency } from '../utils/format';
+import { formatCurrency, formatProjectLabel } from '../utils/format';
 // import { useAuth } from '../context/useAuth';
 import { Database, Wallet } from 'lucide-react';
 // import { toast } from 'sonner';
@@ -49,8 +49,8 @@ export default function AdminDashboard() {
             expensesDocs.forEach(exp => {
                 if (exp.status === 'pending') pending++;
                 
-                // Track project expenses
-                if (exp.status === 'approved' || exp.status === 'pending') {
+                // Track project expenses (approved only)
+                if (exp.status === 'approved') {
                     expensesByProject[exp.projectId] = (expensesByProject[exp.projectId] || 0) + (Number(exp.amount) || 0);
                 }
 
@@ -63,7 +63,7 @@ export default function AdminDashboard() {
             if (cajaProject) {
                 // Sum expenses for this project
                 expensesDocs.forEach(e => {
-                     if ((e.status === 'approved' || e.status === 'pending') && e.projectId === cajaProject.id) {
+                     if (e.status === 'approved' && e.projectId === cajaProject.id) {
                          ccSpent += (Number(e.amount) || 0);
                      }
                 });
@@ -214,7 +214,7 @@ export default function AdminDashboard() {
                             <div className="bg-white p-6 rounded-2xl shadow-soft border border-slate-100 flex flex-col justify-between h-full hover:shadow-xl hover:-translate-y-1 transition duration-300">
                                 <div>
                                     <h3 className="font-bold text-lg text-slate-800 mb-1 leading-tight">
-                                        {p.code ? `[${p.code}] ` : ''}{p.recurrence ? `(${p.recurrence}) ` : ''}{p.name}
+                                        {formatProjectLabel(p)}
                                     </h3>
                                     <p className="text-sm text-slate-500 mb-6 font-medium">{p.client}</p>
                                     

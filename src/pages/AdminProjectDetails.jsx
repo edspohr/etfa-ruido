@@ -176,26 +176,18 @@ export default function AdminProjectDetails() {
             updateData.rejectionReason = rejectionReason;
         }
 
-        // If Rejecting, we need to REVERSE the balance credit (subtract amount)
-        if (newStatus === 'rejected') {
-             const exp = expenses.find(e => e.id === expenseId);
-             if (exp && !exp.isCompanyExpense) {
-                 const targetUserId = exp.userId;
-                 
-                 const userRef = doc(db, "users", targetUserId);
-                 await updateDoc(userRef, {
-                     balance: increment(-amount) 
-                 });
-             }
-        }
-        
-        // If Approving, Update Project Expenses Total
+        // If Approving, update project total and credit user balance
         let projectExpenseChange = 0;
         if (newStatus === 'approved') {
              await updateDoc(doc(db, "projects", id), {
                  expenses: increment(amount)
              });
              projectExpenseChange = amount;
+             const exp = expenses.find(e => e.id === expenseId);
+             if (exp && !exp.isCompanyExpense && exp.userId) {
+                 const userRef = doc(db, "users", exp.userId);
+                 await updateDoc(userRef, { balance: increment(amount) });
+             }
         }
 
         await updateDoc(expenseRef, updateData);
@@ -226,8 +218,8 @@ export default function AdminProjectDetails() {
       if (!confirm("ADVERTENCIA: ¿Estás seguro de eliminar este gasto definitivamente?\nSe revertirán los saldos asociados.")) return;
 
       try {
-          // Reversal Logic
-          const isCredited = expense.status === 'pending' || expense.status === 'approved';
+          // Reversal Logic (only approved expenses affect balance and project total)
+          const isCredited = expense.status === 'approved';
           const isProjectCharged = expense.status === 'approved';
 
           // 1. Revert User Balance (if it was credited and not company expense)
@@ -296,7 +288,7 @@ export default function AdminProjectDetails() {
   if (!project) return <Layout title="Error">Proyecto no encontrado.</Layout>;
 
   return (
-    <Layout title={`Acciones: ${project.code ? `[${project.code}] ` : ''}${project.recurrence ? `(${project.recurrence}) ` : ''}${project.name}`}>
+    <Layout title={`Acciones: ${project.code ? `[${project.code}] ` : ''}${project.name}`}>
         <div className="mb-6 flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-100">
             <Link to="/admin/projects" className="text-blue-600 hover:text-blue-800 flex items-center font-medium bg-blue-50 px-4 py-2 rounded-lg transition-colors">
                 <ArrowLeft className="w-4 h-4 mr-2" /> Volver
@@ -316,9 +308,8 @@ export default function AdminProjectDetails() {
              // Calculate Total Assigned dynamically from allocations
              const totalAllocated = allocations.reduce((acc, a) => acc + (Number(a.amount) || 0), 0);
              
-             // Calculate specific totals from expenses (Approved + Pending)
-             // Consistent with AdminDashboard and User Balance (Pending counts as justified until rejected)
-             const approvedExpenses = expenses.filter(e => e.status === 'approved' || e.status === 'pending');
+             // Calculate specific totals from approved expenses only
+             const approvedExpenses = expenses.filter(e => e.status === 'approved');
              
              const totalRenderedByUsers = approvedExpenses
                  .filter(e => !e.isCompanyExpense)
@@ -541,7 +532,15 @@ export default function AdminProjectDetails() {
                         <tbody>
                             {allocations.map(a => (
                                 <tr key={a.id} className="border-b last:border-0 hover:bg-gray-50">
-                                    <td className="px-4 py-3 text-gray-600">{new Date(a.date).toLocaleDateString()}</td>
+                                    <td className="px-4 py-3 text-gray-600">
+                                        <p>{new Date(a.date).toLocaleDateString()}</p>
+                                        {a.type === 'transfer_out' && (
+                                            <p className="text-xs text-rose-500">→ Reasignado a {a.transferTargetProjectCode ? `[${a.transferTargetProjectCode}] ` : ''}{a.transferTargetProjectName || 'otro proyecto'}</p>
+                                        )}
+                                        {a.type === 'transfer_in' && (
+                                            <p className="text-xs text-emerald-500">← Desde {a.transferSourceProjectCode ? `[${a.transferSourceProjectCode}] ` : ''}{a.transferSourceProjectName || 'otro proyecto'}</p>
+                                        )}
+                                    </td>
                                     <td className="px-4 py-3">
                                         <div className="flex items-center">
                                             <User className="w-4 h-4 mr-2 text-gray-400" />

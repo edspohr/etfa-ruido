@@ -13,7 +13,7 @@ import {
   increment,
   deleteDoc,
 } from "firebase/firestore";
-import { formatCurrency } from "../utils/format";
+import { formatCurrency, formatProjectLabel } from "../utils/format";
 import { sortProjects } from "../utils/sort";
 import SearchableSelect from "../components/SearchableSelect";
 import { isSystemUser } from "../utils/userUtils";
@@ -29,7 +29,8 @@ import {
   ChevronUp,
   Trash2,
   ArrowRightLeft,
-  Settings
+  Settings,
+  Download,
 } from "lucide-react";
 import { addDoc, serverTimestamp } from 'firebase/firestore';
 import { toast } from 'sonner';
@@ -81,10 +82,14 @@ export default function AdminUserDetails() {
               userName: user.displayName,
               projectId: sourceProject.id,
               projectName: sourceProject.name,
-              amount: -amount, // Negative allocation reduces the project budget
+              amount: -amount,
               date: new Date().toISOString(),
               createdAt: new Date().toISOString(),
-              type: 'transfer_out'
+              type: 'transfer_out',
+              transferTargetProjectId: targetProject.id,
+              transferTargetProjectName: targetProject.name,
+              transferTargetProjectCode: targetProject.code || '',
+              description: `Reasignación a ${targetProject.code || targetProject.name}`,
           });
 
           // 2. Create Positive Allocation (Target)
@@ -96,7 +101,11 @@ export default function AdminUserDetails() {
               amount: amount,
               date: new Date().toISOString(),
               createdAt: new Date().toISOString(),
-              type: 'transfer_in'
+              type: 'transfer_in',
+              transferSourceProjectId: sourceProject.id,
+              transferSourceProjectName: sourceProject.name,
+              transferSourceProjectCode: sourceProject.code || '',
+              description: `Reasignación desde ${sourceProject.code || sourceProject.name}`,
           });
 
           // 3. Update User Balance? NO. Net change is 0. (-Amount + Amount = 0).
@@ -224,28 +233,21 @@ export default function AdminUserDetails() {
     try {
       const expenseRef = doc(db, "expenses", expenseId);
 
-      // If Rejecting, we need to REVERSE the balance credit (subtract amount)
-      let balanceChange = 0;
-      if (newStatus === "rejected") {
-        const exp = expenses.find((e) => e.id === expenseId);
-        if (exp && !exp.isCompanyExpense) {
-          const userRef = doc(db, "users", id);
-          await updateDoc(userRef, {
-            balance: increment(-amount),
-          });
-          balanceChange = -amount;
-        }
-      }
-
       await updateDoc(expenseRef, { status: newStatus });
 
-      // Update Project Expenses Total if Approved
+      // If Approving: update project total and credit user balance
+      let balanceChange = 0;
       if (newStatus === "approved") {
         const exp = expenses.find((e) => e.id === expenseId);
         if (exp?.projectId) {
           await updateDoc(doc(db, "projects", exp.projectId), {
             expenses: increment(amount),
           });
+        }
+        if (exp && !exp.isCompanyExpense) {
+          const userRef = doc(db, "users", id);
+          await updateDoc(userRef, { balance: increment(amount) });
+          balanceChange = amount;
         }
       }
 
@@ -274,8 +276,8 @@ export default function AdminUserDetails() {
       if (!confirm("ADVERTENCIA: ¿Estás seguro de eliminar este gasto definitivamente?\nSe revertirán los saldos asociados.")) return;
 
       try {
-          // Reversal Logic
-          const isCredited = expense.status === 'pending' || expense.status === 'approved';
+          // Reversal Logic (only approved expenses affect balance and project total)
+          const isCredited = expense.status === 'approved';
           const isProjectCharged = expense.status === 'approved';
 
           let balanceChange = 0;
@@ -345,6 +347,79 @@ export default function AdminUserDetails() {
       }
   };
 
+  // CSV state
+  const [csvFrom, setCsvFrom] = useState('');
+  const [csvTo, setCsvTo] = useState('');
+
+  const handleDownloadCSV = () => {
+    const fromDate = csvFrom ? new Date(csvFrom + 'T00:00:00') : null;
+    const toDate   = csvTo   ? new Date(csvTo   + 'T23:59:59') : null;
+
+    const inRange = (dateStr) => {
+      if (!dateStr) return true;
+      const d = new Date(dateStr);
+      if (fromDate && d < fromDate) return false;
+      if (toDate   && d > toDate)   return false;
+      return true;
+    };
+
+    const headers = ['Fecha', 'Tipo', 'Proyecto', 'Código', 'Recurrencia', 'Descripción', 'Categoría', 'Monto', 'Estado', 'Motivo Rechazo'];
+
+    const rows = [];
+
+    allocations.filter(a => inRange(a.date ? a.date.split('T')[0] : '')).forEach(a => {
+      const meta = projectsList.find(p => p.id === a.projectId);
+      let csvDesc = 'Asignación de viático';
+      if (a.type === 'transfer_out') {
+        csvDesc = `Reasignación a ${a.transferTargetProjectCode ? `[${a.transferTargetProjectCode}] ` : ''}${a.transferTargetProjectName || 'otro proyecto'}`;
+      } else if (a.type === 'transfer_in') {
+        csvDesc = `Reasignación desde ${a.transferSourceProjectCode ? `[${a.transferSourceProjectCode}] ` : ''}${a.transferSourceProjectName || 'otro proyecto'}`;
+      }
+      rows.push([
+        a.date ? a.date.split('T')[0] : '',
+        'Viático',
+        a.projectName || '',
+        meta?.code || '',
+        meta?.recurrence || '',
+        `"${csvDesc}"`,
+        '-',
+        a.amount || 0,
+        '-',
+        '-',
+      ]);
+    });
+
+    expenses.filter(e => inRange(e.date)).forEach(e => {
+      const meta = projectsList.find(p => p.id === e.projectId);
+      rows.push([
+        e.date || '',
+        'Rendición',
+        e.projectName || '',
+        meta?.code || '',
+        meta?.recurrence || e.projectRecurrence || '',
+        `"${(e.description || '').replace(/"/g, '""')}"`,
+        e.category || '',
+        e.amount || 0,
+        e.status === 'approved' ? 'Aprobado' : e.status === 'rejected' ? 'Rechazado' : 'Pendiente',
+        `"${(e.rejectionReason || '').replace(/"/g, '""')}"`,
+      ]);
+    });
+
+    rows.sort((a, b) => (b[0] > a[0] ? 1 : -1));
+
+    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const safeName = (user.displayName || 'usuario').replace(/\s+/g, '_');
+    const suffix = csvFrom && csvTo ? `${csvFrom}_al_${csvTo}` : 'completo';
+    link.setAttribute('href', url);
+    link.setAttribute('download', `rendiciones_${safeName}_${suffix}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   if (loading) return <Layout title="Detalles del Usuario">Cargando...</Layout>;
   if (!user) return <Layout title="Error">Usuario no encontrado.</Layout>;
 
@@ -409,12 +484,28 @@ export default function AdminUserDetails() {
         
         {/* Project Summary Table */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
-            <div className="px-6 py-4 border-b bg-gray-50">
-               <h3 className="font-bold text-gray-700 flex items-center">
+            <div className="px-6 py-4 border-b bg-gray-50 flex flex-wrap gap-3 items-center">
+               <h3 className="font-bold text-gray-700 flex items-center mr-auto">
                   <FileText className="w-5 h-5 mr-2 text-gray-400" />
                   Resumen por Proyecto
                </h3>
-               <button 
+               <div className="flex flex-wrap gap-2 items-center">
+                 <div className="flex items-center gap-1">
+                   <label className="text-xs text-gray-500 font-medium">Desde</label>
+                   <input type="date" value={csvFrom} onChange={e => setCsvFrom(e.target.value)} className="border border-gray-300 rounded px-2 py-1 text-xs" />
+                 </div>
+                 <div className="flex items-center gap-1">
+                   <label className="text-xs text-gray-500 font-medium">Hasta</label>
+                   <input type="date" value={csvTo} onChange={e => setCsvTo(e.target.value)} className="border border-gray-300 rounded px-2 py-1 text-xs" />
+                 </div>
+                 <button
+                   onClick={handleDownloadCSV}
+                   className="text-sm bg-gray-800 text-white px-3 py-1 rounded-full hover:bg-gray-700 flex items-center font-medium transition"
+                 >
+                   <Download className="w-4 h-4 mr-1" /> CSV
+                 </button>
+               </div>
+               <button
                   onClick={() => setTransferModalOpen(true)}
                   className="text-sm bg-blue-50 text-blue-600 px-3 py-1 rounded-full hover:bg-blue-100 flex items-center font-medium transition"
                >
@@ -427,7 +518,6 @@ export default function AdminUserDetails() {
                    <thead className="bg-white">
                       <tr className="border-b">
                           <th className="px-6 py-3 font-medium text-gray-500">Proyecto</th>
-                          <th className="px-6 py-3 font-medium text-gray-500">Recurrencia</th>
                           <th className="px-6 py-3 font-medium text-gray-500 text-right">Total Viáticos</th>
                           <th className="px-6 py-3 font-medium text-gray-500 text-right">Total Rendido</th>
                           <th className="px-6 py-3 font-medium text-gray-500 text-right">Saldo</th>
@@ -440,9 +530,9 @@ export default function AdminUserDetails() {
                            // Aggregate Data
                            const projectStats = {};
 
-                           // Initialize with expenses
+                           // Initialize with expenses (only approved count toward totals)
                            expenses.forEach(e => {
-                               if (e.status === 'rejected') return; // Exclude rejected
+                               if (e.status !== 'approved') return;
                                const pid = e.projectId || 'unknown';
                                if (!projectStats[pid]) projectStats[pid] = { totalExp: 0, totalAlloc: 0, name: e.projectName || 'Sin Proyecto' };
                                projectStats[pid].totalExp += (Number(e.amount) || 0);
@@ -472,7 +562,7 @@ export default function AdminUserDetails() {
                            // Sort rows using the standard alphanumeric sort
                            rows = sortProjects(rows);
 
-                           if (rows.length === 0) return <tr><td colSpan="6" className="p-8 text-center text-gray-400">No hay actividad registrada.</td></tr>;
+                           if (rows.length === 0) return <tr><td colSpan="5" className="p-8 text-center text-gray-400">No hay actividad registrada.</td></tr>;
 
                            return rows.map(row => {
                                const isExpanded = expandedProject === row.id;
@@ -485,11 +575,8 @@ export default function AdminUserDetails() {
                                    <tr key={row.id} className={`hover:bg-gray-50 transition cursor-pointer ${isExpanded ? 'bg-gray-50' : ''}`} onClick={() => toggleProject(row.id)}>
                                        <td className="px-6 py-4">
                                            <span className="font-medium text-gray-800">
-                                                {row.code ? `[${row.code}] ` : ''}{row.name}
+                                                {formatProjectLabel(row)}
                                            </span>
-                                       </td>
-                                       <td className="px-6 py-4 text-gray-600">
-                                           {row.recurrence || '-'}
                                        </td>
                                        <td className="px-6 py-4 text-right font-medium text-green-600">
                                            {formatCurrency(row.totalAlloc)}
@@ -520,7 +607,7 @@ export default function AdminUserDetails() {
                                    </tr>
                                    {isExpanded && (
                                        <tr>
-                                           <td colSpan="6" className="bg-gray-50 px-6 py-4">
+                                           <td colSpan="5" className="bg-gray-50 px-6 py-4">
                                                <div className="flex flex-col lg:flex-row gap-8 pl-4 border-l-2 border-blue-200">
                                                     {/* Allocations Detail */}
                                                     <div className="flex-1">
@@ -533,7 +620,15 @@ export default function AdminUserDetails() {
                                                                     <tbody>
                                                                         {projectAllocations.map(a => (
                                                                                 <tr key={a.id} className="border-b last:border-0 hover:bg-gray-50 group">
-                                                                                    <td className="px-3 py-2 text-gray-500">{new Date(a.date).toLocaleDateString()}</td>
+                                                                                    <td className="px-3 py-2 text-gray-500">
+                                                                                        <p>{new Date(a.date).toLocaleDateString()}</p>
+                                                                                        {a.type === 'transfer_out' && (
+                                                                                            <p className="text-xs text-rose-500">→ Reasignado a {a.transferTargetProjectCode ? `[${a.transferTargetProjectCode}] ` : ''}{a.transferTargetProjectName || 'otro proyecto'}</p>
+                                                                                        )}
+                                                                                        {a.type === 'transfer_in' && (
+                                                                                            <p className="text-xs text-emerald-500">← Desde {a.transferSourceProjectCode ? `[${a.transferSourceProjectCode}] ` : ''}{a.transferSourceProjectName || 'otro proyecto'}</p>
+                                                                                        )}
+                                                                                    </td>
                                                                                     <td className="px-3 py-2 font-medium text-right text-green-700">{formatCurrency(a.amount)}</td>
                                                                                     <td className="px-3 py-2 text-right">
                                                                                         <button 
@@ -578,14 +673,15 @@ export default function AdminUserDetails() {
                                                                                     <p className="text-gray-400 truncate max-w-[150px]">{e.description}</p>
                                                                                     {e.imageUrl && <a href={e.imageUrl} target="_blank" className="text-blue-500 hover:underline">Ver Boleta</a>}
                                                                                 </td>
-                                                                                <td className="px-3 py-2 font-bold text-gray-700 text-right">{formatCurrency(e.amount)}</td>
+                                                                                <td className={`px-3 py-2 font-bold text-right ${e.status === 'rejected' ? 'line-through text-slate-400' : 'text-gray-700'}`}>{formatCurrency(e.amount)}</td>
                                                                                 <td className="px-3 py-2 text-center">
                                                                                         <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${
-                                                                                            e.status === 'approved' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 
+                                                                                            e.status === 'approved' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' :
                                                                                             e.status === 'rejected' ? 'bg-rose-100 text-rose-700 border-rose-200' : 'bg-amber-100 text-amber-700 border-amber-200'
                                                                                         }`}>
                                                                                             {e.status === 'approved' ? 'Aprobado' : e.status === 'rejected' ? 'Rechazado' : 'Pendiente'}
                                                                                         </span>
+                                                                                        {e.rejectionReason && <p className="text-xs italic text-slate-400 mt-1">Motivo: {e.rejectionReason}</p>}
                                                                                 </td>
                                                                                 <td className="px-3 py-2 text-center">
                                                                                     {e.status === 'pending' && (
@@ -634,7 +730,7 @@ export default function AdminUserDetails() {
                       <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Proyecto Origen (Extrae Fondos)</label>
                           <SearchableSelect
-                              options={sortProjects(projectsList).map(p => ({ value: p.id, label: `${p.code ? `[${p.code}] ` : ''}${p.recurrence ? `(${p.recurrence}) ` : ''}${p.name}` }))}
+                              options={sortProjects(projectsList).map(p => ({ value: p.id, label: formatProjectLabel(p) }))}
                               value={transferForm.sourceProjectId}
                               onChange={val => setTransferForm({...transferForm, sourceProjectId: val})}
                               placeholder="Seleccionar Proyecto..."
@@ -643,7 +739,7 @@ export default function AdminUserDetails() {
                       <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Proyecto Destino (Recibe Fondos)</label>
                           <SearchableSelect
-                              options={sortProjects(projectsList).map(p => ({ value: p.id, label: `${p.code ? `[${p.code}] ` : ''}${p.recurrence ? `(${p.recurrence}) ` : ''}${p.name}` }))}
+                              options={sortProjects(projectsList).map(p => ({ value: p.id, label: formatProjectLabel(p) }))}
                               value={transferForm.targetProjectId}
                               onChange={val => setTransferForm({...transferForm, targetProjectId: val})}
                               placeholder="Seleccionar Proyecto..."

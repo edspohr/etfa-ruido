@@ -150,7 +150,9 @@ function TaskRow({ task, onStatusChange }) {
           </div>
           <p className="text-white font-semibold text-sm leading-snug truncate">{task.title}</p>
           {task.projectCode && (
-            <p className="text-slate-500 text-xs mt-0.5 font-mono">[{task.projectCode}]</p>
+            <p className="text-slate-500 text-xs mt-0.5 font-mono">
+              [{task.projectCode}]{task.projectRecurrence ? ` (${task.projectRecurrence})` : ''}
+            </p>
           )}
           {task.dueDate && (
             <p className={`text-xs mt-1 ${dueDateColor}`}>

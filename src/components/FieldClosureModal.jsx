@@ -162,11 +162,16 @@ export default function FieldClosureModal({ isOpen, onClose, calendarEvent, onCl
         closedAt: serverTimestamp(),
       });
 
-      // 3. Auto-generate Reporte Técnico task
-      await generateReporteTecnicoTask(calendarEvent, db);
+      // 3. Auto-generate Reporte Técnico task (only if Flash was not selected at event creation)
+      if (!calendarEvent.includeFlash) {
+        await generateReporteTecnicoTask(calendarEvent, db);
+      }
 
       // 4. Notify
-      toast.success('Terreno cerrado. Reporte Técnico generado automáticamente.');
+      const closureMsg = calendarEvent.includeFlash
+        ? 'Terreno cerrado.'
+        : 'Terreno cerrado. Reporte Técnico generado automáticamente.'
+      toast.success(closureMsg);
 
       // 5. Callbacks
       onClosed();

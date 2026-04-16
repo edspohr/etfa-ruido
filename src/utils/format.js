@@ -7,3 +7,16 @@ export const formatCurrency = (amount) => {
     maximumFractionDigits: 0,
   }).format(amount);
 };
+
+/**
+ * Returns a display label for a project: "[CODE] (RECURRENCE) Name"
+ * Used consistently across all views.
+ */
+export const formatProjectLabel = (project) => {
+  if (!project) return 'Sin Proyecto';
+  const parts = [];
+  if (project.code) parts.push(`[${project.code}]`);
+  if (project.recurrence) parts.push(`(${project.recurrence})`);
+  parts.push(project.name || 'Sin Nombre');
+  return parts.join(' ');
+};

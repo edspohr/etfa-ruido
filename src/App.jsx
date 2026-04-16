@@ -30,6 +30,8 @@ import AdminTasks from './pages/AdminTasks';
 import AdminResources from './pages/AdminResources';
 import ProfessionalCalendar from './pages/ProfessionalCalendar';
 import ProfessionalTasks from './pages/ProfessionalTasks';
+import Notifications from './pages/Notifications';
+import AdminClients from './pages/AdminClients';
 
 
 function RootRedirect() {
@@ -69,6 +71,7 @@ function App() {
         <Route path="/admin/users/:id" element={<ProtectedRoute requiredRole="admin"><AdminUserDetails /></ProtectedRoute>} />
         <Route path="/admin/approvals" element={<ProtectedRoute requiredRole="admin"><AdminApprovals /></ProtectedRoute>} />
         <Route path="/admin/balances" element={<ProtectedRoute requiredRole="admin"><AdminBalances /></ProtectedRoute>} />
+        <Route path="/admin/clients" element={<ProtectedRoute requiredRole="admin"><AdminClients /></ProtectedRoute>} />
         <Route path="/admin/users-seeder" element={<ProtectedRoute requiredRole="admin"><AdminUserSeeder /></ProtectedRoute>} />
 
         {/* Calendar Module */}
@@ -106,6 +109,8 @@ function App() {
         <Route path="/dashboard/reports" element={<ProtectedRoute requiredRole={['professional', 'admin']}><UserReports /></ProtectedRoute>} />
         <Route path="/dashboard/expenses" element={<ProtectedRoute requiredRole={['professional', 'admin']}><UserExpenses /></ProtectedRoute>} />
         <Route path="/dashboard/new-expense" element={<ProtectedRoute requiredRole={['professional', 'admin']}><ExpenseForm /></ProtectedRoute>} />
+
+        <Route path="/notificaciones" element={<ProtectedRoute requiredRole={['professional', 'admin']}><Notifications /></ProtectedRoute>} />
 
         <Route path="/" element={<RootRedirect />} />
       </Routes>

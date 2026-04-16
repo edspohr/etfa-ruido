@@ -28,7 +28,6 @@ export default function AdminAnalytics() {
     const [filters, setFilters] = useState({
         client: 'all',
         project: 'all',
-        recurrence: 'all',
         dateRange: 'all'
     });
 
@@ -89,7 +88,6 @@ export default function AdminAnalytics() {
                 if (projClient !== filters.client && inv.clientName !== filters.client) return false;
             }
             if (filters.project !== 'all' && inv.projectId !== filters.project) return false;
-            if (filters.recurrence !== 'all' && proj?.recurrence !== filters.recurrence) return false;
             return filterByDate(inv.date);
         });
 
@@ -97,7 +95,6 @@ export default function AdminAnalytics() {
             const proj = projects.find(p => p.id === exp.projectId);
             if (filters.client !== 'all' && proj?.client !== filters.client) return false;
             if (filters.project !== 'all' && exp.projectId !== filters.project) return false;
-            if (filters.recurrence !== 'all' && proj?.recurrence !== filters.recurrence) return false;
             return filterByDate(exp.date);
         });
 
@@ -201,8 +198,8 @@ export default function AdminAnalytics() {
                             <Filter className="w-4 h-4" /> Filtros
                         </div>
                         
-                        <div className="flex-1 grid grid-cols-1 md:grid-cols-4 gap-4">
-                            <select 
+                        <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <select
                                 className="bg-white border-transparent focus:ring-2 focus:ring-indigo-500 rounded-xl p-2.5 text-sm font-medium shadow-sm transition-all"
                                 value={filters.client}
                                 onChange={e => setFilters({...filters, client: e.target.value, project: 'all'})}
@@ -211,7 +208,7 @@ export default function AdminAnalytics() {
                                 {clients.map(c => <option key={c} value={c}>{c}</option>)}
                             </select>
 
-                            <select 
+                            <select
                                 className="bg-white border-transparent focus:ring-2 focus:ring-indigo-500 rounded-xl p-2.5 text-sm font-medium shadow-sm transition-all"
                                 value={filters.project}
                                 onChange={e => setFilters({...filters, project: e.target.value})}
@@ -223,19 +220,7 @@ export default function AdminAnalytics() {
                                 }
                             </select>
 
-                            <select 
-                                className="bg-white border-transparent focus:ring-2 focus:ring-indigo-500 rounded-xl p-2.5 text-sm font-medium shadow-sm transition-all"
-                                value={filters.recurrence}
-                                onChange={e => setFilters({...filters, recurrence: e.target.value})}
-                            >
-                                <option value="all">Recurrencia (Todas)</option>
-                                <option value="Único">Único</option>
-                                <option value="Mensual">Mensual</option>
-                                <option value="Trimestral">Trimestral</option>
-                                <option value="Anual">Anual</option>
-                            </select>
-
-                            <select 
+                            <select
                                 className="bg-white border-transparent focus:ring-2 focus:ring-indigo-500 rounded-xl p-2.5 text-sm font-medium shadow-sm transition-all"
                                 value={filters.dateRange}
                                 onChange={e => setFilters({...filters, dateRange: e.target.value})}

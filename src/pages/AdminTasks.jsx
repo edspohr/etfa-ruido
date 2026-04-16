@@ -12,6 +12,7 @@ import { Plus, X, Trash2, ChevronDown } from 'lucide-react';
 import SearchableSelect from '../components/SearchableSelect';
 import { toast } from 'sonner';
 import { sortProjects } from '../utils/sort';
+import { formatProjectLabel } from '../utils/format';
 
 // ── Constants & utilities ─────────────────────────────────────────────────────
 
@@ -197,12 +198,15 @@ export default function AdminTasks() {
         ]);
         setTasks(tasksSnap.docs.map(d => ({ id: d.id, ...d.data() })));
         setProjects(
-          sortProjects(projSnap.docs.map(d => ({
-            id:    d.id,
-            label: `${d.data().code ? `[${d.data().code}] ` : ''}${d.data().recurrence ? `(${d.data().recurrence}) ` : ''}${d.data().name}`,
-            value: d.id,
-            ...d.data(),
-          })))
+          sortProjects(projSnap.docs.map(d => {
+            const data = d.data();
+            return {
+              id:    d.id,
+              label: formatProjectLabel(data),
+              value: d.id,
+              ...data,
+            };
+          }))
         );
         setProfessionals(usersSnap.docs.map(d => ({ id: d.id, ...d.data() })));
       } catch (e) {

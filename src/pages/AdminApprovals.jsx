@@ -6,6 +6,7 @@ import { formatCurrency } from '../utils/format';
 import { CheckCircle, XCircle, Download, FileText } from 'lucide-react';
 import RejectionModal from '../components/RejectionModal';
 import { toast } from 'sonner';
+import { createNotification } from '../utils/notifications';
 import { isOlderThan60Days } from '../utils/dateUtils';
 import { motion as Motion } from 'framer-motion';
 
@@ -104,7 +105,7 @@ export default function AdminApprovals() {
                 e.userName || "",
                 project?.code || "",
                 e.projectName || "",
-                project?.recurrence || e.projectRecurrence || "",
+                "",
                 `"${(e.description || "").replace(/"/g, '""')}"`, // Escape quotes
                 e.category || "",
                 e.amount || 0,
@@ -155,8 +156,22 @@ export default function AdminApprovals() {
               });
           }
 
+          // 3. Credit User Balance on Approval
+          if (expense.userId && !expense.isCompanyExpense) {
+              const userRef = doc(db, "users", expense.userId);
+              batch.update(userRef, { balance: increment(expense.amount) });
+          }
+
           await batch.commit();
-          toast.success("Gasto aprobado."); 
+          if (expense.userId && !expense.isCompanyExpense) {
+            await createNotification(expense.userId, {
+              type: 'expense_approved',
+              title: 'Rendición aprobada',
+              message: `Tu rendición de ${formatCurrency(expense.amount)} en ${expense.projectName || 'proyecto'} fue aprobada.`,
+              link: '/dashboard/expenses',
+            });
+          }
+          toast.success("Gasto aprobado.");
           setPendingExpenses(prev => prev.filter(e => e.id !== expense.id));
       } catch (error) {
           console.error("Error approving:", error);
@@ -180,20 +195,20 @@ export default function AdminApprovals() {
               rejectionReason: reason
           });
 
-          // 2. Refund User balance inside the same batch
-          let targetUserId = expense.userId;
-          if (targetUserId && !expense.isCompanyExpense) {
-              const userRef = doc(db, "users", targetUserId);
-              batch.update(userRef, { balance: increment(-expense.amount) });
-          }
-
           await batch.commit();
-
+          if (expense.userId && !expense.isCompanyExpense) {
+            await createNotification(expense.userId, {
+              type: 'expense_rejected',
+              title: 'Rendición rechazada',
+              message: `Tu rendición de ${formatCurrency(expense.amount)} fue rechazada. Motivo: ${reason}`,
+              link: '/dashboard/expenses',
+            });
+          }
           // Optimistic update: remove from pending list immediately
           setPendingExpenses(prev => prev.filter(e => e.id !== expense.id));
           setRejectionModalOpen(false);
           setSelectedExpenseToReject(null);
-          toast.success("Gasto rechazado y saldo devuelto.");
+          toast.success("Gasto rechazado.");
           fetchPending();
       } catch (e) {
           console.error("Error rejecting:", e);
@@ -305,9 +320,6 @@ export default function AdminApprovals() {
                                 <td className="px-6 py-4 font-medium text-gray-800">{e.userName || 'N/A'}</td>
                                 <td className="px-6 py-4 text-gray-600 text-sm font-medium">
                                   <span className="block">{e.projectName || 'N/A'}</span>
-                                  {e.projectRecurrence && (
-                                    <span className="text-xs text-gray-400 font-normal">({e.projectRecurrence})</span>
-                                  )}
                                   {e.description && (
                                     <span className="block text-xs text-gray-400 mt-0.5">{e.description}</span>
                                   )}

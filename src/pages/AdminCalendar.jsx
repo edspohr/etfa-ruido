@@ -13,8 +13,10 @@ import { es } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight, ChevronDown, X, Trash2, Download } from 'lucide-react';
 import SearchableSelect from '../components/SearchableSelect';
 import { toast } from 'sonner';
+import { createNotification } from '../utils/notifications';
 import FieldClosureModal from '../components/FieldClosureModal';
 import { sortProjects } from '../utils/sort';
+import { formatProjectLabel } from '../utils/format';
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
@@ -61,7 +63,6 @@ const EMPTY_FORM = {
   endDate:      '',
   startTime:    '',
   endTime:      '',
-  allDay:       true,
   includeFlash: true,
   ingenieros:   [],
   vehiculo:     '',
@@ -133,12 +134,15 @@ export default function AdminCalendar() {
         ]);
 
         setProjects(
-          sortProjects(projSnap.docs.map(d => ({
-            id:    d.id,
-            label: `${d.data().code ? `[${d.data().code}] ` : ''}${d.data().recurrence ? `(${d.data().recurrence}) ` : ''}${d.data().name}`,
-            value: d.id,
-            ...d.data(),
-          })))
+          sortProjects(projSnap.docs.map(d => {
+            const data = d.data();
+            return {
+              id:    d.id,
+              label: formatProjectLabel(data),
+              value: d.id,
+              ...data,
+            };
+          }))
         );
         setProfessionals(usersSnap.docs.map(d => ({ id: d.id, ...d.data() })));
         setEvents(evSnap.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -200,7 +204,6 @@ export default function AdminCalendar() {
       endDate:      ev.endDate      || '',
       startTime:    ev.startTime    || '',
       endTime:      ev.endTime      || '',
-      allDay:       ev.allDay !== false,
       includeFlash: ev.includeFlash !== false,
       ingenieros:   ev.ingenieros   || [],
       vehiculo:     ev.vehiculo     || '',
@@ -262,9 +265,8 @@ export default function AdminCalendar() {
         title:          formData.title || formData.projectName,
         startDate:      formData.startDate,
         endDate:        formData.endDate,
-        startTime:      formData.allDay ? null : (formData.startTime || null),
-        endTime:        formData.allDay ? null : (formData.endTime   || null),
-        allDay:         formData.allDay,
+        startTime:      formData.startTime || null,
+        endTime:        formData.endTime   || null,
         includeFlash:   formData.includeFlash,
         ingenieros:     formData.ingenieros,
         ingenierosNames,
@@ -284,7 +286,17 @@ export default function AdminCalendar() {
           createdAt: serverTimestamp(),
         });
 
-        // Flash task
+        // Notify assigned engineers
+        for (const uid of formData.ingenieros) {
+          await createNotification(uid, {
+            type: 'calendar_assigned',
+            title: 'Nuevo agendamiento',
+            message: `Se te agendó en ${formData.projectName} del ${formData.startDate} al ${formData.endDate}.`,
+            link: '/mi-calendario',
+          });
+        }
+
+        // Flash OR Técnico — mutually exclusive
         if (formData.includeFlash) {
           await addDoc(collection(db, 'tasks'), {
             type:             'reporte_flash',
@@ -302,32 +314,30 @@ export default function AdminCalendar() {
             completedAt:      null,
             notes:            '',
           });
-        }
-
-        // Reporte técnico task (always, +4 days after end)
-        const dueDateRT = format(addDays(new Date(formData.endDate), 4), 'yyyy-MM-dd');
-        const existingRT = await getDocs(query(
-          collection(db, 'tasks'),
-          where('calendarEventId', '==', newEventRef.id),
-          where('type', '==', 'reporte_tecnico')
-        ));
-        if (existingRT.empty) {
-          await addDoc(collection(db, 'tasks'), {
-            type:             'reporte_tecnico',
-            title:            `Reporte Técnico — ${formData.projectName}`,
-            projectId:        formData.projectId,
-            projectName:      formData.projectName,
-            projectCode:      formData.projectCode,
-            assignedTo:       formData.ingenieros,
-            assignedToNames:  ingenierosNames,
-            dueDate:          dueDateRT,
-            status:           'pendiente',
-            calendarEventId:  newEventRef.id,
-            createdBy:        'system',
-            createdAt:        serverTimestamp(),
-            completedAt:      null,
-            notes:            '',
-          });
+        } else {
+          const existingRT = await getDocs(query(
+            collection(db, 'tasks'),
+            where('calendarEventId', '==', newEventRef.id),
+            where('type', '==', 'reporte_tecnico')
+          ));
+          if (existingRT.empty) {
+            await addDoc(collection(db, 'tasks'), {
+              type:             'reporte_tecnico',
+              title:            `Reporte Técnico — ${formData.projectName}`,
+              projectId:        formData.projectId,
+              projectName:      formData.projectName,
+              projectCode:      formData.projectCode,
+              assignedTo:       formData.ingenieros,
+              assignedToNames:  ingenierosNames,
+              dueDate:          format(addDays(new Date(formData.endDate), 4), 'yyyy-MM-dd'),
+              status:           'pendiente',
+              calendarEventId:  newEventRef.id,
+              createdBy:        'system',
+              createdAt:        serverTimestamp(),
+              completedAt:      null,
+              notes:            '',
+            });
+          }
         }
 
         toast.success('Evento creado.');
@@ -773,45 +783,35 @@ export default function AdminCalendar() {
                 </div>
               </div>
 
-              {/* Día completo toggle */}
-              <label className="flex items-center gap-2.5 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={formData.allDay}
-                  onChange={e => setFormData(f => ({ ...f, allDay: e.target.checked }))}
-                  className="w-4 h-4 rounded border-slate-600 accent-indigo-500"
-                />
-                <span className="text-sm font-medium text-slate-300">Día completo</span>
-              </label>
-
-              {/* Incluir Reporte Flash */}
+              {/* Reporte Flash / Técnico toggle */}
               <label className="flex items-center gap-2.5 cursor-pointer">
                 <input type="checkbox" checked={formData.includeFlash} onChange={e => setFormData(f => ({...f, includeFlash: e.target.checked}))} className="w-4 h-4 rounded border-slate-600 accent-indigo-500" />
-                <span className="text-sm font-medium text-slate-300">Incluir Reporte Flash</span>
+                <div>
+                  <span className="text-sm font-medium text-slate-300">Reporte Flash</span>
+                  <span className="text-xs text-slate-500 ml-2">(48 hrs — si no se marca, se genera Reporte Técnico en 4 días)</span>
+                </div>
               </label>
 
-              {!formData.allDay && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-1.5">Hora inicio</label>
-                    <input
-                      type="time"
-                      value={formData.startTime}
-                      onChange={e => setFormData(f => ({ ...f, startTime: e.target.value }))}
-                      className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-slate-100 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-1.5">Hora término</label>
-                    <input
-                      type="time"
-                      value={formData.endTime}
-                      onChange={e => setFormData(f => ({ ...f, endTime: e.target.value }))}
-                      className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-slate-100 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                    />
-                  </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-1.5">Hora inicio</label>
+                  <input
+                    type="time"
+                    value={formData.startTime}
+                    onChange={e => setFormData(f => ({ ...f, startTime: e.target.value }))}
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-slate-100 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
                 </div>
-              )}
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-1.5">Hora término</label>
+                  <input
+                    type="time"
+                    value={formData.endTime}
+                    onChange={e => setFormData(f => ({ ...f, endTime: e.target.value }))}
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-slate-100 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
 
               {/* Ingenieros multi-select */}
               <div>

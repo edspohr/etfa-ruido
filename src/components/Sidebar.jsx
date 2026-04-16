@@ -1,15 +1,17 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useAuth } from '../context/useAuth';
 import {
   PieChart, LayoutDashboard, FolderOpen, CheckCircle,
   FileText, UserCircle, Receipt, LogOut, Wallet, ClipboardList, BarChart3,
-  Activity, Grid, FilePlus, Calendar, Wrench,
+  Activity, Grid, FilePlus, Calendar, Wrench, Bell, Users,
 } from 'lucide-react';
 import useNotificationCounts from '../hooks/useNotificationCounts';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 
 const MODULE_ROUTES = {
-  rendiciones: ['/admin/projects', '/admin/approvals', '/admin/balances'],
+  rendiciones: ['/admin/projects', '/admin/approvals', '/admin/balances', '/admin/clients'],
   operaciones: ['/admin/calendar', '/admin/tasks', '/admin/reports', '/admin/resources'],
   financiero: ['/admin/invoicing', '/admin/analytics', '/admin'],
 };
@@ -17,12 +19,24 @@ const MODULE_ROUTES = {
 export default function Sidebar({ isOpen, setIsOpen }) {
   const { currentUser, userRole, logout } = useAuth();
   const { pendingExpenses, pendingReports } = useNotificationCounts();
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    const q = query(
+      collection(db, 'notifications'),
+      where('userId', '==', currentUser.uid),
+      where('read', '==', false),
+    );
+    const unsub = onSnapshot(q, snap => setUnreadNotifications(snap.size), () => {});
+    return () => unsub();
+  }, [currentUser]);
   const location = useLocation();
   const navigate = useNavigate();
 
   const activeModule = useMemo(() => {
     const path = location.pathname;
-    if (path.startsWith('/admin/projects') || path.startsWith('/admin/approvals') || path.startsWith('/admin/balances')) return 'rendiciones';
+    if (path.startsWith('/admin/projects') || path.startsWith('/admin/approvals') || path.startsWith('/admin/balances') || path.startsWith('/admin/clients')) return 'rendiciones';
     if (path.startsWith('/admin/calendar') || path.startsWith('/admin/tasks') || path.startsWith('/admin/reports') || path.startsWith('/admin/resources')) return 'operaciones';
     if (path.startsWith('/admin/invoicing') || path.startsWith('/admin/analytics')) return 'financiero';
     if (path === '/admin') return 'financiero';
@@ -82,13 +96,22 @@ export default function Sidebar({ isOpen, setIsOpen }) {
                 <ClipboardList className="w-4 h-4 mr-3" />
                 Mis Tareas
             </Link>
-            <Link to="/dashboard/expenses" className={linkClass('/dashboard/expenses')} onClick={() => setIsOpen(false)}>
+            <Link to="/dashboard" className={linkClass('/dashboard')} onClick={() => setIsOpen(false)}>
                 <Receipt className="w-4 h-4 mr-3" />
                 Mis Rendiciones
             </Link>
             <Link to="/dashboard/reports" className={linkClass('/dashboard/reports')} onClick={() => setIsOpen(false)}>
                 <FileText className="w-4 h-4 mr-3" />
                 Mis Mediciones
+            </Link>
+            <Link to="/notificaciones" className={linkClass('/notificaciones')} onClick={() => setIsOpen(false)}>
+                <Bell className="w-4 h-4 mr-3" />
+                Notificaciones
+                {unreadNotifications > 0 && (
+                  <span className="ml-auto bg-rose-500 text-white text-[10px] font-bold min-w-[18px] h-[18px] flex items-center justify-center rounded-full">
+                    {unreadNotifications}
+                  </span>
+                )}
             </Link>
           </>
         )}
@@ -108,6 +131,15 @@ export default function Sidebar({ isOpen, setIsOpen }) {
             <Link to="/dashboard/expenses" className={linkClass('/dashboard/expenses')} onClick={() => setIsOpen(false)}>
                 <Receipt className="w-4 h-4 mr-3" />
                 Mis Rendiciones
+            </Link>
+            <Link to="/notificaciones" className={linkClass('/notificaciones')} onClick={() => setIsOpen(false)}>
+                <Bell className="w-4 h-4 mr-3" />
+                Notificaciones
+                {unreadNotifications > 0 && (
+                  <span className="ml-auto bg-rose-500 text-white text-[10px] font-bold min-w-[18px] h-[18px] flex items-center justify-center rounded-full">
+                    {unreadNotifications}
+                  </span>
+                )}
             </Link>
 
             {/* Module selector */}
@@ -151,6 +183,10 @@ export default function Sidebar({ isOpen, setIsOpen }) {
                 <Link to="/admin/balances" className={linkClass('/admin/balances')} onClick={() => setIsOpen(false)}>
                     <Wallet className="w-4 h-4 mr-3" />
                     Saldos
+                </Link>
+                <Link to="/admin/clients" className={linkClass('/admin/clients')} onClick={() => setIsOpen(false)}>
+                    <Users className="w-4 h-4 mr-3" />
+                    Clientes
                 </Link>
               </>
             )}

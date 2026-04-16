@@ -202,11 +202,7 @@ export default function AdminReportsV2() {
                             {report.projectCode}
                           </span>
                         )}
-                        {report.recurrence && (
-                          <span className="text-[10px] bg-gray-50 text-gray-500 px-1.5 py-0.5 rounded border border-gray-100 uppercase">
-                            {report.recurrence}
-                          </span>
-                        )}
+
                       </div>
                       <p className="text-xs text-gray-500">
                         Enviado por <span className="font-semibold text-gray-700">{report.authorName}</span> el {report.createdAt?.toDate ? format(report.createdAt.toDate(), "d 'de' MMMM, HH:mm", { locale: es }) : '...'}
@@ -365,7 +361,7 @@ export default function AdminReportsV2() {
                 <thead className="bg-gray-50 text-xs font-bold text-gray-500 border-b border-gray-100">
                   <tr>
                     <th className="px-6 py-3">Proyecto</th>
-                    <th className="px-6 py-3">Recurrencia</th>
+
                     <th className="px-6 py-3">Autor</th>
                     <th className="px-6 py-3">Estado</th>
                     <th className="px-6 py-3">Fecha</th>
@@ -380,7 +376,7 @@ export default function AdminReportsV2() {
                           {report.projectCode && <span className="text-[10px] font-mono text-gray-400">{report.projectCode}</span>}
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-xs text-gray-600 capitalize">{report.recurrence || '—'}</td>
+
                       <td className="px-6 py-4 text-xs text-gray-600">{report.authorName}</td>
                       <td className="px-6 py-4">
                         <div className="space-y-1">

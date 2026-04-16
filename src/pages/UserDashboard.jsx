@@ -2,21 +2,23 @@ import React, { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
 import { useAuth } from '../context/useAuth';
 import { db } from '../lib/firebase';
-import { collection, getDocs, query, where } from 'firebase/firestore';
-import { formatCurrency } from '../utils/format';
-import { PlusCircle, Wallet, FileText, ChevronDown, ChevronUp, MessageSquare } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { collection, getDocs, query, where, deleteDoc, doc, updateDoc, increment } from 'firebase/firestore';
+import { formatCurrency, formatProjectLabel } from '../utils/format';
+import { PlusCircle, Wallet, FileText, ChevronDown, ChevronUp, MessageSquare, Trash2, Copy } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import ProjectBitacora from '../components/ProjectBitacora';
 
 export default function UserDashboard() {
   const { currentUser } = useAuth();
+  const navigate = useNavigate();
   const [balance, setBalance] = useState(0);
   const [expenses, setExpenses] = useState([]);
   const [allocations, setAllocations] = useState([]);
   const [projectsList, setProjectsList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandedProject, setExpandedProject] = useState(null);
-  
+
   // Bitacora Modal State
   const [bitacoraOpen, setBitacoraOpen] = useState(false);
   const [selectedProjectId, setSelectedProjectId] = useState(null);
@@ -30,6 +32,22 @@ export default function UserDashboard() {
       e.stopPropagation(); // Evitar que el acordeón se expanda
       setSelectedProjectId(projectId);
       setBitacoraOpen(true);
+  };
+
+  const handleDeleteExpense = async (expense) => {
+      if (!confirm("¿Eliminar esta rendición pendiente? El saldo será descontado de tu cuenta.")) return;
+      try {
+          await deleteDoc(doc(db, "expenses", expense.id));
+          if (!expense.isCompanyExpense) {
+              const userRef = doc(db, "users", currentUser.uid);
+              await updateDoc(userRef, { balance: increment(-expense.amount) });
+          }
+          setExpenses(prev => prev.filter(e => e.id !== expense.id));
+          toast.success("Rendición eliminada.");
+      } catch (error) {
+          console.error("Error deleting expense:", error);
+          toast.error("Error al eliminar.");
+      }
   };
 
   useEffect(() => {
@@ -113,7 +131,6 @@ export default function UserDashboard() {
                    <thead className="bg-white">
                       <tr className="border-b">
                           <th className="px-6 py-3 font-medium text-gray-500">Proyecto</th>
-                          <th className="px-6 py-3 font-medium text-gray-500">Recurrencia</th>
                           <th className="px-6 py-3 font-medium text-gray-500 text-right">Total Viáticos</th>
                           <th className="px-6 py-3 font-medium text-gray-500 text-right">Total Rendido</th>
                           <th className="px-6 py-3 font-medium text-gray-500 text-right">Saldo</th>
@@ -126,9 +143,9 @@ export default function UserDashboard() {
                            // Aggregate Data
                            const projectStats = {};
 
-                           // Initialize with expenses
+                           // Initialize with expenses (only approved count toward totals)
                            expenses.forEach(e => {
-                               if (e.status === 'rejected') return; // Exclude rejected from sums
+                               if (e.status !== 'approved') return;
                                const pid = e.projectId || 'unknown';
                                if (!projectStats[pid]) projectStats[pid] = { totalExp: 0, totalAlloc: 0, name: e.projectName || 'Sin Proyecto' };
                                projectStats[pid].totalExp += (Number(e.amount) || 0);
@@ -154,7 +171,7 @@ export default function UserDashboard() {
                                };
                            });
 
-                           if (rows.length === 0) return <tr><td colSpan="6" className="p-8 text-center text-gray-400">No hay actividad registrada.</td></tr>;
+                           if (rows.length === 0) return <tr><td colSpan="5" className="p-8 text-center text-gray-400">No hay actividad registrada.</td></tr>;
 
                            return rows.map(row => {
                                const isExpanded = expandedProject === row.id;
@@ -166,11 +183,8 @@ export default function UserDashboard() {
                                    <tr className={`hover:bg-gray-50 transition cursor-pointer ${isExpanded ? 'bg-gray-50' : ''}`} onClick={() => toggleProject(row.id)}>
                                        <td className="px-6 py-4">
                                            <span className="font-medium text-gray-800">
-                                                {row.code ? `[${row.code}] ` : ''}{row.name}
+                                                {formatProjectLabel(row)}
                                            </span>
-                                       </td>
-                                       <td className="px-6 py-4 text-gray-600">
-                                           {row.recurrence || '-'}
                                        </td>
                                        <td className="px-6 py-4 text-right font-medium text-green-600">
                                            {formatCurrency(row.totalAlloc)}
@@ -205,7 +219,7 @@ export default function UserDashboard() {
                                    </tr>
                                    {isExpanded && (
                                        <tr>
-                                           <td colSpan="6" className="bg-gray-50 px-6 py-4">
+                                           <td colSpan="5" className="bg-gray-50 px-6 py-4">
                                                <div className="flex flex-col lg:flex-row gap-8 pl-4 border-l-2 border-blue-200">
                                                     {/* Allocations Detail */}
                                                     <div className="flex-1">
@@ -218,7 +232,15 @@ export default function UserDashboard() {
                                                                     <tbody>
                                                                         {projectAllocations.map(a => (
                                                                             <tr key={a.id} className="border-b last:border-0">
-                                                                                <td className="px-3 py-2 text-gray-500">{new Date(a.date).toLocaleDateString()}</td>
+                                                                                <td className="px-3 py-2 text-gray-500">
+                                                                                    <p>{new Date(a.date).toLocaleDateString()}</p>
+                                                                                    {a.type === 'transfer_out' && (
+                                                                                        <p className="text-xs text-rose-500">→ Reasignado a {a.transferTargetProjectCode ? `[${a.transferTargetProjectCode}] ` : ''}{a.transferTargetProjectName || 'otro proyecto'}</p>
+                                                                                    )}
+                                                                                    {a.type === 'transfer_in' && (
+                                                                                        <p className="text-xs text-emerald-500">← Desde {a.transferSourceProjectCode ? `[${a.transferSourceProjectCode}] ` : ''}{a.transferSourceProjectName || 'otro proyecto'}</p>
+                                                                                    )}
+                                                                                </td>
                                                                                 <td className="px-3 py-2 font-medium text-right text-green-700">{formatCurrency(a.amount)}</td>
                                                                             </tr>
                                                                         ))}
@@ -242,6 +264,7 @@ export default function UserDashboard() {
                                                                             <th className="px-3 py-2 text-left">Detalle</th>
                                                                             <th className="px-3 py-2 text-right">Monto</th>
                                                                             <th className="px-3 py-2 text-center">Estado</th>
+                                                                            <th className="px-3 py-2 text-center">Acciones</th>
                                                                         </tr>
                                                                     </thead>
                                                                     <tbody>
@@ -253,14 +276,35 @@ export default function UserDashboard() {
                                                                                     <p className="text-gray-400 truncate max-w-[150px]">{e.description}</p>
                                                                                     {e.imageUrl && <a href={e.imageUrl} target="_blank" className="text-blue-500 hover:underline">Ver Boleta</a>}
                                                                                 </td>
-                                                                                <td className="px-3 py-2 font-bold text-gray-700 text-right">{formatCurrency(e.amount)}</td>
+                                                                                <td className={`px-3 py-2 font-bold text-right ${e.status === 'rejected' ? 'line-through text-slate-400' : 'text-gray-700'}`}>{formatCurrency(e.amount)}</td>
                                                                                 <td className="px-3 py-2 text-center">
                                                                                         <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${
-                                                                                            e.status === 'approved' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 
+                                                                                            e.status === 'approved' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' :
                                                                                             e.status === 'rejected' ? 'bg-rose-100 text-rose-700 border-rose-200' : 'bg-amber-100 text-amber-700 border-amber-200'
                                                                                         }`}>
                                                                                             {e.status === 'approved' ? 'Aprobado' : e.status === 'rejected' ? 'Rechazado' : 'Pendiente'}
                                                                                         </span>
+                                                                                        {e.rejectionReason && <p className="text-xs italic text-slate-400 mt-1">Motivo: {e.rejectionReason}</p>}
+                                                                                </td>
+                                                                                <td className="px-3 py-2 text-center">
+                                                                                    <div className="flex items-center justify-center gap-1">
+                                                                                        <button
+                                                                                            onClick={() => navigate('/dashboard/new-expense', { state: { duplicate: e } })}
+                                                                                            className="p-1 text-gray-400 hover:text-blue-500 rounded hover:bg-blue-50 transition"
+                                                                                            title="Duplicar"
+                                                                                        >
+                                                                                            <Copy className="w-4 h-4" />
+                                                                                        </button>
+                                                                                        {e.status === 'pending' && (
+                                                                                            <button
+                                                                                                onClick={() => handleDeleteExpense(e)}
+                                                                                                className="p-1 text-gray-400 hover:text-red-500 rounded hover:bg-red-50 transition"
+                                                                                                title="Eliminar"
+                                                                                            >
+                                                                                                <Trash2 className="w-4 h-4" />
+                                                                                            </button>
+                                                                                        )}
+                                                                                    </div>
                                                                                 </td>
                                                                             </tr>
                                                                         ))}

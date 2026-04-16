@@ -7,6 +7,7 @@ import { collection, addDoc, query, where, getDocs, serverTimestamp } from 'fire
 import { toast } from 'sonner';
 import { ClipboardList, PlusCircle, CheckCircle, AlertTriangle, Clock } from 'lucide-react';
 import { sortProjects } from '../utils/sort';
+import { formatProjectLabel } from '../utils/format';
 import { isOlderThan60Days } from '../utils/dateUtils';
 import SearchableSelect from '../components/SearchableSelect';
 
@@ -131,7 +132,7 @@ export default function UserReports() {
                                 <SearchableSelect
                                     options={projects.map(p => ({
                                         value: p.id,
-                                        label: `${p.code ? `[${p.code}] ` : ''}${p.name || 'Sin Nombre'}`
+                                        label: formatProjectLabel(p)
                                     }))}
                                     value={formData.projectId}
                                     onChange={(val) => setFormData({...formData, projectId: val})}

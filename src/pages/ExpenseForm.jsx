@@ -5,7 +5,7 @@ import { parseReceiptImage } from '../lib/gemini';
 import { db, uploadReceiptImage } from '../lib/firebase';
 import { collection, getDocs, query, where, doc, increment, writeBatch, serverTimestamp } from 'firebase/firestore';
 import { Upload, Loader2, Camera, X, FileText, Plus } from 'lucide-react';
-import { formatCurrency } from '../utils/format';
+import { formatCurrency, formatProjectLabel } from '../utils/format';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { compressImage } from '../utils/imageUtils';
 import { sortProjects } from '../utils/sort';
@@ -395,15 +395,7 @@ export default function ExpenseForm() {
                  });
             }
 
-            // 3. Update User Balance (Credit) only if personal/other expense
-            if (!isProjectExpense) {
-                const userRef = doc(db, "users", targetUid);
-                batch.set(userRef, {
-                    balance: increment(item.amount)
-                }, { merge: true });
-            }
-
-            // 4. Register in Bitacora (Logs)
+            // 3. Register in Bitacora (Logs)
             const logRef = doc(collection(db, "projects", item.projectId, "logs"));
             batch.set(logRef, {
                 type: 'expense_added',
@@ -592,7 +584,7 @@ export default function ExpenseForm() {
                                         return true;
                                     }).map(p => ({
                                         value: p.id,
-                                        label: `${p.code ? `[${p.code}] ` : ''}${p.recurrence ? `(${p.recurrence}) ` : ''}${p.name || 'Sin Nombre'}`
+                                        label: formatProjectLabel(p)
                                     }))}
                                     value={formData.projectId}
                                     onChange={(val) => setFormData({...formData, projectId: val})}
@@ -611,7 +603,7 @@ export default function ExpenseForm() {
                                             <SearchableSelect
                                                 options={projects.map(p => ({
                                                     value: p.id,
-                                                    label: `${p.code ? `[${p.code}] ` : ''}${p.recurrence ? `(${p.recurrence}) ` : ''}${p.name}`
+                                                    label: formatProjectLabel(p)
                                                 }))}
                                                 value={row.projectId}
                                                 onChange={(val) => handleSplitChange(idx, 'projectId', val)}

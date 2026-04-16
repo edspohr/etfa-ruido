@@ -266,9 +266,6 @@ export default function AdminInvoicingHistory() {
                         <span className="text-[10px] font-mono font-bold bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded border border-indigo-100 mr-1">{inv.projectCode}</span>
                       )}
                       <p className="text-indigo-600 text-xs font-medium truncate max-w-[200px]">{inv.projectName || '-'}</p>
-                      {inv.projectRecurrence && (
-                        <span className="text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{inv.projectRecurrence}</span>
-                      )}
                       {inv.documentType && <p className="text-[10px] text-slate-400 capitalize mt-0.5">{inv.documentType.replace('_', ' ')}</p>}
                     </td>
                     <td className="px-4 py-3 text-right text-xs">

@@ -64,11 +64,6 @@ const KanbanCard = ({ project, index, onClick }) => {
                             ) : (
                                 <span className="bg-red-100 text-red-600 text-[10px] font-bold px-1.5 py-0.5 rounded">S/C</span>
                             )}
-                            {project.recurrence && (
-                                <span className="bg-indigo-100 text-indigo-700 text-[10px] font-bold px-1.5 py-0.5 rounded border border-indigo-200">
-                                    {project.recurrence}
-                                </span>
-                            )}
                         </div>
                     </div>
                     
@@ -260,8 +255,8 @@ const ProjectDetailModal = ({ project, isOpen, onClose }) => {
                                 </p>
                             </div>
                             <div>
-                                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Recurrencia</label>
-                                <p className="text-sm font-medium text-slate-700 mt-1">{project.recurrence || 'Único'}</p>
+                                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Código</label>
+                                <p className="text-sm font-medium text-slate-700 mt-1">{project.code || 'N/A'}</p>
                             </div>
                         </div>
 

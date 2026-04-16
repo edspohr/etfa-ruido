@@ -4,7 +4,7 @@ import { ArrowLeft, Save, Search, CheckCircle, AlertCircle, AlertTriangle, Plus,
 import { Link, useNavigate } from 'react-router-dom';
 import { collection, query, where, getDocs, addDoc, writeBatch, doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { formatCurrency } from '../utils/format';
+import { formatCurrency, formatProjectLabel } from '../utils/format';
 import { sortProjects } from '../utils/sort';
 import { Skeleton } from '../components/Skeleton';
 import SearchableSelect from '../components/SearchableSelect';
@@ -847,7 +847,7 @@ export default function AdminInvoicingGeneration() {
                                 .filter(p => !selectedClientId || p.client === clientData.razonSocial)
                                 .map(p => ({
                                   value: p.id,
-                                  label: `${p.code ? `[${p.code}] ` : ''}${p.recurrence ? `(${p.recurrence}) ` : ''}${p.name || 'Sin Nombre'}`
+                                  label: formatProjectLabel(p)
                               }))}
                               value={selectedProjectId}
                               onChange={setSelectedProjectId}
