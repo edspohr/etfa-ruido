@@ -9,11 +9,7 @@ import { Plus, DollarSign, Trash2, ChevronDown, Pencil } from 'lucide-react';
 import { sortProjects } from '../utils/sort';
 import { isSystemUser } from '../utils/userUtils';
 import { toast } from 'sonner';
-import { createNotification } from '../utils/notifications';
-import { migrateProjectCodes } from '../utils/migrateProjectCodes';
 import SearchableSelect from '../components/SearchableSelect';
-
-const CODE_REGEX = /^P\d{3}[A-Za-z]{0,2}$/;
 
 const EMPTY_FORM = {
   name: '', code: '', recurrence: '', client: '',
@@ -144,12 +140,6 @@ export default function AdminProjects() {
         userRole: 'admin',
         timestamp: serverTimestamp(),
       });
-      await createNotification(targetUserId, {
-        type: 'viatico_assigned',
-        title: 'Viático asignado',
-        message: `Se te asignó un viático de ${formatCurrency(amount)} en ${project?.name || 'proyecto'}.`,
-        link: '/dashboard/expenses',
-      });
       toast.success('Viático asignado exitosamente');
       setViaticoAmount('');
       setViaticoUser('');
@@ -163,33 +153,31 @@ export default function AdminProjects() {
     }
   };
 
-  const validateCode = (code) => CODE_REGEX.test(code.trim().toUpperCase());
-
   const handleSaveProject = async (e) => {
     e.preventDefault();
     if (!createForm.name.trim()) { toast.error('El nombre del proyecto es obligatorio.'); return; }
     if (!createForm.code.trim()) { toast.error('El código del proyecto es obligatorio.'); return; }
-    const upperCode = createForm.code.trim().toUpperCase();
-    if (!validateCode(upperCode)) {
-      toast.error('El código debe tener formato PXXXR (ej: P522F, P290)');
-      return;
-    }
+    const trimmedCode = createForm.code.trim();
+    const trimmedRecurrence = createForm.recurrence.trim();
     setSaving(true);
     try {
-      // Duplicate check (exclude current project when editing)
-      const dupQ = query(collection(db, 'projects'), where('code', '==', upperCode));
+      // Duplicate check: same code + recurrence combination (exclude current project when editing)
+      const dupQ = query(collection(db, 'projects'), where('code', '==', trimmedCode));
       const dupSnap = await getDocs(dupQ);
-      const dupExists = dupSnap.docs.some(d => d.id !== (editingProject?.id || ''));
+      const dupExists = dupSnap.docs.some(d =>
+        d.id !== (editingProject?.id || '') &&
+        (d.data().recurrence || '') === trimmedRecurrence
+      );
       if (dupExists) {
-        toast.error('Ya existe un proyecto con ese código.');
+        toast.error('Ya existe un proyecto con ese código y recurrencia.');
         setSaving(false);
         return;
       }
 
       const payload = {
         name: createForm.name.trim(),
-        code: upperCode,
-        recurrence: createForm.recurrence.trim(),
+        code: trimmedCode,
+        recurrence: trimmedRecurrence,
         client: createForm.client,
         contacto: {
           nombre: createForm.contactName.trim(),
@@ -262,18 +250,6 @@ export default function AdminProjects() {
         ? prev.engineers.filter(id => id !== uid)
         : [...prev.engineers, uid],
     }));
-  };
-
-  const handleMigrate = async () => {
-    if (!confirm('¿Migrar todos los proyectos al formato unificado PXXXR? Esta acción es segura y se puede re-ejecutar.')) return;
-    try {
-      const count = await migrateProjectCodes();
-      toast.success(`Migración completada: ${count} proyecto(s) actualizado(s).`);
-      fetchData();
-    } catch (err) {
-      console.error(err);
-      toast.error('Error durante la migración.');
-    }
   };
 
   if (loading) return <Layout title="Gestión de Proyectos">Cargando...</Layout>;
@@ -459,16 +435,6 @@ export default function AdminProjects() {
         </div>
       </div>
 
-      {/* Migration button (admin utility) */}
-      <div className="mt-8 flex justify-center">
-        <button
-          onClick={handleMigrate}
-          className="text-xs text-slate-400 hover:text-slate-600 underline transition-colors"
-        >
-          Migrar códigos al formato unificado (PXXXR)
-        </button>
-      </div>
-
       {/* Create / Edit Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
@@ -491,16 +457,16 @@ export default function AdminProjects() {
                       placeholder="Ej: Medición de Ruido Planta Central" />
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-slate-300 mb-1">Código (ej: P522F) *</label>
+                    <label className="block text-sm font-semibold text-slate-300 mb-1">Código *</label>
                     <input type="text" required value={createForm.code}
-                      onChange={e => setCreateForm(p => ({ ...p, code: e.target.value.toUpperCase() }))}
+                      onChange={e => setCreateForm(p => ({ ...p, code: e.target.value }))}
                       className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      placeholder="P + 3 dígitos + recurrencia (ej: P522F, P412B, P290)" />
+                      placeholder="Ej: ETF-001" />
                   </div>
                   <div>
                     <label className="block text-sm font-semibold text-slate-300 mb-1">Recurrencia <span className="font-normal text-slate-500">(opcional)</span></label>
                     <input type="text" value={createForm.recurrence}
-                      onChange={e => setCreateForm(p => ({ ...p, recurrence: e.target.value.toUpperCase() }))}
+                      onChange={e => setCreateForm(p => ({ ...p, recurrence: e.target.value }))}
                       className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                       placeholder="Ej: A, B, C" />
                   </div>

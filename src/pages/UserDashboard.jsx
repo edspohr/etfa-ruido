@@ -131,6 +131,7 @@ export default function UserDashboard() {
                    <thead className="bg-white">
                       <tr className="border-b">
                           <th className="px-6 py-3 font-medium text-gray-500">Proyecto</th>
+                          <th className="px-6 py-3 font-medium text-gray-500">Recurrencia</th>
                           <th className="px-6 py-3 font-medium text-gray-500 text-right">Total Viáticos</th>
                           <th className="px-6 py-3 font-medium text-gray-500 text-right">Total Rendido</th>
                           <th className="px-6 py-3 font-medium text-gray-500 text-right">Saldo</th>
@@ -145,7 +146,7 @@ export default function UserDashboard() {
 
                            // Initialize with expenses (only approved count toward totals)
                            expenses.forEach(e => {
-                               if (e.status !== 'approved') return;
+                               if (e.status === 'rejected') return; // Exclude rejected from sums
                                const pid = e.projectId || 'unknown';
                                if (!projectStats[pid]) projectStats[pid] = { totalExp: 0, totalAlloc: 0, name: e.projectName || 'Sin Proyecto' };
                                projectStats[pid].totalExp += (Number(e.amount) || 0);
@@ -171,7 +172,7 @@ export default function UserDashboard() {
                                };
                            });
 
-                           if (rows.length === 0) return <tr><td colSpan="5" className="p-8 text-center text-gray-400">No hay actividad registrada.</td></tr>;
+                           if (rows.length === 0) return <tr><td colSpan="7" className="p-8 text-center text-gray-400">No hay actividad registrada.</td></tr>;
 
                            return rows.map(row => {
                                const isExpanded = expandedProject === row.id;
@@ -185,6 +186,9 @@ export default function UserDashboard() {
                                            <span className="font-medium text-gray-800">
                                                 {formatProjectLabel(row)}
                                            </span>
+                                       </td>
+                                       <td className="px-6 py-4 text-gray-600">
+                                           {row.recurrence || '-'}
                                        </td>
                                        <td className="px-6 py-4 text-right font-medium text-green-600">
                                            {formatCurrency(row.totalAlloc)}
@@ -219,7 +223,7 @@ export default function UserDashboard() {
                                    </tr>
                                    {isExpanded && (
                                        <tr>
-                                           <td colSpan="5" className="bg-gray-50 px-6 py-4">
+                                           <td colSpan="7" className="bg-gray-50 px-6 py-4">
                                                <div className="flex flex-col lg:flex-row gap-8 pl-4 border-l-2 border-blue-200">
                                                     {/* Allocations Detail */}
                                                     <div className="flex-1">
