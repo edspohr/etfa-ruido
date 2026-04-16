@@ -41,6 +41,7 @@ export default function AdminClients() {
   const [unifyVariants, setUnifyVariants] = useState([]);
   const [unifyFinalName, setUnifyFinalName] = useState('');
   const [unifying, setUnifying] = useState(false);
+  const [unifySearch, setUnifySearch] = useState('');
 
   const fetchData = async () => {
     setLoading(true);
@@ -201,10 +202,19 @@ export default function AdminClients() {
   };
 
   const openUnify = (client) => {
-    const variants = getSimilarVariants(client.razonSocial);
+    const autoDetected = getSimilarVariants(client.razonSocial);
+    // Build list of ALL other client names (excluding the selected master)
+    const allOtherNames = allNames
+      .filter(n => n.toLowerCase() !== (client.razonSocial || '').toLowerCase())
+      .sort((a, b) => a.localeCompare(b, 'es'));
+    // Mark auto-detected as pre-checked, others unchecked
     setUnifyTarget(client);
-    setUnifyVariants(variants.map(v => ({ name: v, checked: true })));
+    setUnifyVariants(allOtherNames.map(name => ({
+      name,
+      checked: autoDetected.some(v => v.toLowerCase() === name.toLowerCase()),
+    })));
     setUnifyFinalName(client.razonSocial);
+    setUnifySearch('');
   };
 
   const handleUnify = async () => {
@@ -335,7 +345,6 @@ export default function AdminClients() {
               </tr>
             )}
             {filteredList.map((c, idx) => {
-              const variants = getSimilarVariants(c.razonSocial);
               return (
                 <tr key={c.id || `virtual-${idx}`} className="hover:bg-gray-50 transition">
                   <td className="px-6 py-4">
@@ -361,16 +370,14 @@ export default function AdminClients() {
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex items-center justify-end gap-2">
-                      {variants.length > 0 && (
-                        <button
-                          onClick={() => openUnify(c)}
-                          title="Unificar variantes similares"
-                          className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1.5 rounded-lg transition font-semibold"
-                        >
-                          <GitMerge className="w-3.5 h-3.5" />
-                          Unificar
-                        </button>
-                      )}
+                      <button
+                        onClick={() => openUnify(c)}
+                        title="Unificar con otros clientes"
+                        className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1.5 rounded-lg transition font-semibold"
+                      >
+                        <GitMerge className="w-3.5 h-3.5" />
+                        Unificar
+                      </button>
                       <button
                         onClick={() => openEdit(c)}
                         title="Editar"
@@ -531,31 +538,66 @@ export default function AdminClients() {
               </div>
               <div>
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-                  Variantes similares detectadas (selecciona las que deseas fusionar)
+                  Clientes a fusionar (selecciona los que deseas unificar con el cliente base)
                 </p>
                 {unifyVariants.length === 0 ? (
-                  <p className="text-sm text-gray-400 italic">No hay variantes similares.</p>
+                  <p className="text-sm text-gray-400 italic">No hay otros clientes para unificar.</p>
                 ) : (
-                  <div className="space-y-1 max-h-44 overflow-y-auto border border-gray-100 rounded-lg p-2">
-                    {unifyVariants.map((v, i) => (
-                      <label key={i} className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={v.checked}
-                          onChange={() =>
-                            setUnifyVariants(prev =>
-                              prev.map((x, j) => j === i ? { ...x, checked: !x.checked } : x)
-                            )
-                          }
-                          className="rounded"
-                        />
-                        <span className="text-sm text-gray-700 flex-1">{v.name}</span>
-                        <span className="text-xs text-gray-400 flex-shrink-0">
-                          {projects.filter(p => (p.client || '').toLowerCase() === v.name.toLowerCase()).length} proy.
-                        </span>
-                      </label>
-                    ))}
-                  </div>
+                  <>
+                    <input
+                      type="text"
+                      placeholder="Buscar cliente..."
+                      value={unifySearch}
+                      onChange={e => setUnifySearch(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500 mb-3"
+                    />
+                    <div className="space-y-1 max-h-64 overflow-y-auto border border-gray-100 rounded-lg p-2">
+                      {(() => {
+                        const q = unifySearch.toLowerCase();
+                        const visible = unifyVariants
+                          .map((v, originalIndex) => ({ ...v, originalIndex }))
+                          .filter(v => !q || v.name.toLowerCase().includes(q));
+                        const checkedItems = visible.filter(v => v.checked);
+                        const uncheckedItems = visible.filter(v => !v.checked);
+
+                        const toggleByName = (name) =>
+                          setUnifyVariants(prev =>
+                            prev.map(x => x.name === name ? { ...x, checked: !x.checked } : x)
+                          );
+
+                        const renderRow = (v) => (
+                          <label key={v.originalIndex} className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={v.checked}
+                              onChange={() => toggleByName(v.name)}
+                              className="rounded"
+                            />
+                            <span className="text-sm text-gray-700 flex-1">{v.name}</span>
+                            <span className="text-xs text-gray-400 flex-shrink-0">
+                              {projects.filter(p => (p.client || '').toLowerCase() === v.name.toLowerCase()).length} proy.
+                            </span>
+                          </label>
+                        );
+
+                        return (
+                          <>
+                            {checkedItems.length > 0 && (
+                              <p className="text-[10px] font-bold text-amber-600 uppercase tracking-wider mb-1">Posibles duplicados detectados</p>
+                            )}
+                            {checkedItems.map(renderRow)}
+                            {uncheckedItems.length > 0 && (
+                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 mt-3">Todos los clientes</p>
+                            )}
+                            {uncheckedItems.map(renderRow)}
+                            {visible.length === 0 && (
+                              <p className="text-sm text-gray-400 italic px-2 py-1">Sin resultados.</p>
+                            )}
+                          </>
+                        );
+                      })()}
+                    </div>
+                  </>
                 )}
               </div>
               <div>
