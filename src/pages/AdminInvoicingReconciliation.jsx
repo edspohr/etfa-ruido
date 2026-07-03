@@ -703,26 +703,49 @@ export default function AdminInvoicingReconciliation() {
                                   Facturas Sugeridas ({movSuggestions.length})
                                 </p>
                                 <div className="space-y-2">
-                                  {movSuggestions.map((sug, sIdx) => (
-                                    <div key={sIdx} className="flex items-center justify-between bg-white p-3 rounded-xl border border-amber-200 hover:border-indigo-300 hover:shadow-sm transition">
-                                      <div className="flex-1 min-w-0">
-                                        <p className="font-bold text-sm text-slate-800 truncate">{sug.invoice.clientName}</p>
-                                        <p className="text-xs text-slate-500 truncate">{sug.invoice.projectName}</p>
-                                        <div className="flex items-center gap-2 mt-1 flex-wrap">
-                                          <span className="font-bold text-sm text-slate-700">{formatCurrency(sug.invoice.totalAmount)}</span>
-                                          <ScoreBadge score={sug.score} />
-                                          {sug.reasons.slice(0, 3).map((r, ri) => (
-                                            r.includes('IVA')
-                                              ? <span key={ri} className="text-[9px] text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded border border-blue-200">{r}</span>
-                                              : <span key={ri} className="text-[9px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{r}</span>
-                                          ))}
+                                  {movSuggestions.map((sug, sIdx) => {
+                                    const inv = sug.invoice;
+                                    const formattedIssueDate = inv.issueDate
+                                      ? (() => { const [y, m, d] = inv.issueDate.split('-'); return `${d}/${m}/${y}`; })()
+                                      : null;
+                                    return (
+                                      <div key={sIdx} className="flex items-center justify-between bg-white p-3 rounded-xl border border-amber-200 hover:border-indigo-300 hover:shadow-sm transition">
+                                        <div className="flex-1 min-w-0">
+                                          <div className="flex items-center gap-2 flex-wrap">
+                                            <p className="font-bold text-sm text-slate-800 truncate">{inv.clientName}</p>
+                                            {inv.clientRut && (
+                                              <span className="text-[10px] font-mono text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">{inv.clientRut}</span>
+                                            )}
+                                          </div>
+                                          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                            {inv.projectCode && (
+                                              <span className="text-[10px] font-mono font-bold bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded border border-indigo-100">
+                                                [{inv.projectCode}]{inv.projectRecurrence ? ` (${inv.projectRecurrence})` : ''}
+                                              </span>
+                                            )}
+                                            <p className="text-xs text-slate-500 truncate">{inv.projectName}</p>
+                                          </div>
+                                          <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                            <span className="font-bold text-sm text-slate-700">{formatCurrency(inv.totalAmount)}</span>
+                                            {formattedIssueDate && (
+                                              <span className="text-[10px] text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200">
+                                                Emisión: {formattedIssueDate}
+                                              </span>
+                                            )}
+                                            <ScoreBadge score={sug.score} />
+                                            {sug.reasons.slice(0, 3).map((r, ri) => (
+                                              r.includes('IVA')
+                                                ? <span key={ri} className="text-[9px] text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded border border-blue-200">{r}</span>
+                                                : <span key={ri} className="text-[9px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{r}</span>
+                                            ))}
+                                          </div>
                                         </div>
+                                        <button onClick={() => confirmSuggestion(mov, inv)} className="bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-indigo-700 transition shrink-0 ml-3 active:scale-95">
+                                          Vincular
+                                        </button>
                                       </div>
-                                      <button onClick={() => confirmSuggestion(mov, sug.invoice)} className="bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-indigo-700 transition shrink-0 ml-3 active:scale-95">
-                                        Vincular
-                                      </button>
-                                    </div>
-                                  ))}
+                                    );
+                                  })}
                                 </div>
                               </div>
                             )}

@@ -43,7 +43,9 @@ export default function AdminInvoicingGeneration() {
       hes: '',
       nota_pedido: ''
   });
-  const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split('T')[0]);
+  // Do not default to today: the invoice must carry its printed emission date.
+  // Leaving it empty forces the user to notice missing extractions.
+  const [invoiceDate, setInvoiceDate] = useState('');
 
   // Invoice Data State
   const [expenses, setExpenses] = useState([]);
@@ -260,6 +262,8 @@ export default function AdminInvoicingGeneration() {
       // Auto-fill date
       if (date) {
         setInvoiceDate(date);
+      } else {
+        toast.warning('No se detectó fecha de emisión en el PDF. Ingrésela manualmente.');
       }
 
       setExtractionMode(false);
@@ -309,6 +313,10 @@ export default function AdminInvoicingGeneration() {
   const handleGenerateInvoice = async () => {
       if (!clientData.rut || !clientData.razonSocial) {
           toast.error("RUT y Razón Social son requeridos");
+          return;
+      }
+      if (!invoiceDate) {
+          toast.error("Fecha de Emisión de la factura es requerida.");
           return;
       }
       if (totalInvoice <= 0) {
@@ -508,7 +516,7 @@ export default function AdminInvoicingGeneration() {
       try {
         const text = await getPdfText(file);
         
-        const { rut: extractedRut, amount: extractedAmount, projectId: extractedProjectId, clientName: extractedClientName } = extractInvoiceData(text, projects);
+        const { rut: extractedRut, amount: extractedAmount, date: extractedDate, projectId: extractedProjectId, clientName: extractedClientName } = extractInvoiceData(text, projects);
 
         let clientName = extractedClientName || '';
         if (!clientName && extractedRut) {
@@ -525,17 +533,21 @@ export default function AdminInvoicingGeneration() {
           matchedProject = projects.find(p => p.id === extractedProjectId) || null;
         }
 
+        const missingDate = !extractedDate;
         const entry = {
           fileName:    file.name,
-          status:      extractedAmount > 0 ? 'ok' : 'error',
-          error:       extractedAmount > 0 ? null : 'Monto no detectado — ingresa manualmente',
+          status:      extractedAmount > 0 && !missingDate ? 'ok' : (extractedAmount > 0 ? 'warning' : 'error'),
+          error:       extractedAmount > 0
+                        ? (missingDate ? 'Fecha de emisión no detectada — ingrésala manualmente' : null)
+                        : 'Monto no detectado — ingresa manualmente',
           rut:         extractedRut || '',
           razonSocial: clientName,
           project:     matchedProject?.name || '',
           projectId:   matchedProject?.id   || '',
           amount:      extractedAmount,
+          issueDate:   extractedDate || '',
           observaciones: '',
-          include:     extractedAmount > 0,
+          include:     extractedAmount > 0 && !missingDate,
         };
 
         // Firestore duplicate check
@@ -558,7 +570,7 @@ export default function AdminInvoicingGeneration() {
 
         results.push(entry);
       } catch (e) {
-        results.push({ fileName: file.name, status: 'error', error: e.message, rut: '', razonSocial: '', project: '', amount: 0, include: false });
+        results.push({ fileName: file.name, status: 'error', error: e.message, rut: '', razonSocial: '', project: '', amount: 0, issueDate: '', include: false });
       }
     }
 
@@ -593,9 +605,14 @@ export default function AdminInvoicingGeneration() {
   });
 
   const handleBatchGenerate = async () => {
-    const toGenerate = batchInvoices.filter(inv => inv.include && inv.status === 'ok');
+    const toGenerate = batchInvoices.filter(inv => inv.include && inv.status !== 'error');
     if (toGenerate.length === 0) {
       toast.error('No hay documentos seleccionados para generar.');
+      return;
+    }
+    const missingDates = toGenerate.filter(inv => !inv.issueDate);
+    if (missingDates.length > 0) {
+      toast.error(`${missingDates.length} documento(s) sin fecha de emisión. Completa la fecha antes de generar.`);
       return;
     }
     setBatchSaving(true);
@@ -627,7 +644,7 @@ export default function AdminInvoicingGeneration() {
           observaciones: inv.observaciones || '',
           documentType: 'electronic_invoice',
           createdAt: serverTimestamp(),
-          issueDate: new Date().toISOString().split('T')[0],
+          issueDate: inv.issueDate,
           status: 'issued',
           paymentStatus: 'pending',
           totalAmount: inv.amount,
@@ -1125,9 +1142,9 @@ export default function AdminInvoicingGeneration() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 relative z-10">
                     <button 
                         onClick={handleGenerateInvoice}
-                        disabled={generating || !clientData.rut || !clientData.razonSocial || totalInvoice <= 0}
+                        disabled={generating || !clientData.rut || !clientData.razonSocial || !invoiceDate || totalInvoice <= 0}
                         className={`w-full py-4 rounded-2xl font-black text-lg shadow-xl transition-all flex justify-center items-center gap-2 ${
-                            generating || !clientData.rut || !clientData.razonSocial || totalInvoice <= 0
+                            generating || !clientData.rut || !clientData.razonSocial || !invoiceDate || totalInvoice <= 0
                             ? 'bg-slate-800/80 text-slate-500 cursor-not-allowed border border-slate-700/50' 
                             : 'bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white hover:scale-[1.02] active:scale-[0.98]'
                         }`}
@@ -1233,6 +1250,7 @@ export default function AdminInvoicingGeneration() {
                         <tr className="border-b border-slate-100 bg-slate-50/50">
                           <th className="text-left py-3 px-4 font-bold text-slate-500 text-xs uppercase tracking-wider">Incluir</th>
                           <th className="text-left py-3 px-4 font-bold text-slate-500 text-xs uppercase tracking-wider">Archivo</th>
+                          <th className="text-left py-3 px-4 font-bold text-slate-500 text-xs uppercase tracking-wider">Fecha Emisión</th>
                           <th className="text-left py-3 px-4 font-bold text-slate-500 text-xs uppercase tracking-wider">RUT</th>
                           <th className="text-left py-3 px-4 font-bold text-slate-500 text-xs uppercase tracking-wider">Razón Social</th>
                           <th className="text-left py-3 px-4 font-bold text-slate-500 text-xs uppercase tracking-wider">Proyecto</th>
@@ -1257,9 +1275,17 @@ export default function AdminInvoicingGeneration() {
                             </td>
                             <td className="py-3 px-4 font-medium text-slate-700 max-w-[200px] truncate">{inv.fileName}</td>
                             <td className="py-3 px-4">
-                              <input 
-                                type="text" value={inv.rut} 
-                                onChange={(e) => updateBatchInvoice(idx, 'rut', e.target.value)} 
+                              <input
+                                type="date"
+                                value={inv.issueDate || ''}
+                                onChange={(e) => updateBatchInvoice(idx, 'issueDate', e.target.value)}
+                                className={`w-36 bg-transparent border-b outline-none py-1 text-xs ${inv.issueDate ? 'border-transparent hover:border-slate-300 focus:border-indigo-500' : 'border-rose-300 focus:border-rose-500'}`}
+                              />
+                            </td>
+                            <td className="py-3 px-4">
+                              <input
+                                type="text" value={inv.rut}
+                                onChange={(e) => updateBatchInvoice(idx, 'rut', e.target.value)}
                                 className="w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 outline-none py-1 text-sm"
                                 placeholder="—"
                               />

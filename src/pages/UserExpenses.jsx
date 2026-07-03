@@ -238,12 +238,15 @@ export default function UserExpenses() {
             <span className="font-bold text-rose-600">{rejectedCount} rechazadas</span>
           </p>
         )}
-        <button
-          onClick={() => setShowHistorical(prev => !prev)}
-          className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 underline transition-colors ml-auto"
-        >
-          {showHistorical ? 'Ocultar registros antiguos' : 'Mostrar registros anteriores a 60 días'}
-        </button>
+        {/* User-controlled toggle only visible if admin has granted full history access */}
+        {userData?.showAllHistory && (
+          <button
+            onClick={() => setShowHistorical(prev => !prev)}
+            className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 underline transition-colors ml-auto"
+          >
+            {showHistorical ? 'Ocultar registros antiguos' : 'Mostrar registros anteriores a 60 días'}
+          </button>
+        )}
       </div>
 
       {/* Resumen por Proyecto */}

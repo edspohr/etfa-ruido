@@ -441,11 +441,11 @@ export default function AdminUserDetails() {
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100 flex items-center">
+        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100 flex items-start">
           <div className="mr-4 bg-gray-100 p-3 rounded-full">
             <User className="w-8 h-8 text-gray-500" />
           </div>
-          <div>
+          <div className="flex-1">
             <h3 className="text-sm font-medium text-gray-500 mb-1">
               Información
             </h3>
@@ -454,6 +454,28 @@ export default function AdminUserDetails() {
             </p>
             <p className="text-sm text-gray-500">{user.email}</p>
             <p className="text-sm text-gray-500 capitalize">{user.role}</p>
+
+            {user.role === 'professional' && (
+              <label className="flex items-center gap-2 mt-3 text-xs text-gray-600 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={!!user.showAllHistory}
+                  onChange={async (e) => {
+                    const value = e.target.checked;
+                    try {
+                      await updateDoc(doc(db, 'users', user.id), { showAllHistory: value });
+                      setUser(prev => ({ ...prev, showAllHistory: value }));
+                      toast.success(value ? 'Historial completo habilitado.' : 'Historial limitado a 60 días.');
+                    } catch (err) {
+                      console.error(err);
+                      toast.error('Error al actualizar preferencia.');
+                    }
+                  }}
+                  className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                <span>Permitir ver historial completo (&gt;60 días)</span>
+              </label>
+            )}
           </div>
         </div>
         <div className="bg-gradient-to-br from-blue-600 to-blue-800 p-6 rounded-lg shadow-sm border border-blue-500 text-white relative overflow-hidden">

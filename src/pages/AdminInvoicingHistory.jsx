@@ -4,9 +4,11 @@ import { collection, query, orderBy, getDocs, doc, writeBatch, where } from 'fir
 import { db } from '../lib/firebase';
 import { formatCurrency } from '../utils/format';
 import { Skeleton } from '../components/Skeleton';
-import { FileText, CheckCircle, Clock, XCircle, Search, Filter, Ban, Download, Calendar, ArrowUpDown } from 'lucide-react';
+import { FileText, CheckCircle, Clock, Ban, Download, Calendar, ArrowUpDown, AlertTriangle, Search } from 'lucide-react';
 import InvoiceDetailModal from '../components/InvoiceDetailModal';
 import { toast } from 'sonner';
+
+const WIPE_CONFIRMATION_PHRASE = 'BORRAR TODO';
 
 export default function AdminInvoicingHistory() {
   const [invoices, setInvoices] = useState([]);
@@ -19,6 +21,11 @@ export default function AdminInvoicingHistory() {
 
   const [selectedInvoice, setSelectedInvoice] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+
+  // Wipeout modal state
+  const [wipeOpen, setWipeOpen] = useState(false);
+  const [wipeConfirmText, setWipeConfirmText] = useState('');
+  const [wiping, setWiping] = useState(false);
 
   useEffect(() => { fetchInvoices(); }, []);
 
@@ -136,11 +143,13 @@ export default function AdminInvoicingHistory() {
 
   // CSV Export
   const handleExportCSV = () => {
-    const headers = ['Fecha', 'Cliente', 'RUT', 'Proyecto', 'Monto Neto', 'Estado Pago', 'Tipo Doc'];
+    const headers = ['Fecha Emisión', 'Cliente', 'RUT', 'Código', 'Recurrencia', 'Proyecto', 'Monto Neto', 'Estado Pago', 'Tipo Doc'];
     const rows = filteredInvoices.map(inv => [
-      inv.createdAt?.seconds ? new Date(inv.createdAt.seconds * 1000).toLocaleDateString() : '',
+      inv.issueDate || (inv.createdAt?.seconds ? new Date(inv.createdAt.seconds * 1000).toISOString().split('T')[0] : ''),
       `"${(inv.clientName || '').replace(/"/g, '""')}"`,
       inv.clientRut || '',
+      inv.projectCode || '',
+      inv.projectRecurrence || '',
       `"${(inv.projectName || '').replace(/"/g, '""')}"`,
       inv.totalAmount || 0,
       inv.paymentStatus === 'paid' ? 'Pagado' : inv.paymentStatus === 'void' ? 'Anulada' : 'Pendiente',
@@ -155,6 +164,74 @@ export default function AdminInvoicingHistory() {
     link.download = `facturas_${new Date().toISOString().split('T')[0]}.csv`;
     link.click();
   };
+
+  // Mass delete of the invoices collection + reset of linked expense flags.
+  // Mirrors the per-invoice void flow at updateStatus(id, 'void') above.
+  async function handleWipeInvoices() {
+    if (wipeConfirmText !== WIPE_CONFIRMATION_PHRASE) {
+      toast.error(`Debes escribir "${WIPE_CONFIRMATION_PHRASE}" para confirmar.`);
+      return;
+    }
+    setWiping(true);
+    try {
+      const invSnap = await getDocs(collection(db, 'invoices'));
+      if (invSnap.empty) {
+        toast.info('No hay facturas para borrar.');
+        setWipeOpen(false);
+        setWipeConfirmText('');
+        return;
+      }
+
+      // Collect all expenseIds referenced by any invoice, so we can revert their flags.
+      const expenseIdsToReset = new Set();
+      invSnap.docs.forEach(d => {
+        const data = d.data();
+        (data.expenseIds || []).forEach(eid => expenseIdsToReset.add(eid));
+      });
+
+      // Firestore writeBatch cap is 500 ops per commit. Chunk both deletes and updates.
+      const chunk = (arr, size) => {
+        const out = [];
+        for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+        return out;
+      };
+
+      // Reset expense flags first (safer: if we fail mid-way, invoices still exist and the
+      // wipe can be retried without leaving orphan expenses pointing at deleted invoices).
+      const expenseIdChunks = chunk([...expenseIdsToReset], 400);
+      for (const ids of expenseIdChunks) {
+        const b = writeBatch(db);
+        ids.forEach(eid => {
+          b.update(doc(db, 'expenses', eid), {
+            invoiceId: null,
+            invoiceStatus: 'approved',
+            billingStatus: 'pending',
+          });
+        });
+        await b.commit();
+      }
+
+      // Then delete invoices.
+      const invoiceChunks = chunk(invSnap.docs, 400);
+      let deleted = 0;
+      for (const docs of invoiceChunks) {
+        const b = writeBatch(db);
+        docs.forEach(d => b.delete(d.ref));
+        await b.commit();
+        deleted += docs.length;
+      }
+
+      toast.success(`${deleted} facturas eliminadas. ${expenseIdsToReset.size} gastos liberados.`);
+      setInvoices([]);
+      setWipeOpen(false);
+      setWipeConfirmText('');
+    } catch (err) {
+      console.error('Error wiping invoices:', err);
+      toast.error('Error al borrar facturas. Revisa la consola.');
+    } finally {
+      setWiping(false);
+    }
+  }
 
   return (
     <Layout title="Historial de Facturación">
@@ -211,9 +288,18 @@ export default function AdminInvoicingHistory() {
           </div>
         </div>
 
-        <button onClick={handleExportCSV} className="flex items-center gap-2 bg-slate-800 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-slate-700 transition shadow-sm">
-          <Download className="w-4 h-4" /> Exportar CSV
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={handleExportCSV} className="flex items-center gap-2 bg-slate-800 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-slate-700 transition shadow-sm">
+            <Download className="w-4 h-4" /> Exportar CSV
+          </button>
+          <button
+            onClick={() => setWipeOpen(true)}
+            className="flex items-center gap-1.5 text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-3 py-2 rounded-xl text-xs font-medium border border-rose-200 transition"
+            title="Borrar todas las facturas y liberar gastos"
+          >
+            <AlertTriangle className="w-3.5 h-3.5" /> Reset Facturación
+          </button>
+        </div>
       </div>
 
       {/* Table */}
@@ -236,6 +322,7 @@ export default function AdminInvoicingHistory() {
                   <th className="px-4 py-3 text-left cursor-pointer hover:text-slate-700" onClick={() => toggleSort('client')}>
                     <span className="flex items-center gap-1">Cliente <ArrowUpDown className="w-3 h-3" /></span>
                   </th>
+                  <th className="px-4 py-3 text-left">Código</th>
                   <th className="px-4 py-3 text-left">Proyecto</th>
                   <th className="px-4 py-3 text-right">Gastos</th>
                   <th className="px-4 py-3 text-right cursor-pointer hover:text-slate-700" onClick={() => toggleSort('amount')}>
@@ -261,10 +348,16 @@ export default function AdminInvoicingHistory() {
                       <p className={`font-bold text-slate-800 text-sm ${inv.paymentStatus === 'void' ? 'line-through' : ''}`}>{inv.clientName || '-'}</p>
                       {inv.clientRut && <p className="text-[10px] text-slate-400 font-mono">{inv.clientRut}</p>}
                     </td>
-                    <td className="px-4 py-3">
-                      {inv.projectCode && (
-                        <span className="text-[10px] font-mono font-bold bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded border border-indigo-100 mr-1">{inv.projectCode}</span>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {inv.projectCode ? (
+                        <span className="text-[10px] font-mono font-bold bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded border border-indigo-100">
+                          [{inv.projectCode}]{inv.projectRecurrence ? ` (${inv.projectRecurrence})` : ''}
+                        </span>
+                      ) : (
+                        <span className="text-slate-300 text-xs">—</span>
                       )}
+                    </td>
+                    <td className="px-4 py-3">
                       <p className="text-indigo-600 text-xs font-medium truncate max-w-[200px]">{inv.projectName || '-'}</p>
                       {inv.documentType && <p className="text-[10px] text-slate-400 capitalize mt-0.5">{inv.documentType.replace('_', ' ')}</p>}
                     </td>
@@ -316,12 +409,66 @@ export default function AdminInvoicingHistory() {
         )}
       </div>
 
-      <InvoiceDetailModal 
-        isOpen={isModalOpen} 
-        onClose={() => setIsModalOpen(false)} 
+      <InvoiceDetailModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
         invoice={selectedInvoice}
         onUpdate={fetchInvoices}
       />
+
+      {wipeOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 border border-rose-200">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-rose-100 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5 text-rose-600" />
+              </div>
+              <div>
+                <h3 className="font-black text-slate-900 text-lg">Reset de Facturación</h3>
+                <p className="text-sm text-slate-600 mt-1">
+                  Esta acción <strong>elimina todas las facturas</strong> registradas y libera los gastos vinculados
+                  (vuelven a estado "Aprobado" para poder ser re-facturados). No afecta cartolas ni movimientos bancarios.
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-rose-50 border border-rose-200 rounded-lg p-3 mb-4">
+              <p className="text-xs text-rose-700 font-medium mb-2">
+                Facturas actualmente en el sistema: <strong>{invoices.length}</strong>
+              </p>
+              <p className="text-[11px] text-rose-600">
+                Escribe exactamente <code className="bg-white px-1.5 py-0.5 rounded border border-rose-200 font-mono font-bold">{WIPE_CONFIRMATION_PHRASE}</code> para confirmar.
+              </p>
+            </div>
+
+            <input
+              type="text"
+              value={wipeConfirmText}
+              onChange={e => setWipeConfirmText(e.target.value)}
+              placeholder={WIPE_CONFIRMATION_PHRASE}
+              disabled={wiping}
+              className="w-full border-2 border-rose-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-rose-500 mb-4"
+            />
+
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => { setWipeOpen(false); setWipeConfirmText(''); }}
+                disabled={wiping}
+                className="px-4 py-2 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-100 transition disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleWipeInvoices}
+                disabled={wiping || wipeConfirmText !== WIPE_CONFIRMATION_PHRASE}
+                className="px-4 py-2 rounded-lg text-sm font-bold bg-rose-600 text-white hover:bg-rose-700 transition disabled:bg-slate-300 disabled:cursor-not-allowed"
+              >
+                {wiping ? 'Borrando…' : 'Borrar todo'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </Layout>
   );
 }
