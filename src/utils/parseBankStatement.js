@@ -40,6 +40,35 @@ const matchesAny = (cell, keywords) => {
 };
 
 // ---------------------------------------------------------------------------
+// RUT EXTRACTOR (para detectar RUT dentro de la glosa bancaria)
+// ---------------------------------------------------------------------------
+
+const RUT_PATTERNS = [
+  // "RUT: 76.123.456-7" con etiqueta explícita
+  /R\.?U\.?T\.?\s*:?\s*(\d{1,2}\.\d{3}\.\d{3}\s*-\s*[\dkK])/i,
+  // 76.123.456-7 (con puntos)
+  /(\d{1,2}\.\d{3}\.\d{3}\s*-\s*[\dkK])/,
+  // 76123456-7 (sin puntos)
+  /(\d{7,8}\s*-\s*[\dkK])/,
+];
+
+/**
+ * Extrae el primer RUT chileno encontrado en un texto. Devuelve el RUT
+ * normalizado (sin espacios, K en mayúscula) o null.
+ */
+export function extractRutFromText(text) {
+  if (!text) return null;
+  const s = String(text);
+  for (const pattern of RUT_PATTERNS) {
+    const m = s.match(pattern);
+    if (m && m[1]) {
+      return m[1].replace(/\s+/g, '').toUpperCase();
+    }
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // DATE PARSER
 // ---------------------------------------------------------------------------
 /**
@@ -287,10 +316,11 @@ export function parseBankData(rows, bankName) {
         : 'Sin descripción';
 
     movements.push({
-      date:        date ?? 'S/F',
-      description: desc,
+      date:          date ?? 'S/F',
+      description:   desc,
       amount,
-      bank:        bankName,
+      bank:          bankName,
+      rut_detectado: extractRutFromText(desc),
     });
   }
 
