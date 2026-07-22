@@ -7,10 +7,12 @@ import { Skeleton } from '../components/Skeleton';
 import { FileText, CheckCircle, Clock, Ban, Download, Calendar, ArrowUpDown, AlertTriangle, Search } from 'lucide-react';
 import InvoiceDetailModal from '../components/InvoiceDetailModal';
 import { toast } from 'sonner';
+import { useAuth } from '../context/useAuth';
 
 const WIPE_CONFIRMATION_PHRASE = 'BORRAR TODO';
 
 export default function AdminInvoicingHistory() {
+  const { isSuperAdmin } = useAuth();
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -167,6 +169,10 @@ export default function AdminInvoicingHistory() {
 
   // Mass reset: elimina facturas + libera gastos + borra cartolas y movimientos bancarios.
   async function handleWipeInvoices() {
+    if (!isSuperAdmin) {
+      toast.error('No tienes permisos para esta acción.');
+      return;
+    }
     if (wipeConfirmText !== WIPE_CONFIRMATION_PHRASE) {
       toast.error(`Debes escribir "${WIPE_CONFIRMATION_PHRASE}" para confirmar.`);
       return;
@@ -313,13 +319,15 @@ export default function AdminInvoicingHistory() {
           <button onClick={handleExportCSV} className="flex items-center gap-2 bg-slate-800 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-slate-700 transition shadow-sm">
             <Download className="w-4 h-4" /> Exportar CSV
           </button>
-          <button
-            onClick={() => setWipeOpen(true)}
-            className="flex items-center gap-1.5 text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-3 py-2 rounded-xl text-xs font-medium border border-rose-200 transition"
-            title="Borrar todas las facturas y liberar gastos"
-          >
-            <AlertTriangle className="w-3.5 h-3.5" /> Reset Facturación
-          </button>
+          {isSuperAdmin && (
+            <button
+              onClick={() => setWipeOpen(true)}
+              className="flex items-center gap-1.5 text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-3 py-2 rounded-xl text-xs font-medium border border-rose-200 transition"
+              title="Borrar todas las facturas y liberar gastos"
+            >
+              <AlertTriangle className="w-3.5 h-3.5" /> Reset Facturación
+            </button>
+          )}
         </div>
       </div>
 
@@ -437,7 +445,7 @@ export default function AdminInvoicingHistory() {
         onUpdate={fetchInvoices}
       />
 
-      {wipeOpen && (
+      {wipeOpen && isSuperAdmin && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 border border-rose-200">
             <div className="flex items-start gap-3 mb-4">

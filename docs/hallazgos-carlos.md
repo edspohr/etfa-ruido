@@ -15,29 +15,31 @@ esperabas, anotalo al final en "Observaciones".
 
 **Qué cambió**
 - En la ficha de cada profesional (Admin → Usuarios → nombre), la tabla
-  "Resumen por Proyecto" ahora oculta los proyectos que **ya no tienen
-  movimiento hace más de 60 días y además tienen saldo cero**.
-- Los proyectos recientes con saldo cero siguen visibles (pueden estar en
-  proceso de cierre).
+  "Resumen por Proyecto" ahora oculta **todo proyecto cuyo último movimiento
+  sea mayor a 60 días**, sin importar el saldo (cero o no).
+- Los proyectos recientes (últimos 60 días) siempre se muestran, incluso los
+  que tienen saldo cero — así ves los cierres del mes en curso.
 - Al pie de la tabla aparece un botón
-  **"Mostrar registros anteriores a 60 días (N)"** que revela el histórico
-  completo cuando lo necesites.
+  **"Mostrar registros anteriores a 60 días (N)"**. El número entre paréntesis
+  coincide exactamente con la cantidad de filas que se revelan al activarlo.
 - El criterio de "60 días" se calcula sobre la fecha del último movimiento
   (rendición o viático), no sobre la fecha de inicio del proyecto.
 
 **Cómo probarlo**
 1. Ir a **Admin → Usuarios → [alguien con historial largo]**.
 2. Bajar hasta "Resumen por Proyecto". Deberías ver:
-   - Proyectos con actividad reciente (últimos 60 días): siempre visibles.
-   - Proyectos viejos con saldo distinto de cero: ocultos por defecto.
-   - Proyectos viejos con saldo cero: ocultos por defecto.
+   - Proyectos con actividad reciente (últimos 60 días): siempre visibles
+     (incluye los de saldo cero).
+   - Proyectos viejos (con o sin saldo): ocultos por defecto.
 3. Click en **"Mostrar registros anteriores a 60 días (N)"** al pie de la tabla.
-4. Aparecen todos los proyectos ocultos. El botón cambia a **"Ocultar
+4. Aparecen exactamente N proyectos adicionales — incluidos los antiguos con
+   saldo cero, que ahora sí se pueden auditar. El botón cambia a **"Ocultar
    registros antiguos"** para volver al estado inicial.
 
 **Estado esperado**
-- ✅ El caso Valencia (desde enero) ya no aparece por defecto.
-- ✅ Un proyecto de junio con saldo 0 sigue visible.
+- ✅ El caso Valencia (desde enero, saldo cero) queda oculto por defecto pero
+  aparece al activar el toggle — auditable.
+- ✅ Un proyecto de junio con saldo 0 sigue visible siempre.
 
 ---
 
@@ -122,7 +124,9 @@ esperabas, anotalo al final en "Observaciones".
   - **Monto no coincide exactamente** (tolerancia de $1 por redondeo) → **no
     se sugiere nada**.
   - **Monto exacto + RUT coincide + nombre del cliente aparece en la glosa** →
-    match automático **verde**.
+    match automático **verde**, pero se deja **en "Conciliaciones Listas"**
+    para que revises y hagas click en **"Confirmar"**. Nada se escribe en la
+    base de datos sin tu confirmación explícita.
   - **Monto exacto + RUT o nombre coinciden pero no ambos** → **bandera
     amarilla**, requiere confirmación manual.
   - **Monto exacto sin coincidencias adicionales** → **bandera amarilla**.
@@ -135,8 +139,9 @@ esperabas, anotalo al final en "Observaciones".
 1. Ir a **Admin → Conciliación**.
 2. Verificar los siguientes escenarios:
    - Cargar cartola con un movimiento cuyo monto exacto matchea una factura
-     Y la glosa contiene el RUT y nombre del cliente → aparece marcado como
-     conciliado automático (ícono ✅ verde).
+     Y la glosa contiene el RUT y nombre del cliente → aparece staged en
+     **"Conciliaciones Listas"** (ícono ✅ verde). **Sigue pendiente** hasta
+     que hagas click en **"Confirmar"**.
    - Movimiento con monto exacto pero RUT o nombre distintos → aparece
      ícono ⚡ amarillo con la factura como sugerencia, requiere confirmar.
    - Movimiento con monto que NO coincide exacto con ninguna factura → NO
@@ -145,42 +150,62 @@ esperabas, anotalo al final en "Observaciones".
 **Estado esperado**
 - ✅ Ya no aparecen sugerencias con montos aproximados o similares.
 - ✅ Confirmar el caso Casa Santa Sofía: amarilla, no verde silenciosa.
+- ✅ Ninguna conciliación queda escrita en la base sin haber pasado por
+  "Confirmar".
 
 ---
 
-## 6. Prevención de duplicados al reasignar recursos
+## 6. Consolidación de proyectos duplicados (el bug de los $5.569)
 
 **Qué cambió**
-- Cuando reasignás fondos entre proyectos ("Admin → Usuarios → [nombre] →
-  Reasignar Recursos"), la app ahora rechaza intentos duplicados: si intentás
-  hacer la misma reasignación (mismo origen, destino y monto) dentro de un
-  minuto, aparece una advertencia y no se registra dos veces.
-- En la vista "Resumen por Proyecto", allocations duplicados por
-  reasignaciones antiguas se consolidan visualmente: el saldo del proyecto se
-  muestra sin el doble conteo.
-- Nota importante: la base de datos histórica **no se limpia** (no se
-  eliminan registros viejos), pero la vista muestra el saldo correcto.
+- Diagnóstico honesto del bug: el proyecto que aparecía dos veces con saldo
+  $5.569 **no se debía a reasignaciones dobles**, sino a que existían
+  **dos documentos de proyecto distintos** en Firestore con el mismo nombre,
+  creados en iteraciones anteriores. Como el resumen agrupa por `projectId`,
+  cada documento se contaba por separado.
+- Ahora hay una **utilidad de consolidación** para administradores:
+  **Admin → Proyectos → botón "Detectar proyectos duplicados"** (arriba del
+  listado). Detecta grupos de proyectos que comparten nombre normalizado
+  (mayúsculas, tildes y espacios) y/o código, dentro de la misma recurrencia.
+- Para cada grupo elegís el proyecto **canónico** (el que se conserva) y hacés
+  click en **Consolidar**. La app pide confirmación y luego:
+  - Reasigna al canónico las referencias en `allocations`, `expenses`,
+    `invoices`, `tasks`, `calendar_events` e `reports` (escritura por lotes,
+    máximo 400 por commit).
+  - Registra un log en la bitácora del proyecto canónico y en `audit_logs`.
+  - Elimina el/los documentos duplicados solo después de que todas las
+    reasignaciones hayan commiteado.
+- Además se mantienen (sin cambios):
+  - **Guard anti-doble envío** en "Reasignar Recursos": si intentás la misma
+    reasignación (mismo origen, destino y monto) dentro de un minuto, aparece
+    el mensaje **"Ya existe una reasignación idéntica reciente..."**.
+  - **Dedup en la vista**: allocations duplicadas dentro del mismo minuto se
+    consolidan visualmente en "Resumen por Proyecto".
 
 **Cómo probarlo**
-1. Ir a **Admin → Usuarios → [usuario] → Reasignar Recursos**.
-2. Elegir origen, destino y monto → **Reasignar**.
-3. Sin cerrar el modal, intentar hacer exactamente la misma reasignación de
-   nuevo → aparece el mensaje **"Ya existe una reasignación idéntica
-   reciente..."**.
-4. Cerrar el modal y verificar que el saldo del proyecto (los $5.569 del
-   proyecto con loop que reportaste) ahora se muestra consolidado.
+1. Ir a **Admin → Proyectos**.
+2. Click en **"Detectar proyectos duplicados"** (arriba a la derecha del
+   listado).
+3. Deberías ver el grupo con el proyecto de los $5.569 duplicado. Elegí
+   el canónico (el que quede) y click en **Consolidar** → confirmá.
+4. Volver a **Admin → Usuarios → [usuario] → Resumen por Proyecto**. El
+   proyecto aparece **una sola vez con saldo 0** (o el saldo real, sin doble
+   conteo).
+5. Probar el guard anti-doble-envío: en el mismo usuario, abrir
+   **Reasignar Recursos**, hacer una reasignación e intentar repetirla igual
+   dentro de un minuto → aparece la advertencia.
 
 **Estado esperado**
-- ✅ Ya no vas a ver dos veces el mismo proyecto en el resumen por causa de
-  reasignaciones dobles.
+- ✅ El proyecto de los $5.569 aparece una sola vez, con el saldo neto correcto.
+- ✅ Nuevos duplicados quedan bloqueados por el guard anti-doble-envío.
 
 ---
 
-## 7. Reset de Facturación ampliado
+## 7. Reset de Facturación ampliado (y gating de super admin)
 
 **Qué cambió**
 - El botón **"Reset Facturación"** (Historial de Facturación, arriba a la
-  derecha, solo visible para vos) ahora borra:
+  derecha) ahora borra:
   - Todas las facturas
   - Todos los movimientos bancarios
   - Todas las cartolas subidas
@@ -188,6 +213,19 @@ esperabas, anotalo al final en "Observaciones".
 - La confirmación sigue requiriendo escribir **`BORRAR TODO`** en mayúsculas.
 - El modal de confirmación ahora lista explícitamente los 4 elementos que se
   van a borrar.
+- **Nuevo gating por rol**: el botón **solo aparece para cuentas marcadas
+  como "Super administrador"** (campo `isSuperAdmin: true` en el documento del
+  usuario). Cualquier otro admin no lo ve, y aunque intentara invocar la
+  acción, el cliente y las reglas de Firestore (`allow delete` en `invoices`,
+  `bank_movements` y `bank_statements`) la rechazan.
+- **Cómo habilitar el super admin** para la cuenta de Carlos:
+  1. Iniciar sesión con una cuenta que ya sea super admin (o editar el
+     documento del usuario en Firestore directamente para la primera vez).
+  2. Ir a **Admin → Usuarios → Carlos**.
+  3. En la tarjeta "Información", marcar el checkbox rojo
+     **"Super administrador (puede resetear facturación)"**.
+  4. Carlos debe cerrar y volver a iniciar sesión para que aparezca el botón
+     "Reset Facturación".
 
 **Cómo probarlo (¡solo cuando estén listos para arrancar limpio!)**
 1. Ir a **Admin → Historial de Facturación**.
@@ -236,5 +274,5 @@ destructivo, y solo si lo activás vos con la frase de confirmación.
 | 3 | Conciliación: campos visibles | ☐ | |
 | 4 | Detección de RUT | ☐ | |
 | 5 | Nueva lógica de matching | ☐ | |
-| 6 | Prevención de duplicados | ☐ | |
+| 6 | Consolidación de duplicados | ☐ | |
 | 7 | Reset ampliado | ☐ | |

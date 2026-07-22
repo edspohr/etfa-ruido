@@ -503,6 +503,28 @@ export default function AdminUserDetails() {
                 <span>Permitir ver historial completo (&gt;60 días)</span>
               </label>
             )}
+
+            {user.role === 'admin' && (
+              <label className="flex items-center gap-2 mt-3 text-xs text-gray-600 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={!!user.isSuperAdmin}
+                  onChange={async (e) => {
+                    const value = e.target.checked;
+                    try {
+                      await updateDoc(doc(db, 'users', user.id), { isSuperAdmin: value });
+                      setUser(prev => ({ ...prev, isSuperAdmin: value }));
+                      toast.success(value ? 'Super administrador habilitado.' : 'Permisos de super administrador retirados.');
+                    } catch (err) {
+                      console.error(err);
+                      toast.error('Error al actualizar permisos.');
+                    }
+                  }}
+                  className="w-4 h-4 rounded border-gray-300 text-rose-600 focus:ring-rose-500"
+                />
+                <span>Super administrador (puede resetear facturación)</span>
+              </label>
+            )}
           </div>
         </div>
         <div className="bg-gradient-to-br from-blue-600 to-blue-800 p-6 rounded-lg shadow-sm border border-blue-500 text-white relative overflow-hidden">
@@ -639,21 +661,22 @@ export default function AdminUserDetails() {
                                };
                            });
 
-                           // Aplicar filtros según hallazgo 1:
-                           // - Ocultar proyectos con saldo 0 SOLO SI son > 60 días (última actividad).
-                           // - Además, si el toggle está apagado, ocultar todos los > 60 días con saldo ≠ 0.
+                           // Filtro hallazgo 1 (revisado): por defecto la tabla oculta TODO proyecto
+                           // cuya última actividad sea mayor a 60 días, sin importar el saldo. Los
+                           // proyectos recientes (incluyendo los de saldo 0) siempre se muestran. El
+                           // toggle "Mostrar registros anteriores a 60 días" revela exactamente esas
+                           // filas — el contador del botón coincide 1:1 con lo que aparece.
                            const isOld = (r) => r.lastActivity
                                ? isOlderThan60Days(new Date(r.lastActivity).toISOString())
                                : true; // sin actividad → considerar antiguo
-                           const balance = (r) => Math.round(r.totalExp - r.totalAlloc);
-                           const isZero = (r) => balance(r) === 0;
 
                            const totalRows = rows.length;
-                           let visibleRows = rows.filter(r => !(isOld(r) && isZero(r)));
-                           if (!showHistoricalProjects) {
-                               visibleRows = visibleRows.filter(r => !isOld(r));
-                           }
-                           const hiddenOldCount = totalRows - visibleRows.length;
+                           const oldCount = rows.filter(isOld).length;
+                           let visibleRows = showHistoricalProjects
+                               ? rows
+                               : rows.filter(r => !isOld(r));
+                           // hiddenOldCount = filas que el toggle revela = todas las antiguas.
+                           const hiddenOldCount = oldCount;
 
                            // Sort rows using the standard alphanumeric sort
                            visibleRows = sortProjects(visibleRows);

@@ -2,9 +2,9 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { db } from '../lib/firebase';
-import { collection, getDocs, addDoc, query, where, doc, updateDoc, increment, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs, addDoc, query, where, doc, updateDoc, increment, serverTimestamp, writeBatch, deleteDoc } from 'firebase/firestore';
 import { formatCurrency, formatProjectLabel } from '../utils/format';
-import { Plus, DollarSign, Trash2, ChevronDown, Pencil } from 'lucide-react';
+import { Plus, DollarSign, Trash2, ChevronDown, Pencil, GitMerge, AlertTriangle } from 'lucide-react';
 
 import { sortProjects } from '../utils/sort';
 import { isSystemUser } from '../utils/userUtils';
@@ -37,6 +37,14 @@ export default function AdminProjects() {
   const [engineersList, setEngineersList] = useState([]);
   const [showEngDropdown, setShowEngDropdown] = useState(false);
   const [createForm, setCreateForm] = useState(EMPTY_FORM);
+
+  // Detección/consolidación de proyectos duplicados (H6 — bug $5.569).
+  const [dupModalOpen, setDupModalOpen] = useState(false);
+  const [dupCanonicalByGroup, setDupCanonicalByGroup] = useState({});
+  const [dupCounts, setDupCounts] = useState({}); // { projectId: {allocations, expenses, invoices, tasks, events, reports} }
+  const [dupLoadingCounts, setDupLoadingCounts] = useState(false);
+  const [dupConsolidatingKey, setDupConsolidatingKey] = useState(null);
+  const [dupConfirmGroup, setDupConfirmGroup] = useState(null); // groupKey pendiente de confirmar
 
   const isEditing = Boolean(editingProject);
 
@@ -107,6 +115,199 @@ export default function AdminProjects() {
     } catch (e) {
       console.error(e);
       alert('Error al eliminar.');
+    }
+  };
+
+  // ---------------------------------------------------------------------------
+  // Detección y consolidación de proyectos duplicados (H6)
+  // ---------------------------------------------------------------------------
+
+  const normalizeName = (s) => String(s || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/\s+/g, ' ');
+
+  // Agrupa proyectos por nombre normalizado (o código si existe). Solo devuelve
+  // grupos con más de un proyecto — esos son los candidatos a consolidar.
+  const duplicateGroups = (() => {
+    if (!dupModalOpen) return [];
+    const byKey = new Map();
+    projects.forEach(p => {
+      const nameKey = normalizeName(p.name);
+      if (!nameKey) return;
+      // Preferimos agrupar por (nombre + recurrencia) para no unir "ETF-001 A"
+      // con "ETF-001 B" que son proyectos distintos.
+      const key = `name::${nameKey}::${(p.recurrence || '').trim().toLowerCase()}`;
+      if (!byKey.has(key)) byKey.set(key, []);
+      byKey.get(key).push(p);
+    });
+    // Además: si dos proyectos comparten código idéntico (y recurrencia), agruparlos.
+    projects.forEach(p => {
+      const codeKey = (p.code || '').trim().toLowerCase();
+      if (!codeKey) return;
+      const key = `code::${codeKey}::${(p.recurrence || '').trim().toLowerCase()}`;
+      if (!byKey.has(key)) byKey.set(key, []);
+      const arr = byKey.get(key);
+      if (!arr.find(x => x.id === p.id)) arr.push(p);
+    });
+    return Array.from(byKey.entries())
+      .filter(([, arr]) => arr.length > 1)
+      .map(([key, arr]) => ({ key, projects: arr }));
+  })();
+
+  const openDuplicatesModal = async () => {
+    setDupModalOpen(true);
+    setDupCanonicalByGroup({});
+    setDupCounts({});
+    setDupLoadingCounts(true);
+    try {
+      // Contamos referencias en cada colección para todos los proyectos involucrados
+      // en los grupos duplicados. Un solo pase por colección: filtramos en memoria.
+      const projectIds = new Set();
+      // Recomputamos duplicateGroups a partir de projects (dupModalOpen aún no fue leído).
+      const byKey = new Map();
+      projects.forEach(p => {
+        const nameKey = normalizeName(p.name);
+        if (!nameKey) return;
+        const key = `name::${nameKey}::${(p.recurrence || '').trim().toLowerCase()}`;
+        if (!byKey.has(key)) byKey.set(key, []);
+        byKey.get(key).push(p);
+      });
+      byKey.forEach((arr) => {
+        if (arr.length > 1) arr.forEach(p => projectIds.add(p.id));
+      });
+
+      if (projectIds.size === 0) {
+        setDupLoadingCounts(false);
+        return;
+      }
+
+      const counts = {};
+      projectIds.forEach(pid => {
+        counts[pid] = { allocations: 0, expenses: 0, invoices: 0, tasks: 0, calendar_events: 0, reports: 0 };
+      });
+
+      const countCollection = async (name) => {
+        const snap = await getDocs(collection(db, name));
+        snap.docs.forEach(d => {
+          const pid = d.data().projectId;
+          if (pid && counts[pid]) counts[pid][name] += 1;
+        });
+      };
+
+      await Promise.all([
+        countCollection('allocations'),
+        countCollection('expenses'),
+        countCollection('invoices'),
+        countCollection('tasks'),
+        countCollection('calendar_events'),
+        countCollection('reports'),
+      ]);
+
+      setDupCounts(counts);
+    } catch (err) {
+      console.error('Error contando referencias:', err);
+      toast.error('Error al detectar duplicados.');
+    } finally {
+      setDupLoadingCounts(false);
+    }
+  };
+
+  const consolidateGroup = async (groupKey, group) => {
+    const canonicalId = dupCanonicalByGroup[groupKey];
+    if (!canonicalId) {
+      toast.error('Elige el proyecto canónico primero.');
+      return;
+    }
+    const canonical = group.projects.find(p => p.id === canonicalId);
+    const duplicates = group.projects.filter(p => p.id !== canonicalId);
+    if (!canonical || duplicates.length === 0) return;
+
+    setDupConsolidatingKey(groupKey);
+    try {
+      const REFERENCED_COLLECTIONS = ['allocations', 'expenses', 'invoices', 'tasks', 'calendar_events', 'reports'];
+      const dupIds = duplicates.map(d => d.id);
+
+      // Traemos todos los documentos referenciando cualquiera de los proyectos duplicados
+      // (una lectura por colección; filtramos en cliente para no requerir índices).
+      const perCollectionDocs = {};
+      for (const name of REFERENCED_COLLECTIONS) {
+        const snap = await getDocs(collection(db, name));
+        perCollectionDocs[name] = snap.docs.filter(d => dupIds.includes(d.data().projectId));
+      }
+
+      const totals = { allocations: 0, expenses: 0, invoices: 0, tasks: 0, calendar_events: 0, reports: 0 };
+
+      // Actualizaciones en batches de 400 (patrón usado por handleWipeInvoices).
+      const chunk = (arr, size) => {
+        const out = [];
+        for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+        return out;
+      };
+
+      for (const name of REFERENCED_COLLECTIONS) {
+        const docs = perCollectionDocs[name];
+        totals[name] = docs.length;
+        for (const docs400 of chunk(docs, 400)) {
+          const b = writeBatch(db);
+          docs400.forEach(d => {
+            const payload = { projectId: canonical.id };
+            if (canonical.name) payload.projectName = canonical.name;
+            if (canonical.code !== undefined) payload.projectCode = canonical.code || '';
+            if (canonical.recurrence !== undefined) payload.projectRecurrence = canonical.recurrence || '';
+            b.update(d.ref, payload);
+          });
+          await b.commit();
+        }
+      }
+
+      // Log consolidado en la bitácora del proyecto canónico.
+      const dupSummary = duplicates.map(d => `${d.name}${d.code ? ` [${d.code}]` : ''} (${d.id})`).join(', ');
+      await addDoc(collection(db, 'projects', canonical.id, 'logs'), {
+        type: 'status_change',
+        content: `Consolidación de proyectos duplicados. Absorbidos: ${dupSummary}. ` +
+          `Reasignados → asignaciones: ${totals.allocations}, gastos: ${totals.expenses}, facturas: ${totals.invoices}, ` +
+          `tareas: ${totals.tasks}, eventos: ${totals.calendar_events}, informes: ${totals.reports}.`,
+        userName: 'Admin',
+        userRole: 'admin',
+        timestamp: serverTimestamp(),
+      });
+
+      // Log global de auditoría.
+      await addDoc(collection(db, 'audit_logs'), {
+        type: 'project_merge',
+        entityId: canonical.id,
+        entityName: canonical.name,
+        adminName: 'Admin',
+        details: {
+          canonical: { id: canonical.id, name: canonical.name, code: canonical.code || '' },
+          duplicates: duplicates.map(d => ({ id: d.id, name: d.name, code: d.code || '' })),
+          moved: totals,
+        },
+        createdAt: serverTimestamp(),
+      });
+
+      // Eliminación de los duplicados solo después de que todos los reassignments commiteen.
+      for (const dupProject of duplicates) {
+        await deleteDoc(doc(db, 'projects', dupProject.id));
+      }
+
+      toast.success(
+        `Consolidado: ${totals.allocations} asignaciones, ${totals.expenses} gastos, ${totals.invoices} facturas movidas. ` +
+        `Proyecto duplicado eliminado.`
+      );
+      setDupConfirmGroup(null);
+      // Refrescamos data y recontamos.
+      await fetchData();
+      // Después de fetchData el grupo puede desaparecer; cerramos si ya no hay duplicados.
+      openDuplicatesModal();
+    } catch (err) {
+      console.error('Error consolidando proyectos:', err);
+      toast.error('Error al consolidar. Revisa la consola.');
+    } finally {
+      setDupConsolidatingKey(null);
     }
   };
 
@@ -344,13 +545,23 @@ export default function AdminProjects() {
       <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
         <div className="px-6 py-4 border-b bg-gray-50 flex flex-col md:flex-row justify-between items-center gap-4">
           <h3 className="font-bold text-gray-700">Listado de Proyectos</h3>
-          <input
-            type="text"
-            placeholder="Buscar por nombre, código o cliente..."
-            className="px-4 py-2 border rounded-lg text-sm w-full md:w-64 focus:ring-2 focus:ring-blue-500 outline-none"
-            value={projectSearch}
-            onChange={e => setProjectSearch(e.target.value)}
-          />
+          <div className="flex items-center gap-2 w-full md:w-auto">
+            <input
+              type="text"
+              placeholder="Buscar por nombre, código o cliente..."
+              className="px-4 py-2 border rounded-lg text-sm w-full md:w-64 focus:ring-2 focus:ring-blue-500 outline-none"
+              value={projectSearch}
+              onChange={e => setProjectSearch(e.target.value)}
+            />
+            <button
+              type="button"
+              onClick={openDuplicatesModal}
+              className="flex items-center gap-1.5 text-amber-700 hover:text-amber-800 hover:bg-amber-50 px-3 py-2 rounded-lg text-xs font-medium border border-amber-200 transition whitespace-nowrap"
+              title="Detectar y consolidar proyectos duplicados"
+            >
+              <GitMerge className="w-3.5 h-3.5" /> Detectar proyectos duplicados
+            </button>
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left">
@@ -565,6 +776,142 @@ export default function AdminProjects() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Duplicates Detection & Consolidation Modal */}
+      {dupModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b">
+              <div className="flex items-center gap-2">
+                <GitMerge className="w-5 h-5 text-amber-600" />
+                <h2 className="text-lg font-bold text-slate-800">Proyectos duplicados</h2>
+              </div>
+              <button onClick={() => { setDupModalOpen(false); setDupConfirmGroup(null); }} className="text-slate-400 hover:text-slate-700 transition">✕</button>
+            </div>
+            <div className="px-6 py-5">
+              <p className="text-sm text-slate-600 mb-4">
+                Detectamos grupos de proyectos que comparten nombre normalizado y recurrencia. Elegí el proyecto canónico
+                (el que se conserva) y confirmá la consolidación. Se reasignan asignaciones, gastos, facturas, tareas,
+                eventos de calendario e informes al canónico; el duplicado se elimina al finalizar.
+              </p>
+
+              {dupLoadingCounts && (
+                <p className="text-sm text-slate-500 italic">Analizando referencias...</p>
+              )}
+
+              {!dupLoadingCounts && duplicateGroups.length === 0 && (
+                <div className="p-6 text-center text-slate-500 bg-slate-50 rounded-lg border border-slate-200">
+                  No se encontraron proyectos duplicados.
+                </div>
+              )}
+
+              <div className="space-y-4">
+                {duplicateGroups.map(group => {
+                  const canonicalId = dupCanonicalByGroup[group.key];
+                  const canConsolidate = Boolean(canonicalId);
+                  const isConsolidating = dupConsolidatingKey === group.key;
+                  const isConfirming = dupConfirmGroup === group.key;
+                  const canonical = group.projects.find(p => p.id === canonicalId);
+                  const duplicates = group.projects.filter(p => p.id !== canonicalId);
+                  return (
+                    <div key={group.key} className="border border-slate-200 rounded-lg overflow-hidden">
+                      <div className="bg-slate-50 px-4 py-2 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                        Grupo: {group.projects[0].name}{group.projects[0].recurrence ? ` (${group.projects[0].recurrence})` : ''} — {group.projects.length} proyectos
+                      </div>
+                      <div className="divide-y divide-slate-100">
+                        {group.projects.map(p => {
+                          const c = dupCounts[p.id] || {};
+                          const totalRefs = (c.allocations || 0) + (c.expenses || 0) + (c.invoices || 0) + (c.tasks || 0) + (c.calendar_events || 0) + (c.reports || 0);
+                          return (
+                            <label key={p.id} className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 cursor-pointer">
+                              <input
+                                type="radio"
+                                name={`canonical-${group.key}`}
+                                checked={canonicalId === p.id}
+                                onChange={() => setDupCanonicalByGroup(prev => ({ ...prev, [group.key]: p.id }))}
+                                className="w-4 h-4 text-indigo-600"
+                              />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-slate-800 truncate">
+                                  {formatProjectLabel(p)}
+                                </p>
+                                <p className="text-[11px] text-slate-400 font-mono truncate">id: {p.id}</p>
+                              </div>
+                              <div className="text-[11px] text-slate-500 text-right whitespace-nowrap">
+                                {dupLoadingCounts ? '...' : (
+                                  <>
+                                    <span className="font-bold text-slate-700">{totalRefs}</span> referencias
+                                    <p className="text-[10px] text-slate-400">
+                                      A:{c.allocations || 0} · G:{c.expenses || 0} · F:{c.invoices || 0} · T:{c.tasks || 0} · E:{c.calendar_events || 0} · I:{c.reports || 0}
+                                    </p>
+                                  </>
+                                )}
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                      <div className="bg-slate-50 px-4 py-3 flex items-center justify-between gap-3">
+                        <p className="text-xs text-slate-500">
+                          {canonicalId ? `Se eliminarán ${duplicates.length} duplicado(s) y todas sus referencias se moverán al canónico.` : 'Elegí un proyecto canónico.'}
+                        </p>
+                        {!isConfirming ? (
+                          <button
+                            type="button"
+                            disabled={!canConsolidate || isConsolidating}
+                            onClick={() => setDupConfirmGroup(group.key)}
+                            className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-lg text-sm font-bold transition"
+                          >
+                            Consolidar
+                          </button>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <div className="flex items-start gap-2 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
+                              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                              <div className="text-[11px] text-rose-700">
+                                <p className="font-bold">Confirmar consolidación</p>
+                                <p>
+                                  Canónico: <span className="font-mono">{canonical?.name}</span>.
+                                  Se moverán referencias y se eliminarán {duplicates.length} proyecto(s).
+                                </p>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setDupConfirmGroup(null)}
+                              disabled={isConsolidating}
+                              className="px-3 py-2 text-slate-600 hover:bg-slate-100 rounded-lg text-xs font-medium transition"
+                            >
+                              Cancelar
+                            </button>
+                            <button
+                              type="button"
+                              disabled={isConsolidating}
+                              onClick={() => consolidateGroup(group.key, group)}
+                              className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition disabled:opacity-50"
+                            >
+                              {isConsolidating ? 'Consolidando...' : 'Consolidar proyectos'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t bg-slate-50 flex justify-end">
+              <button
+                type="button"
+                onClick={() => { setDupModalOpen(false); setDupConfirmGroup(null); }}
+                className="px-4 py-2 bg-slate-700 hover:bg-slate-800 text-white rounded-lg text-sm font-medium transition"
+              >
+                Cerrar
+              </button>
+            </div>
           </div>
         </div>
       )}

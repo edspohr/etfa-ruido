@@ -43,26 +43,51 @@ const matchesAny = (cell, keywords) => {
 // RUT EXTRACTOR (para detectar RUT dentro de la glosa bancaria)
 // ---------------------------------------------------------------------------
 
+// Patrones globales para permitir iterar todas las coincidencias con matchAll y
+// validar dígito verificador de cada una (el patrón sin puntos genera falsos
+// positivos con rangos numéricos que no son RUTs).
 const RUT_PATTERNS = [
   // "RUT: 76.123.456-7" con etiqueta explícita
-  /R\.?U\.?T\.?\s*:?\s*(\d{1,2}\.\d{3}\.\d{3}\s*-\s*[\dkK])/i,
+  /R\.?U\.?T\.?\s*:?\s*(\d{1,2}\.\d{3}\.\d{3}\s*-\s*[\dkK])/gi,
   // 76.123.456-7 (con puntos)
-  /(\d{1,2}\.\d{3}\.\d{3}\s*-\s*[\dkK])/,
-  // 76123456-7 (sin puntos)
-  /(\d{7,8}\s*-\s*[\dkK])/,
+  /(\d{1,2}\.\d{3}\.\d{3}\s*-\s*[\dkK])/g,
+  // 76123456-7 (sin puntos) — requiere validar módulo 11
+  /(\d{7,8}\s*-\s*[\dkK])/g,
 ];
 
 /**
- * Extrae el primer RUT chileno encontrado en un texto. Devuelve el RUT
- * normalizado (sin espacios, K en mayúscula) o null.
+ * Módulo 11 chileno: valida que el dígito verificador de un RUT sea correcto.
+ * Acepta el RUT en cualquier formato (con o sin puntos, con o sin espacios).
+ */
+export function isValidRut(rut) {
+  if (!rut) return false;
+  const clean = String(rut).replace(/[.\s]/g, '').toUpperCase();
+  const m = clean.match(/^(\d{1,8})-([\dK])$/);
+  if (!m) return false;
+  const body = m[1];
+  const dv = m[2];
+  let sum = 0;
+  let mul = 2;
+  for (let i = body.length - 1; i >= 0; i--) {
+    sum += parseInt(body[i], 10) * mul;
+    mul = mul === 7 ? 2 : mul + 1;
+  }
+  const mod = 11 - (sum % 11);
+  const expected = mod === 11 ? '0' : mod === 10 ? 'K' : String(mod);
+  return expected === dv;
+}
+
+/**
+ * Extrae el primer RUT chileno válido (con dígito verificador correcto) encontrado
+ * en el texto. Devuelve el RUT normalizado (sin espacios, K en mayúscula) o null.
  */
 export function extractRutFromText(text) {
   if (!text) return null;
   const s = String(text);
   for (const pattern of RUT_PATTERNS) {
-    const m = s.match(pattern);
-    if (m && m[1]) {
-      return m[1].replace(/\s+/g, '').toUpperCase();
+    for (const match of s.matchAll(pattern)) {
+      const candidate = match[1].replace(/\s+/g, '').toUpperCase();
+      if (isValidRut(candidate)) return candidate;
     }
   }
   return null;
