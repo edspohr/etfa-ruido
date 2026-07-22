@@ -15,6 +15,7 @@ import {
 } from "firebase/firestore";
 import { formatCurrency, formatProjectLabel } from "../utils/format";
 import { sortProjects } from "../utils/sort";
+import { isOlderThan60Days } from "../utils/dateUtils";
 import SearchableSelect from "../components/SearchableSelect";
 import { isSystemUser } from "../utils/userUtils";
 import {
@@ -43,6 +44,7 @@ export default function AdminUserDetails() {
   const [allocations, setAllocations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandedProject, setExpandedProject] = useState(null);
+  const [showHistoricalProjects, setShowHistoricalProjects] = useState(false);
 
   const toggleProject = (pid) => {
       if (expandedProject === pid) setExpandedProject(null);
@@ -75,6 +77,31 @@ export default function AdminUserDetails() {
       try {
           const sourceProject = projectsList.find(p => p.id === transferForm.sourceProjectId);
           const targetProject = projectsList.find(p => p.id === transferForm.targetProjectId);
+
+          // Guard anti-duplicado (H6): rechaza si ya existe una reasignación idéntica en el
+          // último minuto (mismo usuario, origen, destino y monto). Filtramos en cliente para
+          // evitar tener que declarar un índice compuesto nuevo en Firestore.
+          const dupQ = query(
+              collection(db, 'allocations'),
+              where('userId', '==', id),
+              where('type', '==', 'transfer_out'),
+          );
+          const dupSnap = await getDocs(dupQ);
+          const now = Date.now();
+          const isDup = dupSnap.docs.some(d => {
+              const data = d.data();
+              if (data.projectId !== sourceProject.id) return false;
+              if (data.transferTargetProjectId !== targetProject.id) return false;
+              if (Math.abs((Number(data.amount) || 0) + amount) > 0.5) return false; // amount es negativo
+              const created = data.createdAt?.seconds
+                  ? data.createdAt.seconds * 1000
+                  : (data.createdAt ? new Date(data.createdAt).getTime() : 0);
+              return created && (now - created) < 60_000;
+          });
+          if (isDup) {
+              toast.warning('Ya existe una reasignación idéntica reciente. Espera al menos 60 segundos si necesitas repetirla.');
+              return;
+          }
 
           // 1. Create Negative Allocation (Source)
           await addDoc(collection(db, "allocations"), {
@@ -552,21 +579,52 @@ export default function AdminUserDetails() {
                            // Aggregate Data
                            const projectStats = {};
 
+                           const toMs = (v) => {
+                               if (!v) return null;
+                               if (v?.seconds) return v.seconds * 1000;
+                               const t = new Date(v).getTime();
+                               return isNaN(t) ? null : t;
+                           };
+                           const trackActivity = (pid, dateVal) => {
+                               const ms = toMs(dateVal);
+                               if (ms == null) return;
+                               if (!projectStats[pid].lastActivity || ms > projectStats[pid].lastActivity) {
+                                   projectStats[pid].lastActivity = ms;
+                               }
+                           };
+
                            // Initialize with expenses (only approved count toward totals)
                            expenses.forEach(e => {
                                if (e.status !== 'approved') return;
                                const pid = e.projectId || 'unknown';
-                               if (!projectStats[pid]) projectStats[pid] = { totalExp: 0, totalAlloc: 0, name: e.projectName || 'Sin Proyecto' };
+                               if (!projectStats[pid]) projectStats[pid] = { totalExp: 0, totalAlloc: 0, name: e.projectName || 'Sin Proyecto', lastActivity: null };
                                projectStats[pid].totalExp += (Number(e.amount) || 0);
                                // Update name from latest expense if available
-                               if (e.projectName) projectStats[pid].name = e.projectName; 
+                               if (e.projectName) projectStats[pid].name = e.projectName;
+                               trackActivity(pid, e.date);
+                           });
+
+                           // Dedup de allocations (H6): agrupa registros idénticos surgidos
+                           // por dobles-envío de reasignaciones. Clave incluye minuto para no
+                           // agrupar transferencias legítimas hechas en distintos momentos.
+                           const seenAlloc = new Set();
+                           const dedupedAllocs = allocations.filter(a => {
+                               const target = a.transferTargetProjectId || a.transferSourceProjectId || '';
+                               const ts = a.createdAt?.seconds
+                                   ? new Date(a.createdAt.seconds * 1000).toISOString()
+                                   : (a.createdAt || a.date || '');
+                               const key = `${a.type || 'normal'}|${a.projectId || ''}|${target}|${a.amount}|${String(ts).substring(0, 16)}`;
+                               if (seenAlloc.has(key)) return false;
+                               seenAlloc.add(key);
+                               return true;
                            });
 
                            // Add allocations
-                           allocations.forEach(a => {
+                           dedupedAllocs.forEach(a => {
                                const pid = a.projectId || 'unknown';
-                               if (!projectStats[pid]) projectStats[pid] = { totalExp: 0, totalAlloc: 0, name: a.projectName || 'Sin Proyecto' };
+                               if (!projectStats[pid]) projectStats[pid] = { totalExp: 0, totalAlloc: 0, name: a.projectName || 'Sin Proyecto', lastActivity: null };
                                projectStats[pid].totalAlloc += (Number(a.amount) || 0);
+                               trackActivity(pid, a.date || a.createdAt);
                            });
 
                            // Map to Array with Metadata
@@ -581,12 +639,45 @@ export default function AdminUserDetails() {
                                };
                            });
 
+                           // Aplicar filtros según hallazgo 1:
+                           // - Ocultar proyectos con saldo 0 SOLO SI son > 60 días (última actividad).
+                           // - Además, si el toggle está apagado, ocultar todos los > 60 días con saldo ≠ 0.
+                           const isOld = (r) => r.lastActivity
+                               ? isOlderThan60Days(new Date(r.lastActivity).toISOString())
+                               : true; // sin actividad → considerar antiguo
+                           const balance = (r) => Math.round(r.totalExp - r.totalAlloc);
+                           const isZero = (r) => balance(r) === 0;
+
+                           const totalRows = rows.length;
+                           let visibleRows = rows.filter(r => !(isOld(r) && isZero(r)));
+                           if (!showHistoricalProjects) {
+                               visibleRows = visibleRows.filter(r => !isOld(r));
+                           }
+                           const hiddenOldCount = totalRows - visibleRows.length;
+
                            // Sort rows using the standard alphanumeric sort
-                           rows = sortProjects(rows);
+                           visibleRows = sortProjects(visibleRows);
 
-                           if (rows.length === 0) return <tr><td colSpan="5" className="p-8 text-center text-gray-400">No hay actividad registrada.</td></tr>;
+                           if (totalRows === 0) return <tr><td colSpan="6" className="p-8 text-center text-gray-400">No hay actividad registrada.</td></tr>;
+                           if (visibleRows.length === 0) return (
+                               <tr><td colSpan="6" className="p-8 text-center text-gray-400">
+                                   No hay proyectos activos.
+                                   {hiddenOldCount > 0 && (
+                                       <>
+                                           {' '}
+                                           <button
+                                               type="button"
+                                               onClick={() => setShowHistoricalProjects(true)}
+                                               className="text-indigo-600 hover:text-indigo-800 underline font-medium"
+                                           >
+                                               Mostrar {hiddenOldCount} registros anteriores a 60 días
+                                           </button>
+                                       </>
+                                   )}
+                               </td></tr>
+                           );
 
-                           return rows.map(row => {
+                           const rowsRendered = visibleRows.map(row => {
                                const isExpanded = expandedProject === row.id;
                                // Filter details for this project
                                const projectExpenses = expenses.filter(e => e.projectId === row.id || (!e.projectId && row.id === 'unknown'));
@@ -629,7 +720,7 @@ export default function AdminUserDetails() {
                                    </tr>
                                    {isExpanded && (
                                        <tr>
-                                           <td colSpan="5" className="bg-gray-50 px-6 py-4">
+                                           <td colSpan="6" className="bg-gray-50 px-6 py-4">
                                                <div className="flex flex-col lg:flex-row gap-8 pl-4 border-l-2 border-blue-200">
                                                     {/* Allocations Detail */}
                                                     <div className="flex-1">
@@ -731,6 +822,25 @@ export default function AdminUserDetails() {
                                    </>
                                );
                            });
+
+                           if (hiddenOldCount > 0) {
+                               rowsRendered.push(
+                                   <tr key="__historical-toggle__">
+                                       <td colSpan="6" className="px-6 py-3 text-right bg-slate-50 border-t">
+                                           <button
+                                               type="button"
+                                               onClick={() => setShowHistoricalProjects(v => !v)}
+                                               className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 underline transition-colors"
+                                           >
+                                               {showHistoricalProjects
+                                                   ? 'Ocultar registros antiguos'
+                                                   : `Mostrar registros anteriores a 60 días (${hiddenOldCount})`}
+                                           </button>
+                                       </td>
+                                   </tr>
+                               );
+                           }
+                           return rowsRendered;
                       })()}
                    </tbody>
                </table>
