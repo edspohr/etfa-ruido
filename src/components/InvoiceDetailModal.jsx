@@ -66,6 +66,7 @@ export default function InvoiceDetailModal({ invoice, isOpen, onClose, onUpdate 
                 .map(d => ({ id: d.id, ...d.data() }))
                 .filter(e => !e.invoiceId);
             setUnlinkedExpenses(available);
+            setSelectedUnlinked(available.map(e => e.id));
         } catch (e) {
             console.error('Error fetching unlinked expenses:', e);
             toast.error('Error al cargar gastos disponibles.');
@@ -322,7 +323,27 @@ export default function InvoiceDetailModal({ invoice, isOpen, onClose, onUpdate 
                                 </button>
                             ) : (
                                 <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4">
-                                    <p className="text-xs font-bold text-indigo-700 uppercase tracking-wide mb-3">Gastos disponibles para vincular</p>
+                                    <div className="flex justify-between items-center mb-3">
+                                        <p className="text-xs font-bold text-indigo-700 uppercase tracking-wide">Gastos disponibles para vincular ({unlinkedExpenses.length})</p>
+                                        {unlinkedExpenses.length > 0 && (
+                                            <div className="flex gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setSelectedUnlinked(unlinkedExpenses.map(e => e.id))}
+                                                    className="text-[11px] text-indigo-600 hover:text-indigo-800 underline"
+                                                >
+                                                    Todos
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setSelectedUnlinked([])}
+                                                    className="text-[11px] text-slate-500 hover:text-slate-700 underline"
+                                                >
+                                                    Ninguno
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
                                     {unlinkedExpenses.length === 0 ? (
                                         <p className="text-sm text-slate-400 italic">No hay gastos aprobados sin factura para este proyecto.</p>
                                     ) : (
