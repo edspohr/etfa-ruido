@@ -165,8 +165,7 @@ export default function AdminInvoicingHistory() {
     link.click();
   };
 
-  // Mass delete of the invoices collection + reset of linked expense flags.
-  // Mirrors the per-invoice void flow at updateStatus(id, 'void') above.
+  // Mass reset: elimina facturas + libera gastos + borra cartolas y movimientos bancarios.
   async function handleWipeInvoices() {
     if (wipeConfirmText !== WIPE_CONFIRMATION_PHRASE) {
       toast.error(`Debes escribir "${WIPE_CONFIRMATION_PHRASE}" para confirmar.`);
@@ -175,8 +174,11 @@ export default function AdminInvoicingHistory() {
     setWiping(true);
     try {
       const invSnap = await getDocs(collection(db, 'invoices'));
-      if (invSnap.empty) {
-        toast.info('No hay facturas para borrar.');
+      const movSnap = await getDocs(collection(db, 'bank_movements'));
+      const stmSnap = await getDocs(collection(db, 'bank_statements'));
+
+      if (invSnap.empty && movSnap.empty && stmSnap.empty) {
+        toast.info('No hay datos para borrar.');
         setWipeOpen(false);
         setWipeConfirmText('');
         return;
@@ -198,8 +200,7 @@ export default function AdminInvoicingHistory() {
 
       // Reset expense flags first (safer: if we fail mid-way, invoices still exist and the
       // wipe can be retried without leaving orphan expenses pointing at deleted invoices).
-      const expenseIdChunks = chunk([...expenseIdsToReset], 400);
-      for (const ids of expenseIdChunks) {
+      for (const ids of chunk([...expenseIdsToReset], 400)) {
         const b = writeBatch(db);
         ids.forEach(eid => {
           b.update(doc(db, 'expenses', eid), {
@@ -211,23 +212,43 @@ export default function AdminInvoicingHistory() {
         await b.commit();
       }
 
-      // Then delete invoices.
-      const invoiceChunks = chunk(invSnap.docs, 400);
-      let deleted = 0;
-      for (const docs of invoiceChunks) {
+      // Delete invoices.
+      let deletedInv = 0;
+      for (const docs of chunk(invSnap.docs, 400)) {
         const b = writeBatch(db);
         docs.forEach(d => b.delete(d.ref));
         await b.commit();
-        deleted += docs.length;
+        deletedInv += docs.length;
       }
 
-      toast.success(`${deleted} facturas eliminadas. ${expenseIdsToReset.size} gastos liberados.`);
+      // Delete bank_movements.
+      let deletedMov = 0;
+      for (const docs of chunk(movSnap.docs, 400)) {
+        const b = writeBatch(db);
+        docs.forEach(d => b.delete(d.ref));
+        await b.commit();
+        deletedMov += docs.length;
+      }
+
+      // Delete bank_statements.
+      let deletedStm = 0;
+      for (const docs of chunk(stmSnap.docs, 400)) {
+        const b = writeBatch(db);
+        docs.forEach(d => b.delete(d.ref));
+        await b.commit();
+        deletedStm += docs.length;
+      }
+
+      toast.success(
+        `Reset completo: ${deletedInv} facturas, ${expenseIdsToReset.size} gastos liberados, ` +
+        `${deletedMov} movimientos bancarios y ${deletedStm} cartolas eliminadas.`
+      );
       setInvoices([]);
       setWipeOpen(false);
       setWipeConfirmText('');
     } catch (err) {
       console.error('Error wiping invoices:', err);
-      toast.error('Error al borrar facturas. Revisa la consola.');
+      toast.error('Error en el reset. Revisa la consola.');
     } finally {
       setWiping(false);
     }
@@ -426,9 +447,14 @@ export default function AdminInvoicingHistory() {
               <div>
                 <h3 className="font-black text-slate-900 text-lg">Reset de Facturación</h3>
                 <p className="text-sm text-slate-600 mt-1">
-                  Esta acción <strong>elimina todas las facturas</strong> registradas y libera los gastos vinculados
-                  (vuelven a estado "Aprobado" para poder ser re-facturados). No afecta cartolas ni movimientos bancarios.
+                  Esta acción es <strong>IRREVERSIBLE</strong>. Se eliminarán:
                 </p>
+                <ul className="text-sm text-slate-700 list-disc pl-5 mt-2 space-y-0.5">
+                  <li>Todas las facturas registradas</li>
+                  <li>Todos los movimientos bancarios cargados</li>
+                  <li>Todas las cartolas subidas</li>
+                  <li>Los gastos vinculados vuelven a "Pendiente de facturar"</li>
+                </ul>
               </div>
             </div>
 
