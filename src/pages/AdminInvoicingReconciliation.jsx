@@ -12,8 +12,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { formatCurrency } from '../utils/format';
-import { parseBankData } from '../utils/parseBankStatement';
-import { sortProjects } from '../utils/sort';
+import { parseBankData, extractRutFromText } from '../utils/parseBankStatement';
 import InvoiceDetailModal from '../components/InvoiceDetailModal';
 import { toast } from 'sonner';
 
@@ -51,16 +50,21 @@ export default function AdminInvoicingReconciliation() {
   const [manualMatchOpen, setManualMatchOpen] = useState(false);
   const [activeMovement, setActiveMovement]  = useState(null);
 
-  const [projects, setProjects] = useState([]);
 
   // Filters
   const [movementFilter, setMovementFilter] = useState('all'); // all, credits, debits, unreconciled
   const [movementSearch, setMovementSearch] = useState('');
 
   // ── Smart Matching ────────────────────────────────────────────────────────
+  // Reglas (H5):
+  //   • Monto NO exacto  → NO se sugiere (sin score fuzzy, sin aproximados).
+  //   • Monto exacto + RUT + nombre en glosa → auto-match verde.
+  //   • Monto exacto + RUT (sin nombre) o monto exacto sin RUT → sugerencia amarilla.
   const runSmartMatching = useCallback((bankMovements, invoices, currentMatches) => {
     const newSuggestions = {};
     const autoMatches    = [];
+
+    const normRut = (r) => String(r || '').replace(/[.\-\s]/g, '').toUpperCase();
 
     bankMovements.forEach((mov) => {
       if (currentMatches.some((m) => m.movement.id === mov.id)) return;
@@ -72,89 +76,78 @@ export default function AdminInvoicingReconciliation() {
       invoices.forEach((inv) => {
         if (currentMatches.some((m) => m.invoice.id === inv.id)) return;
 
-        let score = 0;
-        const reasons = [];
-
-        // 1. Amount matching
+        // 1. Filtro estricto: monto exacto (neto O neto+IVA), tolerancia $1 por redondeo.
         const invAmount = Number(inv.totalAmount) || 0;
-        const amountDiff = Math.abs(invAmount - mov.amount);
-        const amountPct = invAmount > 0 ? amountDiff / invAmount * 100 : 100;
-        
-        if (amountDiff < 1)         { score += 60; reasons.push('Monto exacto'); }
-        else if (amountDiff < 10)   { score += 50; reasons.push('Monto exacto'); }
-        else if (amountDiff < 100)  { score += 35; reasons.push('Monto similar (±$100)'); }
-        else if (amountPct < 1)     { score += 25; reasons.push('Monto ~1% diferencia'); }
-        else if (amountPct < 5)     { score += 10; reasons.push('Monto ~5% diferencia'); }
-        else if (Math.abs(Math.round(invAmount * 1.19) - mov.amount) < 100) {
-          score += 45; reasons.push('Monto + IVA coincide');
-        }
+        const invAmountWithIva = Math.round(invAmount * 1.19);
+        const diffNet = Math.abs(invAmount - mov.amount);
+        const diffIva = Math.abs(invAmountWithIva - mov.amount);
+        const amountDiff = Math.min(diffNet, diffIva);
+        if (amountDiff >= 1) return; // No hay match sin monto exacto.
 
-        // 2. Date proximity
+        const reasons = [];
+        reasons.push(diffIva < diffNet ? 'Monto + IVA' : 'Monto exacto');
+
+        // 2. RUT match (usa rut_detectado de la glosa, ver H4).
+        const rutMatch = !!(inv.clientRut && mov.rut_detectado
+          && normRut(inv.clientRut) === normRut(mov.rut_detectado));
+        if (rutMatch) reasons.push('RUT coincide');
+
+        // 3. Nombre del cliente presente en la glosa.
+        const descLower  = String(mov.description || '').toLowerCase();
+        const clientName = String(inv.clientName || '').toLowerCase().trim();
+        const nameMatch  = clientName.length > 3 && descLower.includes(clientName);
+        if (nameMatch) reasons.push('Cliente en glosa');
+
+        // 4. Proximidad de fechas (informativa; monto ya es exacto).
         const movDate = parseDisplayDate(mov.date);
-        let invDate   = null;
+        let invDate = null;
         if (inv.issueDate) {
           const [y, m, d] = inv.issueDate.split('-').map(Number);
           invDate = new Date(y, m - 1, d);
         } else if (inv.createdAt?.seconds) {
           invDate = new Date(inv.createdAt.seconds * 1000);
         }
-
+        let daysDiff = Infinity;
         if (movDate && invDate && !isNaN(movDate) && !isNaN(invDate)) {
-          const days = Math.abs((movDate - invDate) / 86_400_000);
-          if (days <= 3)       { score += 25; reasons.push(`${Math.round(days)}d diferencia`); }
-          else if (days <= 7)  { score += 15; reasons.push(`${Math.round(days)}d diferencia`); }
-          else if (days <= 30) { score += 5;  reasons.push(`${Math.round(days)}d diferencia`); }
+          daysDiff = Math.abs((movDate - invDate) / 86_400_000);
+          if (daysDiff <= 30) reasons.push(`${Math.round(daysDiff)}d diferencia`);
         }
 
-        // 3. Text matching
-        const descLower   = String(mov.description || '').toLowerCase();
-        const clientName  = String(inv.clientName  || '').toLowerCase();
-        const projectName = String(inv.projectName || '').toLowerCase();
-        let projectCode   = '';
-        if (inv.projectId) {
-          const proj = projects.find((p) => p.id === inv.projectId);
-          if (proj?.code) projectCode = proj.code.toLowerCase();
-        }
+        // Confianza:
+        //   high   → monto + RUT + nombre (verde, candidata a auto-match)
+        //   medium → monto + RUT sin nombre, o monto + nombre + fecha cercana
+        //   low    → resto (solo monto exacto)
+        let confidence = 'low';
+        if (rutMatch && nameMatch)                       confidence = 'high';
+        else if (rutMatch || (nameMatch && daysDiff <= 30)) confidence = 'medium';
 
-        if (clientName.length > 3 && descLower.includes(clientName)) {
-          score += 30; reasons.push('Cliente en descripción');
-        }
-        if (projectCode.length > 2 && descLower.includes(projectCode)) {
-          score += 25; reasons.push('Código proyecto');
-        }
-        if (projectName.length > 4 && descLower.includes(projectName)) {
-          score += 15; reasons.push('Nombre proyecto');
-        }
-
-        // Check for RUT in description
-        if (inv.clientRut) {
-          const cleanRut = inv.clientRut.replace(/[.\-\s]/g, '');
-          if (cleanRut.length > 5 && descLower.includes(cleanRut.toLowerCase())) {
-            score += 35; reasons.push('RUT en descripción');
-          }
-        }
-
-        if (score > 0) scored.push({ invoice: inv, score, reasons });
+        scored.push({ invoice: inv, confidence, reasons });
       });
 
-      scored.sort((a, b) => b.score - a.score);
+      if (scored.length === 0) return;
 
-      if (scored.length > 0) {
-        // Auto-match: high confidence + clear winner
-        if (
-          scored[0].score >= 70 &&
-          (scored.length === 1 || scored[0].score > scored[1].score + 15)
-        ) {
-          autoMatches.push({
-            movement: mov,
-            invoice:  scored[0].invoice,
-            confidence: 'high',
-            reason:   scored[0].reasons.join(' + '),
-          });
-        }
-        const relevant = scored.filter((s) => s.score > 20);
-        if (relevant.length > 0) newSuggestions[mov.id] = relevant;
+      // Auto-match verde SOLO si hay exactamente 1 candidata high.
+      const highs = scored.filter((s) => s.confidence === 'high');
+      if (highs.length === 1) {
+        autoMatches.push({
+          movement: mov,
+          invoice: highs[0].invoice,
+          confidence: 'high',
+          reason: highs[0].reasons.join(' + '),
+        });
+        return;
       }
+
+      // Resto → sugerencias amarillas (todas las candidatas de monto exacto).
+      const confidenceToScore = { high: 100, medium: 70, low: 50 };
+      newSuggestions[mov.id] = scored
+        .map((s) => ({
+          invoice: s.invoice,
+          score: confidenceToScore[s.confidence],
+          reasons: s.reasons,
+          confidence: s.confidence,
+        }))
+        .sort((a, b) => b.score - a.score);
     });
 
     setSuggestions(prev => {
@@ -171,7 +164,7 @@ export default function AdminInvoicingReconciliation() {
         return [...prev, ...filtered];
       });
     }
-  }, [projects]);
+  }, []);
 
   // ── Init ──────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -179,11 +172,6 @@ export default function AdminInvoicingReconciliation() {
       await fetchPending();
       await fetchMovements();
       await fetchBankStatements();
-      try {
-        const qProj = query(collection(db, 'projects'), where('status', '!=', 'deleted'));
-        const snapProj = await getDocs(qProj);
-        setProjects(sortProjects(snapProj.docs.map((d) => ({ id: d.id, ...d.data() }))));
-      } catch (e) { console.error('Error fetching projects:', e); }
     };
     init();
   }, []);
@@ -205,7 +193,14 @@ export default function AdminInvoicingReconciliation() {
     setLoadingMovements(true);
     try {
       const snapshot = await getDocs(collection(db, 'bank_movements'));
-      const movs = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const movs = snapshot.docs.map((d) => {
+        const data = { id: d.id, ...d.data() };
+        // Backfill perezoso: para movimientos cargados antes de H4, calcular al vuelo.
+        if (data.rut_detectado == null) {
+          data.rut_detectado = extractRutFromText(data.description) || null;
+        }
+        return data;
+      });
       movs.sort((a, b) => {
         const dA = parseDisplayDate(a.date);
         const dB = parseDisplayDate(b.date);
@@ -289,13 +284,14 @@ export default function AdminInvoicingReconciliation() {
           if (existing.exists()) { dupeCount++; continue; }
 
           const movData = {
-            date:        mov.date,
-            description: String(mov.description || ''),
-            amount:      mov.amount,
-            bank:        bankName,
-            createdAt:   serverTimestamp(),
-            reconciled:  false,
-            statementId: statementId
+            date:          mov.date,
+            description:   String(mov.description || ''),
+            amount:        mov.amount,
+            bank:          bankName,
+            rut_detectado: mov.rut_detectado || null,
+            createdAt:     serverTimestamp(),
+            reconciled:    false,
+            statementId:   statementId
           };
           batch.set(docRef, movData);
           newCount++;
@@ -628,7 +624,7 @@ export default function AdminInvoicingReconciliation() {
             </div>
 
             <div className="overflow-auto flex-1">
-              <table className="w-full text-left text-sm whitespace-nowrap">
+              <table className="w-full text-left text-sm">
                 <thead className="bg-slate-50 text-slate-500 font-medium sticky top-0 z-10 text-xs">
                   <tr>
                     <th className="px-4 py-2.5">Banco</th>
@@ -666,7 +662,14 @@ export default function AdminInvoicingReconciliation() {
                                 <BankBadge bank={mov.bank} />
                               </div>
                               <div className="px-4 py-2.5 text-slate-500 w-24 shrink-0 text-xs">{mov.date}</div>
-                              <div className="px-4 py-2.5 text-slate-700 flex-1 min-w-0 truncate text-xs" title={mov.description}>{mov.description}</div>
+                              <div className="px-4 py-2.5 text-slate-700 flex-1 min-w-0 text-xs">
+                                <p className="whitespace-normal break-words leading-snug" title={mov.description}>{mov.description}</p>
+                                {mov.rut_detectado && (
+                                  <span className="inline-block mt-1 font-mono text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                                    RUT: {mov.rut_detectado}
+                                  </span>
+                                )}
+                              </div>
                               <div className={`px-4 py-2.5 text-right font-bold font-mono w-32 shrink-0 text-xs ${mov.amount >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
                                 {mov.amount >= 0 ? '+' : ''}{formatCurrency(mov.amount)}
                               </div>
