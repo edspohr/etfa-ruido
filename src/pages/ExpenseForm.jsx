@@ -136,8 +136,10 @@ export default function ExpenseForm() {
       }
     } catch (err) {
       console.error("Processing Error:", err);
-      // Fallback: If compression fails
-      if (!formData.receiptImage) {
+      toast.warning("No se pudo autocompletar con IA, ingresa los datos manualmente.");
+      // Fallback usa previewUrl (state actual) en vez de formData.receiptImage
+      // (closure stale — traía null en la primera subida y el valor viejo después).
+      if (!previewUrl) {
            setFormData(prev => ({ ...prev, receiptImage: originalFile }));
            setPreviewUrl(URL.createObjectURL(originalFile));
       }
