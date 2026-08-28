@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getAuth, GoogleAuthProvider } from "firebase/auth";
+import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
@@ -15,13 +15,12 @@ const firebaseConfig = {
 const isConfigured =
   firebaseConfig.apiKey && firebaseConfig.apiKey !== "your_api_key";
 
-let app, auth, googleProvider, db, storage;
+let app, auth, db, storage;
 
 if (isConfigured) {
   try {
     app = initializeApp(firebaseConfig);
     auth = getAuth(app);
-    googleProvider = new GoogleAuthProvider();
     db = getFirestore(app);
     storage = getStorage(app);
   } catch (e) {
@@ -56,4 +55,4 @@ export async function uploadReceiptImage(file, userId) {
   return downloadURL;
 }
 
-export { auth, googleProvider, db, storage, isConfigured };
+export { auth, db, storage, isConfigured };

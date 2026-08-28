@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { onAuthStateChanged, signInWithPopup, signInWithEmailAndPassword, signOut, setPersistence, browserLocalPersistence, sendPasswordResetEmail } from 'firebase/auth';
-import { auth, googleProvider, db, isConfigured } from '../lib/firebase';
+import { onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordResetEmail } from 'firebase/auth';
+import { auth, db, isConfigured } from '../lib/firebase';
 import { doc, getDoc, setDoc, query, collection, where, getDocs, deleteDoc, writeBatch } from 'firebase/firestore';
 import { AuthContext } from './AuthContextDefinition';
 
@@ -166,17 +166,6 @@ export function AuthProvider({ children }) {
 
 
 
-  async function loginWithGoogle() {
-    if (!auth) return; 
-    try {
-        await setPersistence(auth, browserLocalPersistence);
-        return await signInWithPopup(auth, googleProvider);
-    } catch (error) {
-        console.error("Google Login Error:", error);
-        throw error;
-    }
-  }
-
   function login(email, password) {
     return signInWithEmailAndPassword(auth, email, password);
   }
@@ -193,7 +182,6 @@ export function AuthProvider({ children }) {
     currentUser,
     userRole,
     isSuperAdmin,
-    loginWithGoogle,
     login,
     resetPassword,
     logout
