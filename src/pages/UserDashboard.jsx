@@ -130,6 +130,7 @@ export default function UserDashboard() {
                <table className="w-full text-left text-sm">
                    <thead className="bg-white">
                       <tr className="border-b">
+                          <th className="px-6 py-3 font-medium text-gray-500">Nº Proyecto</th>
                           <th className="px-6 py-3 font-medium text-gray-500">Proyecto</th>
                           <th className="px-6 py-3 font-medium text-gray-500">Recurrencia</th>
                           <th className="px-6 py-3 font-medium text-gray-500 text-right">Total Viáticos</th>
@@ -172,7 +173,7 @@ export default function UserDashboard() {
                                };
                            });
 
-                           if (rows.length === 0) return <tr><td colSpan="7" className="p-8 text-center text-gray-400">No hay actividad registrada.</td></tr>;
+                           if (rows.length === 0) return <tr><td colSpan="8" className="p-8 text-center text-gray-400">No hay actividad registrada.</td></tr>;
 
                            return rows.map(row => {
                                const isExpanded = expandedProject === row.id;
@@ -182,6 +183,9 @@ export default function UserDashboard() {
                                return (
                                    <React.Fragment key={row.id}>
                                    <tr className={`hover:bg-gray-50 transition cursor-pointer ${isExpanded ? 'bg-gray-50' : ''}`} onClick={() => toggleProject(row.id)}>
+                                       <td className="px-6 py-4 text-gray-600 font-mono text-xs">
+                                           {row.code || '-'}
+                                       </td>
                                        <td className="px-6 py-4">
                                            <span className="font-medium text-gray-800">
                                                 {formatProjectLabel(row)}
@@ -223,7 +227,7 @@ export default function UserDashboard() {
                                    </tr>
                                    {isExpanded && (
                                        <tr>
-                                           <td colSpan="7" className="bg-gray-50 px-6 py-4">
+                                           <td colSpan="8" className="bg-gray-50 px-6 py-4">
                                                <div className="flex flex-col lg:flex-row gap-8 pl-4 border-l-2 border-blue-200">
                                                     {/* Allocations Detail */}
                                                     <div className="flex-1">
