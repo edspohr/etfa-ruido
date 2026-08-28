@@ -158,9 +158,15 @@ firebase deploy --only firestore:rules,firestore:indexes,storage:rules \
 
 **STOP 5** — mostrar salida del deploy con las tres cosas en verde. Verificar
 en la consola Firebase del cliente:
-- Firestore → Rules: primer bloque `users/{userId}` con `create if uid==userId
-  && role=='professional'`.
+- Firestore → Rules: primer bloque `users/{userId}` con `allow create: if false;`.
 - Firestore → Indexes: 11 índices en total (incluye `expenses(status, date)`).
+- Rules Playground / simulator: correr los cuatro casos:
+  - admin escribe `isSuperAdmin:true` sobre otro user → ALLOW.
+  - admin `increment` sobre `balance` de otro user → ALLOW.
+  - professional actualiza su propio doc con `forcePasswordChange` u otros
+    campos de perfil (no toca `role`/`isSuperAdmin`) → ALLOW.
+  - token autenticado sin doc en `users/` intenta `create` sobre `users/{uid}`
+    con cualquier payload (incluido `role:admin`) → DENY.
 
 ---
 
@@ -217,22 +223,32 @@ tonight y siempre.
 
 ## Paso 9 — Smoke tests en el hosting nuevo
 
-1. **Login como profesional** (ej. `mmartinez@etfa-ruido.cl` — cuenta real de
-   la colección `users`) con la contraseña del usuario. Debe entrar y ver el
-   Dashboard con Nº Proyecto y Recurrencia (F1).
+0. **Probe de perímetro (el test real, antes de mirar la UI)**. Con la API key
+   web del nuevo proyecto (la de `VITE_FIREBASE_API_KEY`, NO la de Gemini),
+   golpear el endpoint de Identity Toolkit sin cuenta:
+
+   ```bash
+   curl -sS "https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=<NUEVO_FIREBASE_API_KEY>" \
+     -H 'Content-Type: application/json' \
+     -d '{"email":"probe-$(date +%s)@invalido.tld","password":"probe-1234","returnSecureToken":true}'
+   ```
+
+   Debe devolver `"message": "ADMIN_ONLY_OPERATION"` con HTTP 400. Ese es el
+   perímetro real (toggle sign-up OFF), no la UI. Si responde con
+   `idToken`, el sign-up quedó habilitado — **STOP** y volver al Paso 1.3.
+
+1. **Login como profesional** (ej. una cuenta real de la colección `users`).
+   Debe entrar y ver el Dashboard con "Nº Proyecto" y "Recurrencia" (F1).
 2. **Subir una boleta con imagen** desde `/dashboard/new-expense`. Si la Gemini
    key funciona, autocompleta los campos; si no, toast amarillo "No se pudo
    autocompletar con IA…" (E1). En ambos casos el gasto se guarda y aparece en
    la tabla.
-3. **Login como admin** (`edmundo@spohr.cl` u otro admin real). Aprobar un
-   gasto pendiente en `/admin/approvals`.
+3. **Login como admin** (cuenta admin real). Aprobar un gasto pendiente en
+   `/admin/approvals`.
 4. **Abrir el tab Historial** en `/admin/approvals`. Debe cargar sin el error
    "The query requires an index" (E3).
-5. **Abrir `/admin/invoicing/history`**. Correr el botón de "Reset Facturación"
-   con `BORRAR TODO` en una **DB de prueba, NO en la del cliente** — sólo si
-   Edmundo lo decide. Si se corre y hay huérfanos, el toast final los reporta
-   ("N referencias huérfanas ignoradas") (E2). En producción del cliente, saltar
-   este paso.
+5. **`/admin/invoicing/history` — NO tocar el Reset Facturación esta noche.**
+   El memo Anexo A lo cubre.
 
 **STOP 9** — cada test verde antes de continuar.
 
@@ -258,20 +274,20 @@ puede loguearse en la nueva app (rechaza por allowlist).
 
 ## Anexo A — Memo de decisión E2 (reset facturación)
 
-Corro el reset **DESPUÉS de import al proyecto cliente**, no antes:
-1. El export de Firestore es un snapshot atómico — un reset previo no simplifica
-   nada y arriesga estado inconsistente si algo falla.
-2. Con el fix tolerante a huérfanos ya en el código, un solo `Reset Facturación`
-   post-import limpia también las referencias colgantes viejas (como
-   `94O52Rznm1P6yDgLrEic`).
-3. Reversibilidad: si algo sale mal post-reset, el proyecto viejo aún tiene la
-   data original hasta el corte final del Paso 10.
+**El reset NUNCA se corre durante la noche de migración, aunque sobre tiempo.**
+Post-import lo primero es comparar paridad entre proyecto viejo y nuevo (mismo
+conteo de invoices, expenses, movs bancarios, cartolas). Un reset en el medio
+destruye esa comparación.
 
-**Recomendado**: NO correr el reset en producción del cliente durante la
-migración salvo que Edmundo tenga confirmación explícita del cliente de que
-quiere borrar el histórico de facturación. Sólo se justifica correrlo si el
-cliente pide arrancar limpio. Si no lo pide, dejarlo para uso ad-hoc por el
-propio cliente.
+Se corre sólo:
+- A pedido explícito del cliente.
+- En el proyecto nuevo.
+- Con el proyecto viejo todavía vivo como backup, o sea antes del Paso 10.
+- Idealmente el fin de semana siguiente, con el cliente mirando la pantalla.
+
+El toast final ("N referencias huérfanas ignoradas") es la prueba visible al
+cliente de que el bug de sus "duplicados que no se dejaban borrar" quedó
+cerrado.
 
 ---
 
@@ -319,21 +335,31 @@ Manual: **Firebase Console → Authentication → Users → fila del usuario →
 
 ## Riesgos aceptados post-migración
 
-- **Reglas de Firestore permisivas para colecciones distintas de `users`**.
-  Con la allowlist en `ensureUserExists` y el hardening de `users/{userId}`, el
-  vector destructivo público (auto-promoción a admin) está cerrado. `expenses`,
-  `projects`, `invoices`, `clients`, `bank_movements`, `bank_statements`, etc.
-  siguen `if request.auth != null` para read/write. Eso es aceptable para uso
-  interno con la allowlist de dominio; si en algún momento se abre la app a
-  externos, se endurece por colección.
+- **Perímetro es un solo checkbox de consola**. El sign-up en el proyecto
+  nuevo queda OFF; eso más `allow create: if false` en `users/{userId}` cierra
+  el vector destructivo público. La allowlist client-side en
+  `ensureUserExists` es defensa en profundidad, no perímetro — un token
+  válido nunca ejecuta el JS de la app. Si el cliente re-habilita sign-up en
+  el futuro, `create:false` sigue bloqueando el claim-by-email.
+- **Reglas permisivas en `expenses`/`projects`/`invoices`/`clients`/
+  `bank_movements`/`bank_statements` etc.**: cualquier token autenticado lee
+  y escribe. Con el perímetro cerrado esto sólo afecta a los ~11 usuarios
+  legítimos entre sí (no hay atacantes externos). Se acepta hasta el package
+  de endurecimiento de fin de año.
+- **Admin puede auto-otorgarse `isSuperAdmin: true`** vía el bypass admin del
+  `update` en `users/{userId}` — la regla no restringe qué campos puede
+  cambiar un admin sobre otros docs (ni sobre el suyo). El único gate que
+  desbloquea eso es `isSuperAdmin` para `delete` en `invoices`,
+  `bank_movements`, `bank_statements`. Bajo el modelo de confianza actual
+  (todos los admin son personal interno) es aceptable.
 - **Gemini key inline en el bundle**, restringida por HTTP referrer al dominio
-  del cliente. Si alguien scrapea la key desde el navegador y la usa en un
-  request sin referrer válido, Google lo rechaza. Escenario aceptado.
+  del cliente. Si alguien scrapea la key y la usa sin referrer válido, Google
+  lo rechaza. Escenario aceptado.
 - **Docs legacy `user_edmundo` y `user_caja_chica`** en Firestore. Con
-  sign-up OFF y allowlist, el flujo de claim-by-email queda inactivo para
-  emails no permitidos — el vector se neutraliza sin borrar datos. Se
-  recomienda al cliente limpiar `email` de esos docs con `deleteField()`
-  cuando dé de baja las cuentas Auth correspondientes.
+  sign-up OFF, `create:false` y allowlist, el flujo de claim-by-email queda
+  neutralizado sin borrar datos. Se recomienda al cliente limpiar `email` de
+  esos docs con `deleteField()` cuando dé de baja las cuentas Auth
+  correspondientes.
 - **Contraseña común `gastos2026`** en cuentas que aún no rotaron. Filtrar en
   `users` por `forcePasswordChange:false` desde la Firestore Console y forzar
   el flag a `true` para los que no rotaron. `ForcePasswordChange.jsx` los
@@ -349,11 +375,24 @@ Manual: **Firebase Console → Authentication → Users → fila del usuario →
 
 ## Trabajo futuro (fuera de scope esta noche)
 
-- Endurecer regla de `expenses/{expenseId}` (create sólo dueño; update/delete
-  con bypass admin). Requiere test en emulador del writeBatch de aprobación.
+- **Package de endurecimiento interior (fin de año)**: regla granular por
+  colección (`expenses/{expenseId}`, `projects/*`, `invoices/*`,
+  `bank_movements/*`, etc.), create sólo dueño con bypass admin, tests en
+  emulator suite del `writeBatch` de aprobación y del reset.
+- **Reemplazar la allowlist client-side por eliminación completa del
+  auto-provisioning en `ensureUserExists`**. Con `create:false` ya
+  desplegado, la rama "New User" quedó inerte pero sigue viva en el código;
+  removerla junto con la rama de claim-by-email deja `ensureUserExists`
+  siendo una simple lectura idempotente. (Desviación registrada: el commit
+  `fcf3046` puso allowlist en lugar de remover el auto-provisioning como
+  originalmente se instruyó; con toggle OFF + `create:false` la desviación
+  es inerte.)
+- **Patrón `batch.update` frágil en `AdminInvoicingHistory.jsx:113-124`**
+  (invoice-unlink). Mismo bug que el reset: `update` sobre docs que pueden
+  no existir. **NO tocar esta noche.** Refactorizar con la misma técnica del
+  reset tolerante (`getDoc` en paralelo + filtrado).
 - Endurecer regla de `report-attachments` en `storage.rules`.
 - Proxy backend / Cloud Function para Gemini en vez de key inline.
 - Sistema de baja de usuarios in-app (F2-B) si el cliente lo pide más
   adelante — incluye limpieza atómica de `user_edmundo` y `user_caja_chica`.
 - Sentry / logging server-side.
-- Tests automatizados de rules en emulator suite.
