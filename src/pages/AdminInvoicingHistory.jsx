@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import Layout from '../components/Layout';
-import { collection, query, orderBy, getDocs, doc, writeBatch, where } from 'firebase/firestore';
+import { collection, query, orderBy, getDocs, doc, writeBatch, where, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { formatCurrency } from '../utils/format';
 import { Skeleton } from '../components/Skeleton';
@@ -206,9 +206,19 @@ export default function AdminInvoicingHistory() {
 
       // Reset expense flags first (safer: if we fail mid-way, invoices still exist and the
       // wipe can be retried without leaving orphan expenses pointing at deleted invoices).
+      // Tolerante a huérfanos: verifica existencia antes del update. Un writeBatch.update()
+      // sobre un doc inexistente aborta el batch entero — el cliente hit exactamente eso
+      // (expenses/94O52... referenciado por invoice pero ya borrado).
+      let orphanCount = 0;
       for (const ids of chunk([...expenseIdsToReset], 400)) {
+        const snaps = await Promise.all(
+          ids.map(eid => getDoc(doc(db, 'expenses', eid)))
+        );
+        const existing = ids.filter((_, i) => snaps[i].exists());
+        orphanCount += ids.length - existing.length;
+        if (existing.length === 0) continue;
         const b = writeBatch(db);
-        ids.forEach(eid => {
+        existing.forEach(eid => {
           b.update(doc(db, 'expenses', eid), {
             invoiceId: null,
             invoiceStatus: 'approved',
@@ -246,8 +256,9 @@ export default function AdminInvoicingHistory() {
       }
 
       toast.success(
-        `Reset completo: ${deletedInv} facturas, ${expenseIdsToReset.size} gastos liberados, ` +
-        `${deletedMov} movimientos bancarios y ${deletedStm} cartolas eliminadas.`
+        `Reset completo: ${deletedInv} facturas, ${expenseIdsToReset.size - orphanCount} gastos liberados, ` +
+        `${deletedMov} movimientos bancarios y ${deletedStm} cartolas eliminadas.` +
+        (orphanCount > 0 ? ` ${orphanCount} referencias huérfanas ignoradas.` : '')
       );
       setInvoices([]);
       setWipeOpen(false);
