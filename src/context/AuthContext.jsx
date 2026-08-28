@@ -97,6 +97,14 @@ export function AuthProvider({ children }) {
 
       } else {
           // New User
+          // Allowlist: sólo dominio del cliente y mi email de traspaso.
+          // Cierra el sign-up público que dejaba a cualquier Gmail auto-provisionarse.
+          const allowed = user.email?.endsWith('@etfa-ruido.cl') || user.email === 'edmundo@spohr.cl';
+          if (!allowed) {
+              await signOut(auth);
+              throw new Error('Dominio no autorizado');
+          }
+
           // AUTO-ADMIN FIX: Check if email belongs to initial admins to break Catch-22
           const adminEmails = [
               "edmundo@spohr.cl", 
