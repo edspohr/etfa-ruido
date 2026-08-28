@@ -1,5 +1,7 @@
 {
   "projects": {
-    "default": "etfa-ruido-app"
+    "default": "etfa-ruido-app",
+    "viejo": "etfa-ruido-app",
+    "cliente": "<NUEVO_PROJECT_ID>"
   }
 }
