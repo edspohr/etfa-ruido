@@ -10,22 +10,25 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isSuperAdmin == true;
     }
 
-    // USERS: lectura para autenticados. Create sólo self (bloquea auto-promoción a
-    // admin/superAdmin). Update para dueño sin tocar role/isSuperAdmin, o para admin
-    // (mantiene el flujo de edición desde AdminUserDetails). Delete sólo admin.
+    // USERS: lectura para autenticados. Bajo F2-A todo alta se hace desde la
+    // consola Firebase (bypassea rules), así que el cliente SDK no crea docs de
+    // usuarios: create:false mata la ruta y neutraliza el claim-by-email en
+    // user_edmundo/user_caja_chica incluso si alguien re-habilita sign-up.
+    // Update: dueño sin tocar role/isSuperAdmin, o admin (bypass con exists()
+    // guard para que admin sin doc denegue limpio en vez de tirar rules-eval-error).
+    // Delete: sólo admin, mismo guard.
     match /users/{userId} {
       allow read: if request.auth != null;
-      allow create: if request.auth != null
-        && request.auth.uid == userId
-        && (!('role' in request.resource.data) || request.resource.data.role == 'professional')
-        && (!('isSuperAdmin' in request.resource.data) || request.resource.data.isSuperAdmin == false);
+      allow create: if false;
       allow update: if request.auth != null && (
         (request.auth.uid == userId
           && !('role' in request.resource.data.diff(resource.data).affectedKeys())
           && !('isSuperAdmin' in request.resource.data.diff(resource.data).affectedKeys()))
-        || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
+        || (exists(/databases/$(database)/documents/users/$(request.auth.uid))
+            && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
       );
       allow delete: if request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
     
